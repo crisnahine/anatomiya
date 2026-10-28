@@ -161,6 +161,12 @@ test("a word and its plural find each other, whichever ending each was written w
   assert.equal(findSymbols(z, ["retried"])[0]?.name, "retry");
 });
 
+test("a call qualified by an inline module or a namespace no symbol declares credits the function inside it", () => {
+  const symbols = [["parse", "fn", 2, "util", "()", null], ["parse", "fn", 9, "other", "()", null]];
+  const byName = new Map([["util::parse", ["src/a.rs", "src/b.rs"]]]);
+  assert.deepEqual(importersOf(symbols, byName, "src/lib.rs"), [2, 0]);
+});
+
 test("a call written Module.method credits the module's method, as a class's", () => {
   const files = [{ rel: "lib/billing.rb", lang: "ruby" }, { rel: "app/a.rb", lang: "ruby" }];
   const records = new Map([
@@ -240,7 +246,6 @@ test("the index is written into the store and read back; a missing, foreign or c
   // The store is the map's to make: a scan that made none keeps no index.
   assert.equal(saveIndex(root, index), false);
   mkdirSync(join(root, STORE_DIR), { recursive: true });
-  assert.equal(saveIndex(root, index, { write: false }), false);
   assert.equal(saveIndex(root, index), true);
   assert.deepEqual(readIndex(root), index);
   writeFileSync(join(root, STORE_DIR, INDEX_FILE), "not gzip");

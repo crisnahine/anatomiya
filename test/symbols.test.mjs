@@ -145,11 +145,14 @@ const TREE = {
   ],
   java: [
     "A.java",
-    "package p;\n\n/** Utilities for JSON. */\npublic class JSONUtils {\n  /**\n   * Parse an object.\n   */\n  @Deprecated\n  public static <T> T parseObject(String s) { return null; }\n\n  /** Makes one. */\n  JSONUtils(int depth) {}\n}\n",
+    "package p;\n\n/** Utilities for JSON. */\npublic class JSONUtils {\n  /**\n   * Parse an object.\n   */\n  @Deprecated\n  public static <T> T parseObject(String s) { return null; }\n\n  /** Makes one. */\n  JSONUtils(int depth) {}\n\n  /** Gets it. */\n  @RequestMapping(\n    value = \"/x\")\n  public void get() {}\n}\n",
     [
       ["JSONUtils", "class", 4, null, null, "Utilities for JSON."],
-      ["parseObject", "method", 8, "JSONUtils", "(String s)", "Parse an object."],
+      // The name's line, not the annotation's above it.
+      ["parseObject", "method", 9, "JSONUtils", "(String s)", "Parse an object."],
       ["JSONUtils", "method", 12, "JSONUtils", "(int depth)", "Makes one."],
+      // An annotation over several lines stands between the doc and the name too.
+      ["get", "method", 17, "JSONUtils", "()", "Gets it."],
     ],
   ],
   csharp: [
@@ -157,7 +160,7 @@ const TREE = {
     "namespace X;\npublic static class CoreHelpers {\n  /// <summary>\n  /// Generates a comb guid.\n  /// </summary>\n  [Obsolete]\n  public static Guid GenerateComb() { return Guid.Empty; }\n  public CoreHelpers(int seed) {}\n}\n/// <summary>Combines two.</summary>\npublic delegate int Combine(int a, int b);\n",
     [
       ["CoreHelpers", "class", 2, null, null, null],
-      ["GenerateComb", "method", 6, "CoreHelpers", "()", "Generates a comb guid."],
+      ["GenerateComb", "method", 7, "CoreHelpers", "()", "Generates a comb guid."],
       ["CoreHelpers", "method", 8, "CoreHelpers", "(int seed)", null],
       ["Combine", "type", 11, null, "(int a, int b)", "Combines two."],
     ],

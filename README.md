@@ -203,7 +203,7 @@ a test ranks behind the function it covers. One call prints at most six lines. T
 check hands the same command to its subagent, at most three calls: measured on two reuse tasks, its
 search spent a quarter to a half less fresh input and a third less output than the same check with no
 index, and found the helper in 18 of 20 sessions against 16 ([A124](docs/decisions/A124.md)). No hook reads the index; the refresh rewrites it with
-the map, and django's 39,257 definitions take 670 KB on disk.
+the map, and django's 39,257 definitions take 633 KB on disk.
 
 ### Before you review: what this branch broke
 

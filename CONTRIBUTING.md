@@ -275,7 +275,7 @@ Where the code goes:
 - `plugins/anatomiya/lib/dimensions-naming.mjs` the learned rows, and `NAMING_CORPUS`, the filename row the reducer
   composes off the corpus rather than off a tree
 
-Ten modules hold no row and sit under the scan, the hooks or both. A change to how a file is written, how a
+Eleven modules hold no row and sit under the scan, the hooks or both. A change to how a file is written, how a
 lock is taken, what a transcript record says, when the echo delivers, which added lines the reuse check asks
 about or how a history walk is fed goes in the one that owns it:
 
@@ -310,6 +310,9 @@ about or how a history walk is fed goes in the one that owns it:
   index reads, and the text helpers that read its doc comment and parameters off the source (H60)
 - `plugins/anatomiya/lib/code-index.mjs` the code index: who imports each definition, the file a scan
   keeps, and how `find` ranks it. Nothing on a hook's path loads it (H60)
+- `plugins/anatomiya/lib/index-home.mjs` which checkout's index answers, a linked worktree's main
+  checkout's included, and whether its last scan could not write one: what the Stop hook asks of the
+  index, without loading it (H60, A124)
 - `plugins/anatomiya/lib/history.mjs` the two history walks' feed: `historyFields`, which replays a
   history store's commits and asks git for the rest, the stamp a history store is used under, and
   `saveHistory`, which takes that stamp again before it writes (D15)

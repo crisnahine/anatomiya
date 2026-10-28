@@ -65,6 +65,8 @@ const CASES = {
     csharp: [
       ['class A { void F() { Console.WriteLine(1); _logger.LogInformation("x"); Log.Error("y"); Debug.WriteLine(2); } }\n', [false, true, true]],
       ['class A { void F() { _logger.LogWarning("x"); } }\n', [true]],
+      // The console's error and output streams print too.
+      ['class A { void F() { Console.Error.WriteLine("e"); Console.Out.Write("o"); } }\n', [false, false]],
       // Type arguments are no part of the callee, nested ones included.
       ['class A { void F() { _logger.LogInformation<Dictionary<string, List<int>>>("x"); } }\n', [true]],
       ['class A { void F() { Debug.WriteLine(2); _logger.BeginScope("x"); } }\n', []],
@@ -77,6 +79,8 @@ const CASES = {
     kotlin: [
       ['class A {\n    fun f() {\n        println(1)\n        logger.info { "x" }\n        LOG.warn("z", e)\n        list.info()\n    }\n}\n', [false, true, true]],
       ['class A {\n    fun f() {\n        log.debug("x")\n    }\n}\n', [true]],
+      // Kotlin writes to stderr through Java's own stream.
+      ['class A {\n    fun f() {\n        System.err.println("e")\n        System.out.print("o")\n    }\n}\n', [false, false]],
       ['class A {\n    fun f() {\n        list.info()\n    }\n}\n', []],
     ],
     go: [

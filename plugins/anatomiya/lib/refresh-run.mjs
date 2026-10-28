@@ -140,8 +140,8 @@ async function passes(root, store, { scan, pin }) {
     const state = readRecord(join(store, basename(REFRESH_STATE))).record;
     // A map with no code index is written again, unless its scan could not write one or failed. Asked
     // beside the stamp, not in it: the scan that writes the index would move its own stamp.
-    const indexed = state?.indexed === false || state?.ok === false || isPathTaken(join(store, INDEX_FILE));
-    const current = state?.stamp === stamp && settled(state) && indexed;
+    const indexSettled = state?.indexed === false || state?.ok === false || isPathTaken(join(store, INDEX_FILE));
+    const current = state?.stamp === stamp && settled(state) && indexSettled;
     if (current && sameHold(state.held, held)) {
       return { reason: state.ok ? (pass === 0 ? "current" : "scanned") : "failed-before", pinned, held };
     }

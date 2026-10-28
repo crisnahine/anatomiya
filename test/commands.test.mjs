@@ -1113,6 +1113,15 @@ test("find says whether there is an index, whether the words asked anything, and
   assert.deepEqual(found.hits.map((h) => h.name), ["addNumbers"]);
   assert.match(found.lines[1], /^addNumbers\(a: number, b: number\)  src\/util\.ts:2  fn/);
 
+  // A refresh whose scan could not write the index records so, and another scan would hit the same wall.
+  rmSync(join(dir, ".claude", "anatomiya", "index.json.gz"));
+  writeFileSync(join(dir, ".claude", "anatomiya", "refresh.json"), JSON.stringify({ stamp: "x", ok: true, error: null, at: new Date().toISOString(), indexed: false }));
+  const refused = await runFind(dir, ["add"]);
+  assert.match(refused.lines[0], /^The last scan could not write a code index/);
+  const engines = (await runDoctor()).lines;
+  assert.deepEqual((await runDoctor({ cwd: dir })).lines.slice(engines.length), ["code index: none; the last scan could not write one, past the size a scan writes"]);
+  await runScan(dir);
+
   const empty = await runFind(dir, ["a", "x"]);
   assert.deepEqual([empty.indexed, empty.hits], [true, []]);
   assert.match(empty.lines[0], /^"a x" holds no word to look up/);

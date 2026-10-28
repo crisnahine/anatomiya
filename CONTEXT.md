@@ -556,7 +556,7 @@ checked is not used.
 _Avoid_: history cache, commit cache, log cache, store (alone, before the passage has named a history store: the **store** is the directory)
 
 **Code index**:
-Every function, method, class and type a file declares at its top level or in a class, and Go's and Rust's constants, as the last scan read it, in every language, with its line, its
+Every function, method, class and type that no function holds, a module, a namespace or a class around it included, and Go's and Rust's constants, as the last scan read it, in every language, with its line, its
 container, its parameters, its doc sentence and how many other files import it, kept in the
 **store** and read only by `find`. It is a lookup for a session about to write a helper, never a
 count anything is judged against.

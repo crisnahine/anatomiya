@@ -36,8 +36,8 @@ const partsOf = (name) => name.split(/::|[.#]/);
  * How many files other than its own import or call each symbol of a file,
  * off the names `reuseIndex` resolved to it. A call written `Class.method`
  * credits the method of that class and the class; one qualified by a module or
- * a package, `db.GetEngine`, the file's own function of that name; a bare name
- * every symbol of that name.
+ * a package, `db.GetEngine`, the file's own function of that name, or the one an
+ * inline module of that name holds, `util::parse`; a bare name every symbol of that name.
  */
 export function importersOf(symbols, byName, rel) {
   const importers = symbols.map(() => new Set());
@@ -48,7 +48,10 @@ export function importersOf(symbols, byName, rel) {
   for (const [i, [name, kind]] of symbols.entries()) {
     if (!named.has(name)) named.set(name, []);
     named.get(name).push(i);
-    if (kind === "class" || kind === "module" || kind === "type") classes.set(name, [...(classes.get(name) ?? []), i]);
+    if (kind === "class" || kind === "module" || kind === "type") {
+      if (!classes.has(name)) classes.set(name, []);
+      classes.get(name).push(i);
+    }
   }
   const credit = (i, files) => {
     for (const file of files) if (file !== rel) importers[i].add(file);
@@ -58,7 +61,7 @@ export function importersOf(symbols, byName, rel) {
     const owner = parts.length > 1 ? parts.at(-2) : null;
     for (const i of named.get(parts.at(-1)) ?? []) {
       const container = symbols[i][3];
-      if (owner === null || (classes.has(owner) ? owner === container : container === null)) credit(i, files);
+      if (owner === null || (classes.has(owner) ? owner === container : container === null || container === owner)) credit(i, files);
     }
     for (const part of new Set(parts)) for (const i of classes.get(part) ?? []) credit(i, files);
   }
@@ -88,7 +91,10 @@ export function buildIndex(files, records, corpusRels, own = null, { previous = 
     const importers = importersOf(symbols, byFile.get(rel), rel);
     const test = isTestFile({ rel, lang, facets: record.facets }) ? 1 : 0;
     // Two definitions on one line both see the comment above it, and it documents the first.
-    out.push([rel, test, symbols.map((s, i) => [...s.slice(0, 5), i > 0 && s[2] === symbols[i - 1][2] && s[5] === symbols[i - 1][5] ? null : s[5], importers[i]])]);
+    out.push([rel, test, symbols.map(([name, kind, line, container, params, doc], i) => {
+      const [, , above, , , aboveDoc] = symbols[i - 1] ?? [];
+      return [name, kind, line, container, params, i > 0 && line === above && doc === aboveDoc ? null : doc, importers[i]];
+    })]);
     count += symbols.length;
   }
   out.sort((a, b) => byCode(a[0], b[0]));
@@ -102,15 +108,16 @@ function indexPath(root) {
 }
 
 /** Write the index into the map's store; one that cannot be written leaves no index, not the last one. */
-export function saveIndex(root, index, { write = true } = {}) {
-  const path = write ? indexPath(root) : null;
+export function saveIndex(root, index) {
+  const path = indexPath(root);
   if (path === null) return false;
   try {
     const text = JSON.stringify(index);
     // Past what `readIndex` takes, zipped or unzipped, a written index would read as none forever.
-    if (Buffer.byteLength(text) > UNZIPPED_MOST) throw new RangeError("the code index is past what find reads");
+    const tooLarge = () => new RangeError("the code index is past what find reads");
+    if (Buffer.byteLength(text) > UNZIPPED_MOST) throw tooLarge();
     const body = gzipSync(text);
-    if (body.length > INDEX_MOST) throw new RangeError("the code index is past what find reads");
+    if (body.length > INDEX_MOST) throw tooLarge();
     atomic(path, body);
     return true;
   } catch (err) {

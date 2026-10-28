@@ -10,7 +10,7 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and
 ### Added
 
 - A code index. A scan now keeps `.claude/anatomiya/index.json.gz`: every function, method, class and
-  type a file declares at its top level or in a class, and Go's and Rust's constants, in all nine languages, with its line, the class it sits in, its parameters, the first
+  type that no function holds, a module, a namespace or a class around it included, and Go's and Rust's constants, in all nine languages, with its line, the class it sits in, its parameters, the first
   sentence of its doc comment and how many other files import it. `/anatomiya:find <words>` lists the
   six closest, a rare word outweighing a common one and a test ranked behind the helper it covers
   (H60, B82).
@@ -31,7 +31,11 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and
 - The reuse check no longer asks about its own fix a second time when the search ran in the
   background. Claude Code 2.1.312 runs a subagent in the background by default, and the turn its
   result opens was read as new work: 28 of 61 sessions on the builds without the fix ran a second
-  search, and 0 of 40 with it (A125).
+  search, and 0 of 40 with it (A125). A message that arrives while the session works, which Claude
+  Code queues rather than records as a prompt, counts too: a prompt typed then is asked about, and
+  the check's own result arriving mid-turn is not asked about again.
+- `logger_over_print` counts Kotlin's `System.err` and C#'s `Console.Error` as prints, as Java's
+  `System.err` already was.
 
 ### Changed
 
@@ -43,6 +47,10 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and
 - A lone letter or a filler word such as `the` in a `find` query asks nothing, and a word's rarity is counted over the name, class and doc it is matched in.
 - `find --format json` says whether there was an index to ask, and a Ruby `module` is listed as a
   module, not a class.
+- A Java or C# definition is listed at its name's line, not its first annotation's; a call written
+  `util::parse` credits the function an inline Rust `mod util` holds; and doctor and `find` say so
+  when the last scan could not write an index, rather than asking for a scan that would fail the same
+  way. A dry run builds no index.
 
 ### Security
 

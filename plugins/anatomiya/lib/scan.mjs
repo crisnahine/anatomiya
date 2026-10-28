@@ -396,7 +396,8 @@ async function scanning(cwd, { guards = null, runChecker = runSemantic, resolveS
   return {
     root,
     // Every definition read at HEAD and who imports it, for `find`. Written beside the map, never into the record.
-    codeIndex: buildIndex(files, head.records, corpusRels, own, { previous: unreadable.length > 0 ? readIndex(root) : null, unread: unreadable }),
+    // Built only by a scan that writes it: a dry run throws it away.
+    codeIndex: () => buildIndex(files, head.records, corpusRels, own, { previous: unreadable.length > 0 ? readIndex(root) : null, unread: unreadable }),
     // Whether the checker ran, and how it went. Absent is not the same as
     // clean: a reader has to be able to tell a scan that never asked from one
     // that asked and got a bad answer (B8).

@@ -111,7 +111,7 @@ The ranking queries, their ranks under each variant, the scale numbers and the s
 prints are in `data/2026-10-28-find.json`; the corpus runs in `data/2026-10-28-e2e-corpus-shallow.txt`
 and `data/2026-10-28-e2e-corpus-full-history.txt`.
 
-On django, 39,257 definitions made a 670 KB index. One `find` over about 206,000 definitions (gitea's
+On django, 39,257 definitions made a 633 KB index. Writing it costs a scan 0.16 seconds there, 1.79 to 1.95, and 0.13 on gitea, 2.12 to 2.25, the median of three warm scans each, wall to wall, against 0.19.0 on the same machine. One `find` over about 206,000 definitions (gitea's
 index nine times under other paths) took 281 ms. The 21 repositories of the language measurements,
 and this repository, scanned with the build and passed `e2e-corpus`, 22 of 22, stable on a second scan; six of them with their full
 history (flask, Slim, gson, serilog, ripgrep, kotlinx.serialization) asked `class_inherits` and

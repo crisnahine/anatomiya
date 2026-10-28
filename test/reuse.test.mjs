@@ -9,7 +9,8 @@ import { execFileSync, spawnSync } from "node:child_process";
 import { scriptGit } from "./git-script.mjs";
 import { needsPathControl, needsPosixPaths, needsPosixSpecialFiles, needsShebang, needsSymlinks, removeTree } from "./platform.mjs";
 import { snapshot, transcript } from "./transcript.mjs";
-import { askedMarksIn, continuedByReuseIn, finderFor, indexHome, pendingChange, quotable, resumedByReuseIn, REUSE_GIT_MS, REUSE_MARK, reuseReason, TRANSCRIPT_MOST } from "../plugins/anatomiya/lib/reuse.mjs";
+import { indexHome } from "../plugins/anatomiya/lib/index-home.mjs";
+import { askedMarksIn, continuedByReuseIn, finderFor, pendingChange, quotable, resumedByReuseIn, REUSE_GIT_MS, REUSE_MARK, reuseReason, TRANSCRIPT_MOST } from "../plugins/anatomiya/lib/reuse.mjs";
 import { runReuse } from "../plugins/anatomiya/lib/hook-verbs.mjs";
 import { PAYLOAD_WAIT_MS } from "../plugins/anatomiya/lib/hook.mjs";
 import { REUSE_PARSE_MS } from "../plugins/anatomiya/lib/inert.mjs";
@@ -1301,6 +1302,55 @@ test("the turn a background check's result opens is the check's own fix, recorde
   assert.deepEqual(Object.keys(after), ["systemMessage"], "it records and asks nothing");
   append(session, recorded(after.systemMessage));
   assert.deepEqual(await runReuse(dir, stop(dir, { transcript_path: session })), {});
+});
+
+// A message that arrives while the session works is no user entry: Claude Code queues it and records it as an attachment.
+const queued = (prompt, at = Date.now()) => ({ type: "attachment", timestamp: new Date(at).toISOString(), attachment: { type: "queued_command", prompt, commandMode: "prompt" } });
+
+test("a prompt typed while the check's result turn runs is asked about, not recorded as the check's fix", async (t) => {
+  const { dir, write } = repo(t);
+  write("src/b.ts", NEW_B);
+  const first = await runReuse(dir, stop(dir, { transcript_path: begun(t) }));
+  const now = Date.now();
+  const notice = { type: "user", timestamp: new Date(now - 3000).toISOString(), message: { role: "user", content: "<task-notification>\n<tool-use-id>toolu_check</tool-use-id>\n</task-notification>" } };
+  const session = begun(t, [blocked(first.reason), ...call("Agent", "toolu_check", now - 5000, now - 4900), notice, queued("also add a retry helper", now - 1000)]);
+  write("src/c.ts", "export function retry() {\n  return 3;\n}\n");
+
+  const answer = await runReuse(dir, stop(dir, { transcript_path: session }));
+  assert.equal(answer.decision, "block");
+  assert.match(answer.reason, /src\/c\.ts:1-3 \(new file\)/);
+});
+
+test("a queued notification that names no call opens nothing, as no person spoke", async (t) => {
+  const { dir, write } = repo(t);
+  write("src/b.ts", NEW_B);
+  const first = await runReuse(dir, stop(dir, { transcript_path: begun(t) }));
+  const now = Date.now();
+  const notice = { type: "user", timestamp: new Date(now - 3000).toISOString(), message: { role: "user", content: "<task-notification>\n<tool-use-id>toolu_check</tool-use-id>\n</task-notification>" } };
+  const session = begun(t, [blocked(first.reason), ...call("Agent", "toolu_check", now - 5000, now - 4900), notice, queued("<task-notification>\n<task-id>bb02</task-id>\n<status>completed</status>\n</task-notification>", now - 1000)]);
+  write("src/b.ts", "import { one } from \"./a.ts\";\nexport const b = () => one + 1;\n");
+
+  const after = await runReuse(dir, stop(dir, { transcript_path: session }));
+  assert.deepEqual(Object.keys(after), ["systemMessage"], "it records and asks nothing");
+});
+
+test("the check's result arriving in a turn another call opened is still the check's own fix", async (t) => {
+  const { dir, write } = repo(t);
+  write("src/b.ts", NEW_B);
+  const first = await runReuse(dir, stop(dir, { transcript_path: begun(t) }));
+  const now = Date.now();
+  const opener = { type: "user", timestamp: new Date(now - 3000).toISOString(), message: { role: "user", content: "<task-notification>\n<tool-use-id>toolu_tests</tool-use-id>\n</task-notification>" } };
+  const session = begun(t, [
+    blocked(first.reason),
+    ...call("Agent", "toolu_check", now - 6000, now - 5900),
+    ...call("Bash", "toolu_tests", now - 5800, now - 5700),
+    opener,
+    queued("<task-notification>\n<tool-use-id>toolu_check</tool-use-id>\n</task-notification>", now - 1000),
+  ]);
+  write("src/b.ts", "import { one } from \"./a.ts\";\nexport const b = () => one + 1;\n");
+
+  const after = await runReuse(dir, stop(dir, { transcript_path: session }));
+  assert.deepEqual(Object.keys(after), ["systemMessage"], "it records and asks nothing");
 });
 
 test("a tail that opens on another hook's feedback is read to its end, not looped on", { timeout: 5000 }, () => {

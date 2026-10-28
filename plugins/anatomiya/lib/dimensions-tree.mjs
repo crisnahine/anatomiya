@@ -476,9 +476,9 @@ const PRINTS = {
   python: /^print$/,
   php: /^(var_dump|print_r|printf|var_export)$/,
   java: /^System\.(out|err)\.print(ln|f)?$/,
-  csharp: /^(System\.)?Console\.(Write|WriteLine)$/,
+  csharp: /^(System\.)?Console(\.(Out|Error))?\.(Write|WriteLine)$/,
   rust: /^(std::)?(println|print|eprintln|eprint|dbg)$/,
-  kotlin: /^(kotlin\.io\.)?(println|print)$/,
+  kotlin: /^(kotlin\.io\.)?(println|print)$|^System\.(out|err)\.print(ln|f)?$/,
   go: /^(fmt\.(Print|Println|Printf)|print|println)$/,
 };
 // Go's loggers are packages called by name: the standard library's, and the common ones.
@@ -733,8 +733,8 @@ export const TREE_DIMENSIONS = [
     counterClaim: null, // a repository with no logger is never asked (C14), so the other side has no sites
     precision: "partial",
     applicabilityPredicate: {
-      sites: "a call outside a test file that writes to the console, in Python `print`, in PHP `echo` and `print` outside a template (a file holding markup outside its tags), `var_dump`, `print_r`, `printf` or `var_export`, in Java `System.out` or `System.err` with `print`, `println` or `printf`, in C# `Console.Write` or `Console.WriteLine`, in Rust `println!`, `print!`, `eprintln!`, `eprint!` or `dbg!`, in Kotlin `println` or `print`, in Go `fmt.Print`, `fmt.Println`, `fmt.Printf`, `print` or `println`; or one that writes through a logger, a level (`debug`, `info`, `warn`, `warning`, `error`, `critical`, `fatal`, `trace`, `exception`, `verbose`, JUL's `severe` and `fine`, and each with a `Log` prefix) or `log` called on a receiver named `log`, `logger` or `logging` in any case and with leading underscores, in Rust `info!`, `warn!`, `error!`, `debug!`, `trace!` and `event!`, bare or under `log::` or `tracing::`, and in Go a level, `Print`, `Fatal` or `Panic`, with an `f`, `ln`, `w`, `Context` or `Depth` suffix, or zerolog's `Msg` or `Send`, called through the packages `log`, `slog`, `klog`, `glog`, `zap`, `zerolog` and `logrus` or a receiver named for a logger anywhere earlier in the chain (`caddy.Log().Info`, `logger.With(...).Info`), a chain counted once at its end; klog's `InfoS` and slog's `LogAttrs` included; `zap`'s own package functions build fields and write nothing. The file whose own stem is nothing but the logging vocabulary implements the routing rather than following it and is not a site",
-      blind: "output behind a helper, a logger under another name, and a command-line tool that writes to stdout on purpose look the same from here",
+      sites: "a call outside a test file that writes to the console, in Python `print`, in PHP `echo` and `print` outside a template (a file holding markup outside its tags), `var_dump`, `print_r`, `printf` or `var_export`, in Java `System.out` or `System.err` with `print`, `println` or `printf`, in C# `Console.Write` or `Console.WriteLine`, through `Console.Out` or `Console.Error` too, in Rust `println!`, `print!`, `eprintln!`, `eprint!` or `dbg!`, in Kotlin `println` or `print`, or `System.out` or `System.err` as in Java, in Go `fmt.Print`, `fmt.Println`, `fmt.Printf`, `print` or `println`; or one that writes through a logger, a level (`debug`, `info`, `warn`, `warning`, `error`, `critical`, `fatal`, `trace`, `exception`, `verbose`, JUL's `severe` and `fine`, and each with a `Log` prefix) or `log` called on a receiver named `log`, `logger` or `logging` in any case and with leading underscores, in Rust `info!`, `warn!`, `error!`, `debug!`, `trace!` and `event!`, bare or under `log::` or `tracing::`, and in Go a level, `Print`, `Fatal` or `Panic`, with an `f`, `ln`, `w`, `Context` or `Depth` suffix, or zerolog's `Msg` or `Send`, called through the packages `log`, `slog`, `klog`, `glog`, `zap`, `zerolog` and `logrus` or a receiver named for a logger anywhere earlier in the chain (`caddy.Log().Info`, `logger.With(...).Info`), a chain counted once at its end; klog's `InfoS` and slog's `LogAttrs` included; `zap`'s own package functions build fields and write nothing. The file whose own stem is nothing but the logging vocabulary implements the routing rather than following it and is not a site",
+      blind: "output behind a helper, a logger under another name, and a command-line tool that writes to stdout on purpose look the same from here; Go's `fmt.Fprint` to `os.Stdout` or `os.Stderr` is not counted, since it writes to any writer",
     },
     langs: ["python", "php", "java", "csharp", "rust", "kotlin", "go"],
     visitor(program, add, extra = {}) {

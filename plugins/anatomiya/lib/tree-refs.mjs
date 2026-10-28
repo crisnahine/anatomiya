@@ -406,11 +406,18 @@ function symbolOf(node, ctx, lang, shapes, source, starts, listed = null) {
   const name = listed ? indexedName(node) : nameOf(node);
   if (!name) return null;
   const fn = listed ? listed !== "type" : shapes.fn.includes(node.type);
-  const kind = listed === "type" ? "type" : fn ? (ctx.cls !== null || fieldOf(node, "receiver") ? "method" : "fn") : shapes.cls.includes(node.type) ? "class" : CONSTANTS.has(node.type) ? "const" : "type";
+  let kind = "type";
+  if (fn && listed !== "type") kind = ctx.cls !== null || fieldOf(node, "receiver") ? "method" : "fn";
+  else if (!listed && shapes.cls.includes(node.type)) kind = "class";
+  else if (!listed && CONSTANTS.has(node.type)) kind = "const";
   const lambda = node.type === "assignment" ? fieldOf(fieldOf(node, "right"), "parameters") : null;
   const params = fn || listed ? (lambda ?? paramsOf(node)) : null;
+  const written = params && source.slice(params.start, params.end);
+  // A Java or C# declaration starts at its first annotation: its doc sits above that, and a reader is sent to its name.
+  const line = fieldOf(node, "name")?.line ?? node.line;
   const raw = (lang === "python" ? docstringOf(node) : null) ?? commentAbove(source, starts, node.line, HASH_COMMENTS.has(lang));
-  return symbol(name, kind, node.line, kind === "method" || ctx.stack.length ? containerOf(node, ctx, shapes) : null, params && paramsText(lambda ? `(${source.slice(params.start, params.end)})` : source.slice(params.start, params.end)), docLine(raw));
+  const container = kind === "method" || ctx.stack.length ? containerOf(node, ctx, shapes) : null;
+  return symbol(name, kind, line, container, written && paramsText(lambda ? `(${written})` : written), docLine(raw));
 }
 
 const sorted = (set) => [...set].sort();

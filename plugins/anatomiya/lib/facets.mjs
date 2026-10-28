@@ -260,12 +260,9 @@ export function jsFacets({ program, module: mod, source = null }) {
     }
 
     // A method of a class the module itself declares, by a name a caller can write: not `[key]` or `#hidden`.
-    const callable = !n.computed && n.key?.type !== "PrivateIdentifier";
-    if (n.type === "MethodDefinition" && n.kind === "method" && callable && ctx.stack.length === 1 && ctx.cls?.id) {
-      define(n.key, "method", n, n.value, ctx.cls.id.name);
-    }
-    // `handleOpen = (event) => {}` is how a class written for React declares a method.
-    if (n.type === "PropertyDefinition" && n.value && isFunctionLike(n.value) && callable && ctx.stack.length === 1 && ctx.cls?.id) {
+    // `handleOpen = (event) => {}` is how a class written for React declares one.
+    const method = (n.type === "MethodDefinition" && n.kind === "method") || (n.type === "PropertyDefinition" && n.value && isFunctionLike(n.value));
+    if (method && !n.computed && n.key?.type !== "PrivateIdentifier" && ctx.stack.length === 1 && ctx.cls?.id) {
       define(n.key, "method", n, n.value, ctx.cls.id.name);
     }
 

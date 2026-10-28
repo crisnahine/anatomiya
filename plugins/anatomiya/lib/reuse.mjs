@@ -19,15 +19,15 @@ import { corpusDrop, isCorpusPath } from "./corpus.mjs";
 import { encodePath } from "./encode.mjs";
 import { ask, operationUnfinished, unaskedAs, Unasked } from "./git.mjs";
 import { isPathTaken } from "./hook.mjs";
+import { indexHome } from "./index-home.mjs";
 import { INERT_ENGINES, inertLinesOf, REUSE_PARSE_MS } from "./inert.mjs";
 import { embeddedIn, engineOf, language } from "./langs.mjs";
 import { MAX_FILE_BYTES } from "./limits.mjs";
 import { byCode } from "./paths.mjs";
-import { INDEX_FILE, readHead, readTail, realpathOf, STORE_DIR } from "./rules.mjs";
+import { readHead, readTail, realpathOf } from "./rules.mjs";
 import { blankOutside, scriptBlocks } from "./script-blocks.mjs";
 import { markupCodeLines, templateInertLines, templateOf } from "./templates.mjs";
 import { finishedCallOf, parsed, sessionStartIn } from "./transcript.mjs";
-import { mainCheckoutOf } from "./worktree.mjs";
 
 /** What an ask or a record carries, so a later stop can tell which files it covered. */
 export const REUSE_MARK = "anatomiya reuse check";
@@ -123,24 +123,11 @@ const tag = (files) => `(${REUSE_MARK} ${files.slice(0, MARKED_MOST).map((f) => 
 
 // The bin this hook runs from, which is the copy whose `find` reads the index this scan's build wrote.
 const BIN = fileURLToPath(new URL("../bin/anatomiya.mjs", import.meta.url));
-// What a shell reads inside double quotes as itself.
 // A UNC path's leading `\\` is one backslash to a shell, so it is not.
 const QUOTABLE = /^(?!\\\\)[\w ./@+:\\-]+$/;
 
 /** Whether a shell reads a path inside double quotes back as itself. */
 export const quotable = (path) => QUOTABLE.test(path);
-
-/**
- * The checkout whose code index answers for `root`: its own, or for a linked
- * worktree with none its main checkout's, as the map is borrowed. Null where
- * neither holds one.
- */
-export function indexHome(root) {
-  const holds = (at) => isPathTaken(join(at, STORE_DIR, INDEX_FILE));
-  if (holds(root)) return root;
-  const main = mainCheckoutOf(root);
-  return main !== null && holds(main) ? main : null;
-}
 
 /**
  * The command that asks this checkout's code index, or null where no scan wrote
@@ -446,13 +433,21 @@ export function resumedByReuseIn(tail) {
   const opened = [];
   const launched = new Set();
   for (const line of tail.slice(start).split("\n").slice(1)) {
-    if (!line.includes("\"user\"") && !line.includes("tool_use")) continue;
+    if (!line.includes("\"user\"") && !line.includes("tool_use") && !line.includes("queued_command")) continue;
     const entry = parsed(line);
     const content = entry?.message?.content;
     if (entry?.type === "assistant") {
-      // Only what the session launched before the person spoke again answers the ask; the subagent tool was `Task` before `Agent`.
-      if (opened.includes(null)) continue;
+      // The subagent tool was `Task` before `Agent`.
       for (const part of Array.isArray(content) ? content : []) if (part?.type === "tool_use" && (part.name === "Agent" || part.name === "Task")) launched.add(part.id);
+      continue;
+    }
+    // A message that arrives while the session works is queued, not a user entry: a prompt asks again, and the
+    // check's own result answers it; any other call's result opens nothing.
+    if (entry?.type === "attachment" && entry.attachment?.type === "queued_command") {
+      const prompt = typeof entry.attachment.prompt === "string" ? entry.attachment.prompt : "";
+      const id = finishedCallOf(prompt);
+      // A notification that names no call, a forked skill's or a resumed agent's, is no person speaking.
+      if (id === null ? !prompt.trimStart().startsWith("<task-notification>") : launched.has(id)) opened.push(id);
       continue;
     }
     if (entry?.type !== "user" || entry.isMeta === true) continue;
