@@ -132,7 +132,7 @@ const NOTIFICATION = "<task-notification>";
 const FINISHED_CALL = /<tool-use-id>([^<\s]+)<\/tool-use-id>/;
 
 /** The call a task notification reports finished, where `text` opens with one, or null. */
-export function finishedCallOf(text) {
+function finishedCallOf(text) {
   return typeof text === "string" && text.trimStart().startsWith(NOTIFICATION) ? (text.match(FINISHED_CALL)?.[1] ?? null) : null;
 }
 
