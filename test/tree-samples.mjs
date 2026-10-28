@@ -51,12 +51,18 @@ def load(path) -> Order:
             return Order(handle.readlines(), sort=True)
     except OSError:
         pass
+    except ValueError as error:
+        raise
     return Order([])
 
 
 @cached
 def reserve(order):
     return order.total
+
+
+class Ledger(*mixins, **options):
+    pass
 `;
 
 export const php = `<?php
@@ -127,6 +133,9 @@ function format_total(int $cents): string
 function parse_total(string $text): int
 {
     if ($text === '') {
+        echo 'empty';
+        print 'empty';
+        Log::warning('empty');
         throw new \\InvalidArgumentException('empty');
     }
     return (int) $text;
@@ -303,6 +312,7 @@ namespace Billing
         {
             const int scale = 100;
             var eol = "\\n";
+            var floor = new Money { Cents = scale };
             int Cents(decimal price)
             {
                 return (int)(price * 100);
@@ -316,12 +326,16 @@ namespace Billing
             {
                 return 0;
             }
+            catch (FormatException error) when (error.Data != null)
+            {
+                throw;
+            }
         }
 
 #region Rounding
 #nullable enable
 #pragma warning disable CS0618
-        public int Round(decimal price) => (int)price;
+        public int Round(decimal? price) => (int)(price ?? throw new ArgumentNullException());
 #line default
 #endregion
 
@@ -427,7 +441,7 @@ val USAGE = """
 """.trimIndent()
 
 @Suppress("unused")
-class Totals(private val orders: List<Order>) {
+class Totals(private val orders: List<Order>) : Ledger(), Summable {
     override val unit = "cents\\n"
 
     fun total(): Int {
@@ -435,6 +449,8 @@ class Totals(private val orders: List<Order>) {
             return orders.sumOf { it.price }
         } catch (e: IOException) {
             return 0
+        } catch (e: IllegalStateException) {
+            throw e
         }
     }
 

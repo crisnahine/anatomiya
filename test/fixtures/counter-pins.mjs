@@ -54,13 +54,13 @@ export const REFUSED = [
   // The other side of a learned class is another class, which the learning
   // already picks; a hand-written inverse would fight it.
   "function_naming_case", "exported_symbol_case", "exported_class_case", "exported_type_case", "file_naming_case",
-  "extends_base", "class_base", "module_include",
+  "extends_base", "class_base", "class_inherits", "module_include",
   "interface_prefix", "type_alias_prefix", "url_segment_case", "route_segment_case", "endpoint_segment_case", "strong_params_style",
   // "This repository logs to the console on purpose" is a repository with no
   // wrapper, and there the row is not offered at all (C8): a counter would
   // only ever state where a wrapper exists and is ignored, which is a defect.
   "route_logging", "route_network", "route_env",
-  "logger_over_puts", "http_through_client",
+  "logger_over_puts", "logger_over_print", "http_through_client",
   // A companion that does not exist is an absence. The inverse reads "a model
   // ships without a spec", which is a directive to write one test fewer.
   "rake_task_spec", "model_spec", "service_spec", "job_spec", "worker_spec",

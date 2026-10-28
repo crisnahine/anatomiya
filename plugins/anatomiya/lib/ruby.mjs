@@ -270,6 +270,7 @@ def conv(v)
       next if c.nil? || (c.is_a?(Array) && c.empty?)
       h[k.to_s] = c
     end
+    doc_of(v, h) if v.is_a?(Prism::DefNode) || v.is_a?(Prism::ClassNode) || v.is_a?(Prism::ModuleNode)
     h
   when Array then v.map { |x| conv(x) }.compact
   when Symbol then utf8(v.to_s)
@@ -279,6 +280,37 @@ def conv(v)
   when Float then v.finite? ? v : nil
   when Integer, true, false then v
   end
+end
+
+# The comments that end right above a definition, unbroken by a blank line,
+# and a method's parameters as written: what the code index shows for it.
+def doc_of(v, h)
+  run = []
+  want = v.location.start_line - 1
+  while (c = $comments[want])
+    run.unshift(c[1])
+    want = c[0] - 1
+  end
+  h["doc"] = utf8(run.join("\n")) unless run.empty?
+  h["sig"] = utf8(v.parameters.slice) if v.is_a?(Prism::DefNode) && v.parameters
+end
+
+# Each comment alone on its lines, by the line it ends on, as [first line, text]. Read once per
+# file: prism's attach_comments! weighs every comment against every node, quadratic in the file.
+def comment_lines(r, src)
+  lines = src.lines
+  by_end = {}
+  r.comments.each do |c|
+    loc = c.location
+    # Read as bytes: a line that is no valid UTF-8 cannot be stripped as text.
+    before = (lines[loc.start_line - 1] || "").b.byteslice(0, loc.start_column) || ""
+    # An =begin block ends with the newline after its =end.
+    last = c.slice.end_with?("\n") ? loc.end_line - 1 : loc.end_line
+    by_end[last] = [loc.start_line, c.slice] if before.strip.empty?
+  end
+  by_end
+rescue StandardError
+  {}
 end
 
 # A string as JSON can carry it. \`# encoding: ascii-8bit\` makes "\\xff" a
@@ -347,6 +379,7 @@ data.split("\\0").each_slice(2) do |rel, abs|
              "error" => r.errors.length.to_s + " syntax error(s)" })
       next
     end
+    $comments = comment_lines(r, src)
     emit({ "rel" => rel, "ok" => true, "ast" => conv(r.value),
            "errors" => 0, "length" => src.length })
   rescue SystemStackError, NoMemoryError

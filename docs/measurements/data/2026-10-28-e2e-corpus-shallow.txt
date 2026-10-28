@@ -1,0 +1,340 @@
+| Newtonsoft.Json | 951 | 19 | 0/35 | 2/0/19 | 20 | yes | ok | 0 | n.a. (no claim stated) | n.a. (no claim stated) | off no-checked-files | 4.3 |
+| Slim | 125 | 11 | 6/30 | 3/0/11 | 12 | yes | ok | 0 | yes declared_return_type | n.a. (no claim stated) | off no-checked-files | 2.3 |
+| caddy | 401 | 30 | 0/47 | 7/0/30 | 31 | yes | ok | 0 | n.a. (no claim stated) | n.a. (no claim stated) | off no-checked-files | 2.8 |
+| commons-lang | 630 | 22 | 0/47 | 3/0/22 | 23 | yes | ok | 0 | n.a. (no claim stated) | n.a. (no claim stated) | off no-checked-files | 3.6 |
+| composer | 562 | 39 | 0/111 | 4/0/39 | 40 | yes | ok | 0 | n.a. (no claim stated) | n.a. (no claim stated) | off no-checked-files | 3.6 |
+| django | 2973 | 109 | 0/365 | 3/6/109 | 110 | yes | ok | 0 | n.a. (no claim stated) | n.a. (no claim stated) | off plain-javascript | 8.9 |
+| fastapi | 1223 | 41 | 0/135 | 5/1/41 | 42 | yes | ok | 0 | n.a. (no claim stated) | n.a. (no claim stated) | off plain-javascript | 4.1 |
+| flask | 83 | 11 | 1/27 | 5/0/11 | 12 | yes | ok | 0 | yes declared_return_type | n.a. (no claim stated) | off no-checked-files | 2.2 |
+| framework | 3163 | 121 | 0/343 | 3/1/121 | 122 | yes | ok | 0 | n.a. (no claim stated) | n.a. (no claim stated) | off plain-javascript | 7.4 |
+| gin | 98 | 4 | 0/5 | 6/0/4 | 5 | yes | ok | 0 | n.a. (no claim stated) | n.a. (no claim stated) | off no-checked-files | 2.1 |
+| gson | 264 | 12 | 1/30 | 7/0/12 | 13 | yes | ok | 0 | yes public_doc_comment | n.a. (no claim stated) | off no-checked-files | 2.5 |
+| hugo | 932 | 64 | 0/133 | 7/5/64 | 65 | yes | ok | 0 | n.a. (no claim stated) | n.a. (no claim stated) | off plain-javascript | 4.6 |
+| jellyfin | 2251 | 91 | 0/209 | 7/0/91 | 92 | yes | ok | 0 | n.a. (no claim stated) | n.a. (no claim stated) | off no-checked-files | 5.9 |
+| junit5 | 2039 | 76 | 0/166 | 7/0/76 | 77 | yes | ok | 0 | n.a. (no claim stated) | n.a. (no claim stated) | off plain-javascript | 5.6 |
+| kotlinx.serialization | 728 | 44 | 1/79 | 7/0/44 | 45 | yes | ok | 0 | yes public_doc_comment | n.a. (no claim stated) | off no-checked-files | 3.9 |
+| ktor | 2618 | 148 | 0/363 | 7/0/148 | 149 | yes | ok | 0 | n.a. (no claim stated) | n.a. (no claim stated) | off plain-javascript | 8.5 |
+| okhttp | 690 | 55 | 0/132 | 7/0/55 | 56 | yes | ok | 0 | n.a. (no claim stated) | n.a. (no claim stated) | off no-checked-files | 4.2 |
+| ripgrep | 103 | 10 | 3/19 | 7/0/10 | 11 | yes | ok | 0 | yes public_doc_comment | n.a. (no claim stated) | off no-checked-files | 2.6 |
+| serde | 208 | 11 | 0/11 | 7/0/11 | 12 | yes | ok | 0 | n.a. (no claim stated) | n.a. (no claim stated) | off no-checked-files | 2.2 |
+| serilog | 217 | 21 | 2/35 | 6/0/21 | 22 | yes | ok | 0 | yes public_doc_comment | n.a. (no claim stated) | off no-checked-files | 2.7 |
+| tokio | 814 | 34 | 0/42 | 7/0/34 | 35 | yes | ok | 0 | n.a. (no claim stated) | n.a. (no claim stated) | off no-checked-files | 3.2 |
+| anatomiya | 260 | 4 | 21/60 | 6/4/4 | 5 | yes | ok | 0 | yes file_naming_case | n.a. (no claim stated) | off plain-javascript | 4.3 |
+
+| repo | files | areas | stated | roots | wrote | stable | pin | clean | probe | cochange | semantic | seconds |
+|---|---|---|---|---|---|---|---|---|---|---|---|---|
+| Newtonsoft.Json | 951 | 19 | 0/35 | 2/0/19 | 20 | yes | ok | 0 | n.a. (no claim stated) | n.a. (no claim stated) | off no-checked-files | 4.3 |
+| Slim | 125 | 11 | 6/30 | 3/0/11 | 12 | yes | ok | 0 | yes declared_return_type | n.a. (no claim stated) | off no-checked-files | 2.3 |
+| caddy | 401 | 30 | 0/47 | 7/0/30 | 31 | yes | ok | 0 | n.a. (no claim stated) | n.a. (no claim stated) | off no-checked-files | 2.8 |
+| commons-lang | 630 | 22 | 0/47 | 3/0/22 | 23 | yes | ok | 0 | n.a. (no claim stated) | n.a. (no claim stated) | off no-checked-files | 3.6 |
+| composer | 562 | 39 | 0/111 | 4/0/39 | 40 | yes | ok | 0 | n.a. (no claim stated) | n.a. (no claim stated) | off no-checked-files | 3.6 |
+| django | 2973 | 109 | 0/365 | 3/6/109 | 110 | yes | ok | 0 | n.a. (no claim stated) | n.a. (no claim stated) | off plain-javascript | 8.9 |
+| fastapi | 1223 | 41 | 0/135 | 5/1/41 | 42 | yes | ok | 0 | n.a. (no claim stated) | n.a. (no claim stated) | off plain-javascript | 4.1 |
+| flask | 83 | 11 | 1/27 | 5/0/11 | 12 | yes | ok | 0 | yes declared_return_type | n.a. (no claim stated) | off no-checked-files | 2.2 |
+| framework | 3163 | 121 | 0/343 | 3/1/121 | 122 | yes | ok | 0 | n.a. (no claim stated) | n.a. (no claim stated) | off plain-javascript | 7.4 |
+| gin | 98 | 4 | 0/5 | 6/0/4 | 5 | yes | ok | 0 | n.a. (no claim stated) | n.a. (no claim stated) | off no-checked-files | 2.1 |
+| gson | 264 | 12 | 1/30 | 7/0/12 | 13 | yes | ok | 0 | yes public_doc_comment | n.a. (no claim stated) | off no-checked-files | 2.5 |
+| hugo | 932 | 64 | 0/133 | 7/5/64 | 65 | yes | ok | 0 | n.a. (no claim stated) | n.a. (no claim stated) | off plain-javascript | 4.6 |
+| jellyfin | 2251 | 91 | 0/209 | 7/0/91 | 92 | yes | ok | 0 | n.a. (no claim stated) | n.a. (no claim stated) | off no-checked-files | 5.9 |
+| junit5 | 2039 | 76 | 0/166 | 7/0/76 | 77 | yes | ok | 0 | n.a. (no claim stated) | n.a. (no claim stated) | off plain-javascript | 5.6 |
+| kotlinx.serialization | 728 | 44 | 1/79 | 7/0/44 | 45 | yes | ok | 0 | yes public_doc_comment | n.a. (no claim stated) | off no-checked-files | 3.9 |
+| ktor | 2618 | 148 | 0/363 | 7/0/148 | 149 | yes | ok | 0 | n.a. (no claim stated) | n.a. (no claim stated) | off plain-javascript | 8.5 |
+| okhttp | 690 | 55 | 0/132 | 7/0/55 | 56 | yes | ok | 0 | n.a. (no claim stated) | n.a. (no claim stated) | off no-checked-files | 4.2 |
+| ripgrep | 103 | 10 | 3/19 | 7/0/10 | 11 | yes | ok | 0 | yes public_doc_comment | n.a. (no claim stated) | off no-checked-files | 2.6 |
+| serde | 208 | 11 | 0/11 | 7/0/11 | 12 | yes | ok | 0 | n.a. (no claim stated) | n.a. (no claim stated) | off no-checked-files | 2.2 |
+| serilog | 217 | 21 | 2/35 | 6/0/21 | 22 | yes | ok | 0 | yes public_doc_comment | n.a. (no claim stated) | off no-checked-files | 2.7 |
+| tokio | 814 | 34 | 0/42 | 7/0/34 | 35 | yes | ok | 0 | n.a. (no claim stated) | n.a. (no claim stated) | off no-checked-files | 3.2 |
+| anatomiya | 260 | 4 | 21/60 | 6/4/4 | 5 | yes | ok | 0 | yes file_naming_case | n.a. (no claim stated) | off plain-javascript | 4.3 |
+
+Newtonsoft.Json: base origin/HEAD (52fa3ae), 0 changed files, compare
+Slim: base origin/HEAD (3675bf6), 0 changed files, compare
+caddy: base origin/HEAD (71c5812), 0 changed files, compare
+commons-lang: base origin/HEAD (a5d6c5e), 0 changed files, compare
+composer: base origin/HEAD (b56a3f5), 0 changed files, compare
+django: base origin/HEAD (a6304ac), 0 changed files, compare
+fastapi: base origin/HEAD (79cab5b), 0 changed files, compare
+flask: base origin/HEAD (d086db8), 0 changed files, compare
+framework: base origin/HEAD (5c82f40), 0 changed files, compare
+gin: base origin/HEAD (0f09c3a), 0 changed files, compare
+gson: base origin/HEAD (5773104), 0 changed files, compare
+hugo: base origin/HEAD (de8237b), 0 changed files, compare
+jellyfin: base origin/HEAD (02c2951), 0 changed files, compare
+junit5: base origin/HEAD (ca61d8b), 0 changed files, compare
+kotlinx.serialization: base origin/HEAD (6f6a2e6), 0 changed files, compare
+ktor: base origin/HEAD (d962801), 0 changed files, compare
+okhttp: base origin/HEAD (a11e55f), 0 changed files, compare
+ripgrep: base origin/HEAD (91f5d22), 0 changed files, compare
+serde: base origin/HEAD (0db9b3b), 0 changed files, compare
+serilog: base origin/HEAD (43105b3), 0 changed files, compare
+tokio: base origin/HEAD (0d38f83), 0 changed files, compare
+anatomiya: base origin/HEAD (e7246fe), 0 changed files, compare
+
+--- Newtonsoft.Json scan against the pin ---
+951 files, 19 areas, 875ms, root <scratch>/e2e-scratch/Newtonsoft.Json
+engines: tree-sitter 0.27.1
+0 of 35 claims stated, they print as counts
+layout: 2 roots, 0 folded, tests: 310 xunit specs under Src/Newtonsoft.Json.Tests, 6 of 7 test files under Src/Newtonsoft.Json.Tests, 3 nunit under Src/Newtonsoft.Json.Tests; roster lines: 0 areas with imports, 9 with reuse
+baseline 52fa3aef, 0 files changed since the pin (measured against origin/HEAD)
+2 files in no area: at the repository root, under the per-directory floor, or under a name no glob can spell
+96 files in a directory nothing was counted in
+31 files were read with one branch of each #if, not the others
+history truncated: shallow clone, 1 commit since 2026-09-21, so author counts are a floor and 1 claim prints as counts on the author gate
+wrote 20 files
+a running session gets the new overview on its next prompt or tool call, and a new session, a compaction or /clear loads the whole map
+
+--- Slim scan against the pin ---
+125 files, 11 areas, 356ms, root <scratch>/e2e-scratch/Slim
+engines: tree-sitter 0.27.1
+6 of 30 claims stated, the rest print as counts
+layout: 3 roots, 0 folded, tests: 29 phpunit specs under tests, 5 test files under tests/Mocks; roster lines: 0 areas with imports, 8 with reuse
+baseline 3675bf6b, 0 files changed since the pin (measured against origin/HEAD)
+6 files in no area: at the repository root, under the per-directory floor, or under a name no glob can spell
+12 files in a directory nothing was counted in
+wrote 12 files
+a running session gets the new overview on its next prompt or tool call, and a new session, a compaction or /clear loads the whole map
+
+--- caddy scan against the pin ---
+401 files, 30 areas, 477ms, root <scratch>/e2e-scratch/caddy
+engines: tree-sitter 0.27.1
+0 of 47 claims stated, they print as counts
+layout: 7 roots, 0 folded, tests: 173 go test specs; roster lines: 0 areas with imports, 7 with reuse
+baseline 71c5812c, 0 files changed since the pin (measured against origin/HEAD)
+2 files in no area: at the repository root, under the per-directory floor, or under a name no glob can spell
+31 files in a directory nothing was counted in
+history truncated: shallow clone, 1 commit since 2026-10-26, so author counts are a floor and 7 claims print as counts on the author gate
+wrote 31 files
+a running session gets the new overview on its next prompt or tool call, and a new session, a compaction or /clear loads the whole map
+
+--- commons-lang scan against the pin ---
+630 files, 22 areas, 755ms, root <scratch>/e2e-scratch/commons-lang
+engines: tree-sitter 0.27.1
+0 of 47 claims stated, they print as counts
+layout: 3 roots, 0 folded, tests: 303 junit specs under src/test/java/org/apache/commons/lang3, 22 test files under src/test/java/org/apache/commons/lang3; roster lines: 0 areas with imports, 14 with reuse
+baseline a5d6c5ed, 0 files changed since the pin (measured against origin/HEAD)
+3 files in no area: at the repository root, under the per-directory floor, or under a name no glob can spell
+38 files in a directory nothing was counted in
+1 file could not be read by this tool's grammar. That is a syntax error or syntax the grammar does not cover; the file may be fine.
+history truncated: shallow clone, 1 commit since 2026-10-27, so author counts are a floor and 9 claims print as counts on the author gate
+wrote 23 files
+a running session gets the new overview on its next prompt or tool call, and a new session, a compaction or /clear loads the whole map
+
+--- composer scan against the pin ---
+562 files, 39 areas, 678ms, root <scratch>/e2e-scratch/composer
+engines: tree-sitter 0.27.1
+0 of 111 claims stated, they print as counts
+layout: 4 roots, 0 folded, tests: 193 phpunit specs under tests/Composer/Test; roster lines: 0 areas with imports, 23 with reuse
+baseline b56a3f55, 0 files changed since the pin (measured against origin/HEAD)
+5 files in no area: at the repository root, under the per-directory floor, or under a name no glob can spell
+84 files in a directory nothing was counted in
+history truncated: shallow clone, 1 commit since 2026-10-26, so author counts are a floor and 6 claims print as counts on the author gate
+wrote 40 files
+a running session gets the new overview on its next prompt or tool call, and a new session, a compaction or /clear loads the whole map
+
+--- django scan against the pin ---
+2973 files, 109 areas, 1769ms, root <scratch>/e2e-scratch/django
+engines: oxc 0.155.0, tree-sitter 0.27.1
+0 of 365 claims stated, they print as counts
+layout: 3 roots, 0 folded, tests: 840 of 846 unittest specs under tests, 17 test files, 3 pytest under tests; roster lines: 0 areas with imports, 41 with reuse
+baseline a6304ac1, 0 files changed since the pin (measured against origin/HEAD)
+50 files in no area: at the repository root, under the per-directory floor, or under a name no glob can spell
+316 files in a directory nothing was counted in
+2 files hold syntax the parser rejected
+1 file could not be read by this tool's grammar. That is a syntax error or syntax the grammar does not cover; the file may be fine.
+history truncated: shallow clone, 1 commit since 2026-10-27, so author counts are a floor and 57 claims print as counts on the author gate
+wrote 110 files
+a running session gets the new overview on its next prompt or tool call, and a new session, a compaction or /clear loads the whole map
+
+--- fastapi scan against the pin ---
+1223 files, 41 areas, 658ms, root <scratch>/e2e-scratch/fastapi
+engines: oxc 0.155.0, tree-sitter 0.27.1
+0 of 135 claims stated, they print as counts
+layout: 5 roots, 0 folded, tests: 539 of 556 pytest specs under tests; roster lines: 0 areas with imports, 4 with reuse
+baseline 79cab5be, 0 files changed since the pin (measured against origin/HEAD)
+4 files in no area: at the repository root, under the per-directory floor, or under a name no glob can spell
+392 files in a directory nothing was counted in
+history truncated: shallow clone, 1 commit since 2026-10-26, so author counts are a floor and 5 claims print as counts on the author gate
+wrote 42 files
+a running session gets the new overview on its next prompt or tool call, and a new session, a compaction or /clear loads the whole map
+
+--- flask scan against the pin ---
+83 files, 11 areas, 315ms, root <scratch>/e2e-scratch/flask
+engines: tree-sitter 0.27.1
+1 of 27 claims stated, the rest print as counts
+layout: 5 roots, 0 folded, tests: 30 pytest specs; roster lines: 0 areas with imports, 3 with reuse
+baseline d086db85, 0 files changed since the pin (measured against origin/HEAD)
+3 files in no area: at the repository root, under the per-directory floor, or under a name no glob can spell
+8 files in a directory nothing was counted in
+wrote 12 files
+a running session gets the new overview on its next prompt or tool call, and a new session, a compaction or /clear loads the whole map
+
+--- framework scan against the pin ---
+3163 files, 121 areas, 1685ms, root <scratch>/e2e-scratch/framework
+engines: oxc 0.155.0, tree-sitter 0.27.1
+0 of 343 claims stated, they print as counts
+layout: 3 roots, 0 folded, tests: 1000 phpunit specs under tests, 11 of 12 test files under tests/Integration; roster lines: 0 areas with imports, 69 with reuse
+baseline 5c82f404, 0 files changed since the pin (measured against origin/HEAD)
+64 files in no area: at the repository root, under the per-directory floor, or under a name no glob can spell
+320 files in a directory nothing was counted in
+2 files could not be read by this tool's grammar. That is a syntax error or syntax the grammar does not cover; the files may be fine.
+history truncated: shallow clone, 1 commit since 2026-10-27, so author counts are a floor and 87 claims print as counts on the author gate
+wrote 122 files
+a running session gets the new overview on its next prompt or tool call, and a new session, a compaction or /clear loads the whole map
+
+--- gin scan against the pin ---
+98 files, 4 areas, 313ms, root <scratch>/e2e-scratch/gin
+engines: tree-sitter 0.27.1
+0 of 5 claims stated, they print as counts
+layout: 6 roots, 0 folded, tests: 40 go test specs; roster lines: 0 areas with imports, 1 with reuse
+baseline 0f09c3a9, 0 files changed since the pin (measured against origin/HEAD)
+2 files in no area: at the repository root, under the per-directory floor, or under a name no glob can spell
+5 files in a directory nothing was counted in
+history truncated: shallow clone, 1 commit since 2026-10-10, so author counts are a floor and 1 claim prints as counts on the author gate
+wrote 5 files
+a running session gets the new overview on its next prompt or tool call, and a new session, a compaction or /clear loads the whole map
+
+--- gson scan against the pin ---
+264 files, 12 areas, 410ms, root <scratch>/e2e-scratch/gson
+engines: tree-sitter 0.27.1
+1 of 30 claims stated, the rest print as counts
+layout: 7 roots, 3 folded, tests: 116 of 133 junit specs under gson/src/test/java/com/google/gson, 3 test files under gson/src/test/java/com/google/gson; roster lines: 0 areas with imports, 5 with reuse
+baseline 57731049, 0 files changed since the pin (measured against origin/HEAD)
+9 files in no area: at the repository root, under the per-directory floor, or under a name no glob can spell
+42 files in a directory nothing was counted in
+wrote 13 files
+a running session gets the new overview on its next prompt or tool call, and a new session, a compaction or /clear loads the whole map
+
+--- hugo scan against the pin ---
+932 files, 64 areas, 847ms, root <scratch>/e2e-scratch/hugo
+engines: oxc 0.155.0, tree-sitter 0.27.1
+0 of 133 claims stated, they print as counts
+layout: 7 roots, 7 folded, tests: 393 go test specs; roster lines: 0 areas with imports, 35 with reuse
+baseline de8237b6, 0 files changed since the pin (measured against origin/HEAD)
+52 files in no area: at the repository root, under the per-directory floor, or under a name no glob can spell
+history truncated: shallow clone, 1 commit since 2026-10-27, so author counts are a floor and 1 claim prints as counts on the author gate
+wrote 65 files
+a running session gets the new overview on its next prompt or tool call, and a new session, a compaction or /clear loads the whole map
+
+--- jellyfin scan against the pin ---
+2251 files, 91 areas, 1327ms, root <scratch>/e2e-scratch/jellyfin
+engines: tree-sitter 0.27.1
+0 of 209 claims stated, they print as counts
+layout: 7 roots, 9 folded, tests: 298 xunit specs under tests, 1 test file under tests/Jellyfin.Server.Implementations.Tests/Data; roster lines: 0 areas with imports, 51 with reuse
+baseline 02c2951e, 0 files changed since the pin (measured against origin/HEAD)
+53 files in no area: at the repository root, under the per-directory floor, or under a name no glob can spell
+299 files in a directory nothing was counted in
+1 file could not be read by this tool's grammar. That is a syntax error or syntax the grammar does not cover; the file may be fine.
+history truncated: shallow clone, 1 commit since 2026-10-26, so author counts are a floor and 27 claims print as counts on the author gate
+wrote 92 files
+a running session gets the new overview on its next prompt or tool call, and a new session, a compaction or /clear loads the whole map
+
+--- junit5 scan against the pin ---
+2039 files, 76 areas, 1236ms, root <scratch>/e2e-scratch/junit5
+engines: oxc 0.155.0, tree-sitter 0.27.1
+0 of 166 claims stated, they print as counts
+layout: 7 roots, 10 folded, tests: 671 junit specs, 17 test files; roster lines: 0 areas with imports, 39 with reuse
+baseline ca61d8b0, 0 files changed since the pin (measured against origin/HEAD)
+150 files in no area: at the repository root, under the per-directory floor, or under a name no glob can spell
+195 files in a directory nothing was counted in
+8 files could not be read by this tool's grammar. That is a syntax error or syntax the grammar does not cover; the files may be fine.
+history truncated: shallow clone, 1 commit since 2026-10-27, so author counts are a floor and 10 claims print as counts on the author gate
+wrote 77 files
+a running session gets the new overview on its next prompt or tool call, and a new session, a compaction or /clear loads the whole map
+
+--- kotlinx.serialization scan against the pin ---
+728 files, 44 areas, 821ms, root <scratch>/e2e-scratch/kotlinx.serialization
+engines: tree-sitter 0.27.1
+1 of 79 claims stated, the rest print as counts
+layout: 7 roots, 1 folded, tests: 196 of 236 kotlin.test specs under formats, 41 junit, 12 test files under formats; roster lines: 0 areas with imports, 11 with reuse
+baseline 6f6a2e66, 0 files changed since the pin (measured against origin/HEAD)
+29 files in no area: at the repository root, under the per-directory floor, or under a name no glob can spell
+91 files in a directory nothing was counted in
+5 files could not be read by this tool's grammar. That is a syntax error or syntax the grammar does not cover; the files may be fine.
+wrote 45 files
+a running session gets the new overview on its next prompt or tool call, and a new session, a compaction or /clear loads the whole map
+
+--- ktor scan against the pin ---
+2618 files, 148 areas, 1838ms, root <scratch>/e2e-scratch/ktor
+engines: oxc 0.155.0, tree-sitter 0.27.1
+0 of 363 claims stated, they print as counts
+layout: 7 roots, 3 folded, tests: 562 kotlin.test specs, 66 test files, 19 junit; roster lines: 0 areas with imports, 30 with reuse
+baseline d9628016, 0 files changed since the pin (measured against origin/HEAD)
+260 files in no area: at the repository root, under the per-directory floor, or under a name no glob can spell
+135 files in a directory nothing was counted in
+82 files could not be read by this tool's grammar. That is a syntax error or syntax the grammar does not cover; the files may be fine.
+history truncated: shallow clone, 1 commit since 2026-10-19, so author counts are a floor and 1 claim prints as counts on the author gate
+wrote 149 files
+a running session gets the new overview on its next prompt or tool call, and a new session, a compaction or /clear loads the whole map
+
+--- okhttp scan against the pin ---
+690 files, 55 areas, 992ms, root <scratch>/e2e-scratch/okhttp
+engines: tree-sitter 0.27.1
+0 of 132 claims stated, they print as counts
+layout: 7 roots, 15 folded, tests: 175 junit specs, 19 of 20 kotlin.test under okhttp/src, 4 test files; roster lines: 0 areas with imports, 19 with reuse
+baseline a11e55f8, 0 files changed since the pin (measured against origin/HEAD)
+67 files in no area: at the repository root, under the per-directory floor, or under a name no glob can spell
+30 files in a directory nothing was counted in
+7 files could not be read by this tool's grammar. That is a syntax error or syntax the grammar does not cover; the files may be fine.
+history truncated: shallow clone, 1 commit since 2026-10-27, so author counts are a floor
+wrote 56 files
+a running session gets the new overview on its next prompt or tool call, and a new session, a compaction or /clear loads the whole map
+
+--- ripgrep scan against the pin ---
+103 files, 10 areas, 433ms, root <scratch>/e2e-scratch/ripgrep
+engines: prism 1.5.2, tree-sitter 0.27.1
+3 of 19 claims stated, the rest print as counts
+layout: 7 roots, 0 folded, tests: 15 cargo test specs; roster lines: 0 areas with imports, 4 with reuse
+baseline 91f5d22e, 0 files changed since the pin (measured against origin/HEAD)
+9 files in no area: at the repository root, under the per-directory floor, or under a name no glob can spell
+26 files in a directory nothing was counted in
+wrote 11 files
+a running session gets the new overview on its next prompt or tool call, and a new session, a compaction or /clear loads the whole map
+
+--- serde scan against the pin ---
+208 files, 11 areas, 355ms, root <scratch>/e2e-scratch/serde
+engines: tree-sitter 0.27.1
+0 of 11 claims stated, they print as counts
+layout: 7 roots, 4 folded, tests: 23 cargo test specs under test_suite/tests; roster lines: 0 areas with imports, 2 with reuse
+baseline 0db9b3b5, 0 files changed since the pin (measured against origin/HEAD)
+8 files in no area: at the repository root, under the per-directory floor, or under a name no glob can spell
+101 files in a directory nothing was counted in
+history truncated: shallow clone, 1 commit since 2026-10-15, so author counts are a floor
+wrote 12 files
+a running session gets the new overview on its next prompt or tool call, and a new session, a compaction or /clear loads the whole map
+
+--- serilog scan against the pin ---
+217 files, 21 areas, 514ms, root <scratch>/e2e-scratch/serilog
+engines: tree-sitter 0.27.1
+2 of 35 claims stated, the rest print as counts
+layout: 6 roots, 0 folded, tests: 39 of 41 xunit specs under test/Serilog.Tests, 1 test file under test/Serilog.Tests; roster lines: 0 areas with imports, 12 with reuse
+baseline 43105b35, 0 files changed since the pin (measured against origin/HEAD)
+3 files in no area: at the repository root, under the per-directory floor, or under a name no glob can spell
+41 files in a directory nothing was counted in
+1 file could not be read by this tool's grammar. That is a syntax error or syntax the grammar does not cover; the file may be fine.
+8 files were read with one branch of each #if, not the others
+wrote 22 files
+a running session gets the new overview on its next prompt or tool call, and a new session, a compaction or /clear loads the whole map
+
+--- tokio scan against the pin ---
+814 files, 34 areas, 598ms, root <scratch>/e2e-scratch/tokio
+engines: tree-sitter 0.27.1
+0 of 42 claims stated, they print as counts
+layout: 7 roots, 2 folded, tests: 289 cargo test specs; roster lines: 0 areas with imports, 14 with reuse
+baseline 0d38f834, 0 files changed since the pin (measured against origin/HEAD)
+15 files in no area: at the repository root, under the per-directory floor, or under a name no glob can spell
+347 files in a directory nothing was counted in
+history truncated: shallow clone, 1 commit since 2026-10-27, so author counts are a floor and 17 claims print as counts on the author gate
+wrote 35 files
+a running session gets the new overview on its next prompt or tool call, and a new session, a compaction or /clear loads the whole map
+
+--- anatomiya scan against the pin ---
+260 files, 4 areas, 704ms, root <scratch>/e2e-scratch/anatomiya
+engines: oxc 0.155.0
+21 of 60 claims stated, 8 match the model default, the rest print as counts
+layout: 6 roots, 0 folded, tests: 112 node:test specs under test; roster lines: 2 areas with imports, 3 with reuse
+baseline e7246fe0, 0 files changed since the pin (measured against origin/HEAD)
+1 file in no area: at the repository root, under the per-directory floor, or under a name no glob can spell
+wrote 5 files
+a running session gets the new overview on its next prompt or tool call, and a new session, a compaction or /clear loads the whole map
+
+22 of 22 repositories passed
+e2e exit 0

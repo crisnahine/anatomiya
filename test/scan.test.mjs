@@ -1187,7 +1187,8 @@ test("an area only the checker counted in is described by no scan whose checker 
 });
 
 /** A scan's answer less the moments it was taken at. */
-const still = (r) => ({ ...r, scannedAt: null, durationMs: null, semantic: { ...r.semantic, measuredAt: null } });
+// The index is built on demand, so it is compared as built.
+const still = (r) => ({ ...r, scannedAt: null, durationMs: null, semantic: { ...r.semantic, measuredAt: null }, codeIndex: r.codeIndex() });
 
 /** The parse with every hit taken out, so an area is counted in only by the checker. */
 const onlyTyped = async (files, options) => {

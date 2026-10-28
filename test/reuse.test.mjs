@@ -9,7 +9,8 @@ import { execFileSync, spawnSync } from "node:child_process";
 import { scriptGit } from "./git-script.mjs";
 import { needsPathControl, needsPosixPaths, needsPosixSpecialFiles, needsShebang, needsSymlinks, removeTree } from "./platform.mjs";
 import { snapshot, transcript } from "./transcript.mjs";
-import { askedMarksIn, continuedByReuseIn, pendingChange, REUSE_GIT_MS, REUSE_MARK, reuseReason, TRANSCRIPT_MOST } from "../plugins/anatomiya/lib/reuse.mjs";
+import { indexHome } from "../plugins/anatomiya/lib/index-home.mjs";
+import { askedMarksIn, continuedByReuseIn, finderFor, pendingChange, quotable, resumedByReuseIn, REUSE_GIT_MS, REUSE_MARK, reuseReason, TRANSCRIPT_MOST } from "../plugins/anatomiya/lib/reuse.mjs";
 import { runReuse } from "../plugins/anatomiya/lib/hook-verbs.mjs";
 import { PAYLOAD_WAIT_MS } from "../plugins/anatomiya/lib/hook.mjs";
 import { REUSE_PARSE_MS } from "../plugins/anatomiya/lib/inert.mjs";
@@ -97,6 +98,38 @@ test("the reason is the wording A123 settled, naming the lines the change added"
     reason
   );
   assert.match(reason, new RegExp(`\\(${REUSE_MARK} aaaaaaaaaaaa bbbbbbbbbbbb\\)$`));
+});
+
+test("with a code index the reason hands the subagent find in place of the grep, and keeps every other sentence", () => {
+  const files = [{ path: "src/a.ts", mark: "aaaaaaaaaaaa", hunks: [{ from: 3, to: 9, created: false }] }];
+  const plain = reuseReason(files);
+  const finder = "node \"/opt/plugin/bin/anatomiya.mjs\" find '<words>'";
+  const found = reuseReason(files, { finder });
+
+  assert.match(found, /Have it run `node "\/opt\/plugin\/bin\/anatomiya\.mjs" find '<words>'` in the repository, two or three words with no quote mark for what each added function does, at most three calls/);
+  assert.match(found, /have it grep only for code making the same calls, then name every existing function/);
+  assert.doesNotMatch(found, /Have it grep shared and utility modules/);
+  // Everything after the search is A123's, word for word.
+  const tail = (reason) => reason.slice(reason.indexOf("For each added function"));
+  assert.equal(tail(found), tail(plain));
+});
+
+test("the finder is the checkout's own index, or its main checkout's for a linked worktree, and none where neither has one", async (t) => {
+  const { addWorktree, initWithCommit, scratch } = await import("./git-worktrees.mjs");
+  const main = scratch(t);
+  initWithCommit(main);
+  const tree = join(main, "..", `${basename(main)}-wt`);
+  addWorktree(main, tree);
+  t.after(() => rmSync(tree, { recursive: true, force: true }));
+  assert.equal(indexHome(main), null);
+  assert.equal(finderFor(main), null);
+
+  mkdirSync(join(main, ".claude", "anatomiya"), { recursive: true });
+  writeFileSync(join(main, ".claude", "anatomiya", "index.json.gz"), "");
+  assert.equal(indexHome(main), main);
+  assert.equal(indexHome(tree), main, "a linked worktree borrows its main checkout's");
+  // The words go in one single-quoted argument, so a shell globs none of them: `local_url?` is a pattern to zsh.
+  assert.match(finderFor(tree), /^node ".+anatomiya\.mjs" find '<words>'$/);
 });
 
 test("a long change names its first hunks, counts the rest, and marks every file", () => {
@@ -1252,6 +1285,135 @@ test("the stop right after the check records what the check left, so the next tu
   append(session, recorded(after.systemMessage));
 
   assert.deepEqual(await runReuse(dir, stop(dir, { transcript_path: session })), {});
+});
+
+test("the turn a background check's result opens is the check's own fix, recorded and not asked about again", async (t) => {
+  // A subagent run in the background reports back as a task notification, a turn of its own, and the
+  // stop after the fix must not ask about that fix again.
+  const { dir, write } = repo(t);
+  write("src/b.ts", NEW_B);
+  const first = await runReuse(dir, stop(dir, { transcript_path: begun(t) }));
+  const now = Date.now();
+  const notice = { type: "user", timestamp: new Date(now).toISOString(), message: { role: "user", content: "<task-notification>\n<task-id>aa01</task-id>\n<tool-use-id>toolu_check</tool-use-id>\n<status>completed</status>\n</task-notification>" } };
+  const session = begun(t, [blocked(first.reason), ...call("Agent", "toolu_check", now - 5000, now - 4900), notice]);
+  write("src/b.ts", "import { one } from \"./a.ts\";\nexport const b = () => one + 1;\n");
+
+  const after = await runReuse(dir, stop(dir, { transcript_path: session }));
+  assert.deepEqual(Object.keys(after), ["systemMessage"], "it records and asks nothing");
+  append(session, recorded(after.systemMessage));
+  assert.deepEqual(await runReuse(dir, stop(dir, { transcript_path: session })), {});
+});
+
+// A message that arrives while the session works is no user entry: Claude Code queues it and records it as an attachment.
+const queued = (prompt, at = Date.now()) => ({ type: "attachment", timestamp: new Date(at).toISOString(), attachment: { type: "queued_command", prompt, commandMode: "prompt" } });
+
+test("a prompt typed while the check's result turn runs is asked about, not recorded as the check's fix", async (t) => {
+  const { dir, write } = repo(t);
+  write("src/b.ts", NEW_B);
+  const first = await runReuse(dir, stop(dir, { transcript_path: begun(t) }));
+  const now = Date.now();
+  const notice = { type: "user", timestamp: new Date(now - 3000).toISOString(), message: { role: "user", content: "<task-notification>\n<tool-use-id>toolu_check</tool-use-id>\n</task-notification>" } };
+  const session = begun(t, [blocked(first.reason), ...call("Agent", "toolu_check", now - 5000, now - 4900), notice, queued("also add a retry helper", now - 1000)]);
+  write("src/c.ts", "export function retry() {\n  return 3;\n}\n");
+
+  const answer = await runReuse(dir, stop(dir, { transcript_path: session }));
+  assert.equal(answer.decision, "block");
+  assert.match(answer.reason, /src\/c\.ts:1-3 \(new file\)/);
+});
+
+test("a queued notification that names no call opens nothing, as no person spoke", async (t) => {
+  const { dir, write } = repo(t);
+  write("src/b.ts", NEW_B);
+  const first = await runReuse(dir, stop(dir, { transcript_path: begun(t) }));
+  const now = Date.now();
+  const notice = { type: "user", timestamp: new Date(now - 3000).toISOString(), message: { role: "user", content: "<task-notification>\n<tool-use-id>toolu_check</tool-use-id>\n</task-notification>" } };
+  const session = begun(t, [blocked(first.reason), ...call("Agent", "toolu_check", now - 5000, now - 4900), notice, queued("<task-notification>\n<task-id>bb02</task-id>\n<status>completed</status>\n</task-notification>", now - 1000)]);
+  write("src/b.ts", "import { one } from \"./a.ts\";\nexport const b = () => one + 1;\n");
+
+  const after = await runReuse(dir, stop(dir, { transcript_path: session }));
+  assert.deepEqual(Object.keys(after), ["systemMessage"], "it records and asks nothing");
+});
+
+test("the check's result arriving in a turn another call opened is still the check's own fix", async (t) => {
+  const { dir, write } = repo(t);
+  write("src/b.ts", NEW_B);
+  const first = await runReuse(dir, stop(dir, { transcript_path: begun(t) }));
+  const now = Date.now();
+  const opener = { type: "user", timestamp: new Date(now - 3000).toISOString(), message: { role: "user", content: "<task-notification>\n<tool-use-id>toolu_tests</tool-use-id>\n</task-notification>" } };
+  const session = begun(t, [
+    blocked(first.reason),
+    ...call("Agent", "toolu_check", now - 6000, now - 5900),
+    ...call("Bash", "toolu_tests", now - 5800, now - 5700),
+    opener,
+    queued("<task-notification>\n<tool-use-id>toolu_check</tool-use-id>\n</task-notification>", now - 1000),
+  ]);
+  write("src/b.ts", "import { one } from \"./a.ts\";\nexport const b = () => one + 1;\n");
+
+  const after = await runReuse(dir, stop(dir, { transcript_path: session }));
+  assert.deepEqual(Object.keys(after), ["systemMessage"], "it records and asks nothing");
+});
+
+test("a tail that opens on another hook's feedback is read to its end, not looped on", { timeout: 5000 }, () => {
+  // The tail starts at an arbitrary byte, and a match at its very start was searched for again from there.
+  assert.equal(resumedByReuseIn('Stop hook feedback: something else"}}\n{"type":"user"}\n'), false);
+});
+
+test("a bin path is quoted only where a shell reads it back as itself", () => {
+  assert.equal(quotable("/Users/a b/.claude/plugins/anatomiya/bin/anatomiya.mjs"), true);
+  assert.equal(quotable("C:\\Users\\x\\anatomiya\\bin\\anatomiya.mjs"), true);
+  // A UNC path's leading pair is one backslash to bash, and `$`, a backtick or a quote is read.
+  for (const path of ["\\\\server\\share\\bin.mjs", "/tmp/$x/bin.mjs", "/tmp/a`b`/bin.mjs", '/tmp/a"b/bin.mjs']) assert.equal(quotable(path), false, path);
+});
+
+test("a background call launched after the person's next prompt is no part of the check", async (t) => {
+  // The check's own result was recorded; a new prompt, an unrelated subagent, and its result open a turn of their own.
+  const { dir, write } = repo(t);
+  write("src/b.ts", NEW_B);
+  const first = await runReuse(dir, stop(dir, { transcript_path: begun(t) }));
+  const now = Date.now();
+  const notice = (id, at) => ({ type: "user", timestamp: new Date(at).toISOString(), message: { role: "user", content: `<task-notification>\n<tool-use-id>${id}</tool-use-id>\n</task-notification>` } });
+  const session = begun(t, [
+    blocked(first.reason),
+    ...call("Agent", "toolu_check", now - 9000, now - 8900),
+    notice("toolu_check", now - 8000),
+    prompted(new Date(now - 7000)),
+    ...call("Agent", "toolu_explore", now - 6000, now - 5900),
+    notice("toolu_explore", now - 5000),
+  ]);
+  write("src/c.ts", "export function c() {\n  return 3;\n}\n");
+
+  const answer = await runReuse(dir, stop(dir, { transcript_path: session }));
+  assert.equal(answer.decision, "block");
+  assert.match(answer.reason, /src\/c\.ts:1-3 \(new file\)/);
+});
+
+test("a background Bash call's result is no search the check asked for", async (t) => {
+  const { dir, write } = repo(t);
+  write("src/b.ts", NEW_B);
+  const first = await runReuse(dir, stop(dir, { transcript_path: begun(t) }));
+  const now = Date.now();
+  const notice = { type: "user", timestamp: new Date(now).toISOString(), message: { role: "user", content: "<task-notification>\n<tool-use-id>toolu_tests</tool-use-id>\n</task-notification>" } };
+  const session = begun(t, [blocked(first.reason), ...call("Bash", "toolu_tests", now - 9000, now - 8900), notice]);
+  write("src/c.ts", "export function c() {\n  return 3;\n}\n");
+
+  const answer = await runReuse(dir, stop(dir, { transcript_path: session }));
+  assert.equal(answer.decision, "block");
+  assert.match(answer.reason, /src\/c\.ts:1-3 \(new file\)/);
+});
+
+test("a turn some other background call's result opens is asked about as any turn is", async (t) => {
+  const { dir, write } = repo(t);
+  write("src/b.ts", NEW_B);
+  const first = await runReuse(dir, stop(dir, { transcript_path: begun(t) }));
+  const now = Date.now();
+  const notice = { type: "user", timestamp: new Date(now).toISOString(), message: { role: "user", content: "<task-notification>\n<tool-use-id>toolu_build</tool-use-id>\n</task-notification>" } };
+  // A build run in the background before the check, and an Agent launched before the block, are not the check's.
+  const session = begun(t, [...call("Agent", "toolu_build", now - 9000, now - 8900), blocked(first.reason), notice]);
+  write("src/c.ts", "export function c() {\n  return 3;\n}\n");
+
+  const answer = await runReuse(dir, stop(dir, { transcript_path: session }));
+  assert.equal(answer.decision, "block");
+  assert.match(answer.reason, /src\/c\.ts:1-3 \(new file\)/);
 });
 
 /** Runs `call` with `fs[name]` replaced by `stub`, which is handed the real one, until its promise settles. */

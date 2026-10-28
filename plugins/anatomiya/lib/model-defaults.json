@@ -734,5 +734,25 @@
       "samples": null,
       "sideCounts": null
     }
+  },
+  "class_inherits": {
+    "default": "none",
+    "provenance": {
+      "method": "seed",
+      "model": null,
+      "date": null,
+      "samples": null,
+      "sideCounts": null
+    }
+  },
+  "logger_over_print": {
+    "default": "none",
+    "provenance": {
+      "method": "seed",
+      "model": null,
+      "date": null,
+      "samples": null,
+      "sideCounts": null
+    }
   }
 }

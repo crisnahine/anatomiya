@@ -4,8 +4,10 @@ description: Scan this repository and write down what each directory already doe
 
 Run the scan and report what it found.
 
-After the first scan in a checkout the map keeps itself current: a background refresh rescans at the
-start of each session and whenever HEAD moves. Run this when the user asks for it, or to see the report.
+Each scan also writes the code index that `/anatomiya:find` and the end-of-turn reuse check read:
+every function, method, class and type the scan read, with its line, its doc sentence and how many
+files import it. After the first scan in a checkout the map and the index keep themselves current: a
+background refresh rescans at the start of each session and whenever HEAD moves. Run this when the user asks for it, or to see the report.
 
 1. Run the scanner. Use Bash, and use the plugin's own copy:
 

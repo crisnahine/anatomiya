@@ -1,6 +1,6 @@
 {
   "name": "crisnahine",
-  "description": "New to the codebase? So is your coding agent. anatomiya reads your repository and its git history, hands the agent your house style (where things go, which base classes and helpers to use, what ships together), and checks your branch before review.",
+  "description": "New to the codebase? So is your coding agent. anatomiya reads your repository and its git history, hands the agent your house style (where things go, which base classes and helpers to use, what ships together), indexes every function it reads, and checks your branch before review.",
   "owner": {
     "name": "crisnahine",
     "url": "https://github.com/crisnahine"
@@ -9,7 +9,7 @@
     {
       "name": "anatomiya",
       "source": "./plugins/anatomiya",
-      "description": "New to the codebase? So is your coding agent. anatomiya reads your repository and its git history, hands the agent your house style (where things go, which base classes and helpers to use, what ships together), and checks your branch before review."
+      "description": "New to the codebase? So is your coding agent. anatomiya reads your repository and its git history, hands the agent your house style (where things go, which base classes and helpers to use, what ships together), indexes every function it reads, and checks your branch before review."
     }
   ]
 }

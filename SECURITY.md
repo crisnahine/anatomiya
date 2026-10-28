@@ -335,9 +335,9 @@ removed, and neither is a file under any other name, keyed or not. So the most a
 removed is a file it shipped under this tool's own name carrying this tool's own key, or a regular
 file it shipped under such a name plus the suffix a staged file carries, `.tmp-<pid>-<16 hex>`:
 that one is removed with no key asked, where no process of that id is running, by a scan that
-writes or removes in the directory. `.claude/anatomiya` is swept the same way for eight names: a regular
+writes or removes in the directory. `.claude/anatomiya` is swept the same way for nine names: a regular
 file there named `facts.json`, `layout.json`, `refresh.json`, `baseline.json`, `refresh.lock`,
-`commit.lock`, `history-authors.gz` or `history-cochange.gz` plus that suffix, whose stager is not running, is
+`commit.lock`, `history-authors.gz`, `history-cochange.gz` or `index.json.gz` plus that suffix, whose stager is not running, is
 removed by a scan that writes, and the summary counts them (`3 temporary files an earlier run left
 in .claude/anatomiya were removed`). The same sweep takes what a killed
 breaker of the refresh lock or the commit lock left: a lock token, `refresh.lock.<16 hex>`, or a token's own token,
@@ -508,6 +508,16 @@ of areas the pin lists, and only in a pin that names its corpus size. Any other 
 unreadable, as any malformed field does, so a hand-edited pin cannot lift the map past 1,000 areas.
 A co-change claim read back is held to the shapes the walk writes, and no reader takes more than the
 first 100 of each kind.
+
+### The code index holds names and first sentences
+
+A scan keeps `.claude/anatomiya/index.json.gz` (H60): for every function, method, class and type it
+indexed, the name, the line, the class it sits in, the parameter list as written, the first sentence of
+its doc comment and how many other files import it. No body, no string and no other comment is kept.
+It is read only by `find`, which prints each piece through the same filter as a quoted path, so a
+control character written in a comment or in a committed copy of the file never reaches a terminal or
+a transcript. A copy committed to a repository is replaced by the next scan, and one this cannot read
+answers as no index.
 
 ### The history stores hold what git printed
 

@@ -103,13 +103,16 @@ export function sessionStartIn(head) {
   return null;
 }
 
+/** A user entry a person wrote: a tool's result and a hook's block reason are written as user entries too. */
+const isPersonEntry = (entry) =>
+  entry?.type === "user" && entry.isMeta !== true && !(Array.isArray(entry.message?.content) && entry.message.content.some((part) => part?.type === "tool_result"));
+
 /**
  * The moment this turn's prompt arrived, or null where the tail names none.
  *
- * The last user entry that a person wrote: a tool's result and a hook's block
- * reason are written as user entries too, and either would move the turn's
- * start past the commits it made. Read from the end, so a long session parses
- * only the lines after its last prompt.
+ * The last user entry that a person wrote, since any other would move the
+ * turn's start past the commits it made. Read from the end, so a long session
+ * parses only the lines after its last prompt.
  */
 export function turnStartIn(tail) {
   if (typeof tail !== "string") return null;
@@ -117,9 +120,7 @@ export function turnStartIn(tail) {
   for (let i = lines.length - 1; i >= 0; i--) {
     if (!lines[i].includes("\"user\"")) continue;
     const entry = parsed(lines[i]);
-    if (entry?.type !== "user" || entry.isMeta === true) continue;
-    const content = entry.message?.content;
-    if (Array.isArray(content) && content.some((part) => part?.type === "tool_result")) continue;
+    if (!isPersonEntry(entry)) continue;
     const ms = Date.parse(entry.timestamp);
     return Number.isFinite(ms) ? ms : null;
   }
@@ -129,6 +130,45 @@ export function turnStartIn(tail) {
 // The completion of a call run in the background opens with this tag, and the first id it names is the call it ends.
 const NOTIFICATION = "<task-notification>";
 const FINISHED_CALL = /<tool-use-id>([^<\s]+)<\/tool-use-id>/;
+
+/** The call a task notification reports finished, where `text` opens with one, or null. */
+function finishedCallOf(text) {
+  return typeof text === "string" && text.trimStart().startsWith(NOTIFICATION) ? (text.match(FINISHED_CALL)?.[1] ?? null) : null;
+}
+
+/**
+ * The turns these records open and the subagents they launch: for each entry
+ * that opens a turn, the call a task notification reports finished, or null for
+ * a person's prompt.
+ */
+export function turnOpenersIn(records) {
+  const opened = [];
+  const launched = new Set();
+  if (typeof records !== "string") return { opened, launched };
+  for (const line of records.split("\n")) {
+    if (!line.includes("\"user\"") && !line.includes("tool_use") && !line.includes("queued_command")) continue;
+    const entry = parsed(line);
+    const content = entry?.message?.content;
+    if (entry?.type === "assistant") {
+      // The subagent tool was `Task` before `Agent`.
+      for (const part of Array.isArray(content) ? content : []) if (part?.type === "tool_use" && (part.name === "Agent" || part.name === "Task")) launched.add(part.id);
+      continue;
+    }
+    // A message that arrives while the session works is queued, not a user entry: a prompt asks again, and a
+    // subagent's result answers it; any other call's result opens nothing.
+    if (entry?.type === "attachment" && entry.attachment?.type === "queued_command") {
+      const prompt = typeof entry.attachment.prompt === "string" ? entry.attachment.prompt : "";
+      const id = finishedCallOf(prompt);
+      // A notification that names no call, a forked skill's or a resumed agent's, is no person speaking.
+      if (id === null ? !prompt.trimStart().startsWith(NOTIFICATION) : launched.has(id)) opened.push(id);
+      continue;
+    }
+    if (!isPersonEntry(entry)) continue;
+    const text =typeof content === "string" ? content : (Array.isArray(content) ? content : []).map((part) => part?.text ?? "").join("\n");
+    opened.push(finishedCallOf(text));
+  }
+  return { opened, launched };
+}
 
 /**
  * The session's tool calls in this tail, each from the moment its call was
@@ -158,7 +198,7 @@ export function toolCallsIn(tail) {
     const notice =
       entry.type === "queue-operation" ? entry.content : entry.attachment?.type === "queued_command" ? entry.attachment.prompt : entry.type === "user" ? content : null;
     // A prompt typed or pasted is queued and recorded the same way, and may quote any call's id.
-    const id = typeof notice === "string" && notice.startsWith(NOTIFICATION) ? (notice.match(FINISHED_CALL)?.[1] ?? null) : null;
+    const id = finishedCallOf(notice);
     if (id !== null) finished.set(id, Math.min(finished.get(id) ?? ms, ms));
   }
   return [...started].flatMap(([id, from]) => (returned.has(id) ? [{ from, to: Math.max(returned.get(id), finished.get(id) ?? 0) }] : []));

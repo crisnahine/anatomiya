@@ -17,7 +17,8 @@ import { ask, askWhether, BASE_REFS, Unasked, caseMagic, commitAt, gitStreamed, 
 import { buildVersion } from "./readiness.mjs";
 import { movedByRemote } from "./refresh.mjs";
 import { carriedVerdict, checkerStamp, verdictStamp } from "./semantic.mjs";
-import { OVERVIEW_FILE, realpathOf, REFRESH_LOCK, REFRESH_STATE, resolveInside, STORE_DIR, targetState, trackedRulesDir } from "./rules.mjs";
+import { INDEX_FILE, OVERVIEW_FILE, realpathOf, REFRESH_LOCK, REFRESH_STATE, resolveInside, STORE_DIR, targetState, trackedRulesDir } from "./rules.mjs";
+import { isPathTaken } from "./hook.mjs";
 import { isClaude, overviewName, TARGETS } from "./targets.mjs";
 import { commonDirOf, gitDirOf } from "./worktree.mjs";
 
@@ -137,16 +138,21 @@ async function passes(root, store, { scan, pin }) {
     const stamp = await stampOf(root);
     if (stamp === null) return { reason: "no-head", pinned, held };
     const state = readRecord(join(store, basename(REFRESH_STATE))).record;
-    if (state?.stamp === stamp && settled(state) && sameHold(state.held, held)) {
+    // A map with no code index is written again, unless its scan could not write one or failed. Asked
+    // beside the stamp, not in it: the scan that writes the index would move its own stamp.
+    const indexSettled = state?.indexed === false || state?.ok === false || isPathTaken(join(store, INDEX_FILE));
+    const current = state?.stamp === stamp && settled(state) && indexSettled;
+    if (current && sameHold(state.held, held)) {
       return { reason: state.ok ? (pass === 0 ? "current" : "scanned") : "failed-before", pinned, held };
     }
-    if (state?.stamp === stamp && settled(state)) {
+    if (current) {
       // Nothing to rescan; only what the pin decided is new.
       // The retry clock is the failure's, so it keeps its moment.
       writeState(store, { ...state, pinned: state.pinned ?? null, held });
       return { reason: state.ok ? "current" : "failed-before", pinned, held };
     }
     let stopped = [];
+    let wrote = null;
     try {
       const leaveAlone = await committedTargets(root);
       // A checker the last run measured as degraded, with nothing it reads
@@ -156,7 +162,9 @@ async function passes(root, store, { scan, pin }) {
       const recorded = readFacts(root).facts?.semantic ?? null;
       const carried = carriedVerdict(recorded, () => verdictStamp(root, buildVersion()));
       const options = { ...(leaveAlone.length > 0 ? { leaveAlone } : {}), ...(carried !== null ? { carried } : {}) };
-      stopped = stoppedIn(await (Object.keys(options).length > 0 ? scan(root, options) : scan(root)));
+      const answer = await (Object.keys(options).length > 0 ? scan(root, options) : scan(root));
+      stopped = stoppedIn(answer);
+      wrote = answer?.indexed ?? null;
     } catch (err) {
       // Another scan wrote the map while this one planned: its map and its record stand, and the next pass asks again.
       if (err?.stale) continue;
@@ -167,7 +175,7 @@ async function passes(root, store, { scan, pin }) {
       writeState(store, { stamp, ok: false, error: String(err?.message ?? err), pinned: accepted, held });
       return { reason: "failed", pinned, held };
     }
-    writeState(store, { stamp, ok: true, error: null, pinned: accepted, held, stopped });
+    writeState(store, { stamp, ok: true, error: null, pinned: accepted, held, stopped, indexed: wrote });
   }
   return { reason: "scanned", pinned, held };
 }
@@ -192,7 +200,7 @@ export async function noteScan(root, before, scanned) {
     const stamp = await stampOf(root);
     if (stamp === null || stamp !== before) return;
     const previous = readRecord(join(store, basename(REFRESH_STATE))).record;
-    writeState(store, { stamp, ok: true, error: null, pinned: previous?.pinned ?? null, held: previous?.held ?? null, stopped: stoppedIn(scanned) });
+    writeState(store, { stamp, ok: true, error: null, pinned: previous?.pinned ?? null, held: previous?.held ?? null, stopped: stoppedIn(scanned), indexed: scanned?.indexed ?? null });
   } catch {
     // Nothing to record; the next refresh rescans, which is the old behaviour.
   }
@@ -509,8 +517,9 @@ async function gitBusy(root) {
   return r?.code !== 0 || operationUnfinished(r.stdout.trim());
 }
 
-function writeState(store, { stamp, ok, error, pinned = null, held = null, stopped = [], at = new Date().toISOString() }) {
-  const record = { stamp, ok, error, at, ...(pinned ? { pinned } : {}), ...(held ? { held } : {}), ...(stopped?.length > 0 ? { stopped } : {}) };
+function writeState(store, { stamp, ok, error, pinned = null, held = null, stopped = [], indexed = null, at = new Date().toISOString() }) {
+  // `indexed` only where the scan could not write the code index, so a record without it asks for one.
+  const record = { stamp, ok, error, at, ...(pinned ? { pinned } : {}), ...(held ? { held } : {}), ...(stopped?.length > 0 ? { stopped } : {}), ...(indexed === false ? { indexed } : {}) };
   const path = join(store, basename(REFRESH_STATE));
   try {
     // A rename replaces a file or a link at the name, never a directory. Refuses a link and a directory holding entries.

@@ -146,8 +146,9 @@ function importPaths(node, { imported, renamed: field = null }, alias) {
  *
  * `placed` is the caller's word that the language's tool collects this file by
  * where it sits, which no path says alone: a crate is known by the files around it.
+ * `source` is the text the tree was read off, and asks for the file's `symbols`.
  */
-export function treeFacets(program, lang, rel = "", { placed = false } = {}) {
+export function treeFacets(program, lang, rel = "", { placed = false, source = null } = {}) {
   const shapes = SHAPES[lang];
   const rules = RUNNERS[lang];
   const of = (key) => new Set(shapes[key] ?? []);
@@ -213,7 +214,7 @@ export function treeFacets(program, lang, rel = "", { placed = false } = {}) {
   const unimported = cases || collected || read ? (rules.unimported?.(plain || read) ?? null) : null;
   // By place as by name: what the tool collects is the runner's with or without a case in it.
   const byPlace = placed && !empty ? (placeTestsOf(lang)?.runner ?? null) : null;
-  const { refs, defines, ...scope } = treeRefs(program, lang, rel);
+  const { refs, defines, ...scope } = treeRefs(program, lang, rel, source);
   return {
     testRunner: (marked ? markedBy : null) ?? (cases ? runner : null) ?? unimported ?? byPlace ?? (pest ? "pest" : null),
     testCalls: cases || pest,

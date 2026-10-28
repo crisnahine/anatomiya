@@ -457,10 +457,10 @@ test("the count of type-checked rows is read as a number even spelled as a word"
 });
 
 test("a per-language count spelled as a word is read against the registry", (t) => {
-  const { status, output } = miscount(t, "docs/usage.md", "3 for PHP", "four for PHP");
+  const { status, output } = miscount(t, "docs/usage.md", "5 for PHP", "four for PHP");
 
   assert.equal(status, 1);
-  assert.ok(output.includes(`docs/usage.md: says "four for PHP", the registry holds 3 asked of PHP`), output);
+  assert.ok(output.includes(`docs/usage.md: says "four for PHP", the registry holds 5 asked of PHP`), output);
 });
 
 test("every registry count is read in words as well as digits", (t) => {
@@ -580,7 +580,7 @@ test("a count word stands for its number, to ninety-nine", () => {
 test("no, none and zero are counts of nothing", (t) => {
   const dir = repoCopy(t);
   edit(join(dir, "README.md"), (text) => text.replace("three runtime dependencies", "no runtime dependencies"));
-  edit(join(dir, "docs", "usage.md"), (text) => text.replace("3 for PHP", "none for PHP"));
+  edit(join(dir, "docs", "usage.md"), (text) => text.replace("5 for PHP", "none for PHP"));
   edit(join(dir, "CONTEXT.md"), (text) => text.replace("three parser engines", "zero parser engines"));
 
   const { status, output } = check(dir);
@@ -588,7 +588,7 @@ test("no, none and zero are counts of nothing", (t) => {
   assert.equal(status, 1);
   for (const said of [
     `README.md: says "no runtime dependencies", the plugin's manifest declares 3`,
-    `docs/usage.md: says "none for PHP", the registry holds 3 asked of PHP`,
+    `docs/usage.md: says "none for PHP", the registry holds 5 asked of PHP`,
     `CONTEXT.md: says "zero parser engines", the registry declares 3`,
   ]) {
     assert.ok(output.includes(said), `${said}: ${output}`);
@@ -596,12 +596,12 @@ test("no, none and zero are counts of nothing", (t) => {
 });
 
 test("a count word written with a capital is the same count", (t) => {
-  const { status, output } = miscount(t, "docs/usage.md", "3 for PHP", "Four for PHP");
+  const { status, output } = miscount(t, "docs/usage.md", "5 for PHP", "Four for PHP");
 
   assert.equal(status, 1);
-  assert.ok(output.includes(`docs/usage.md: says "Four for PHP", the registry holds 3 asked of PHP`), output);
+  assert.ok(output.includes(`docs/usage.md: says "Four for PHP", the registry holds 5 asked of PHP`), output);
 
-  const right = miscount(t, "docs/usage.md", "3 for PHP", "Three for PHP");
+  const right = miscount(t, "docs/usage.md", "5 for PHP", "Five for PHP");
   assert.doesNotMatch(right.output, /PHP/, "the same count, read as one");
   assert.equal(right.status, 0, right.output);
 });

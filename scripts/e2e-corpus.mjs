@@ -238,7 +238,7 @@ export function wroteProblems(wrote, names, dir = RULES_DIR) {
 // In the order they are tried. The first is stated far more often than the two
 // base rows, and it needs no parse to answer, so it is the probe with the
 // fewest ways to go quiet.
-const PROBE_ROWS = ["file_naming_case", "extends_base", "class_base"];
+const PROBE_ROWS = ["file_naming_case", "extends_base", "class_base", "class_inherits"];
 
 // Deliberately the opposite spelling rather than the next class in the list: a
 // PascalCase name in a snake_case Ruby directory is the shape a reviewer would
@@ -257,7 +257,8 @@ const langsOf = (key) => rowByKey(key)?.langs ?? [];
 // also holds one function per side of the rows it is asked: `undocumented` and
 // `documented` a public one without and with its doc comment, `untyped` and
 // `typed` one without and with a return type, `swallowed` a handler that binds
-// the error and reads nothing of it. Absent where no such row lists the language.
+// the error and reads nothing of it, `printed` one that writes to the console.
+// Absent where no such row lists the language.
 const JS_PROBE = { comment: "// e2e probe\n", subclass: "class ZzProbe extends NotTheBase {}\n" };
 const PROBES = {
   js: JS_PROBE,
@@ -269,6 +270,8 @@ const PROBES = {
     documented: 'def zz_probe() -> int:\n    """Probe."""\n    return 1\n',
     untyped: 'def zz_probe():\n    """Probe."""\n    return 1\n',
     typed: 'def zz_probe() -> int:\n    """Probe."""\n    return 1\n',
+    printed: 'def zz_probe() -> int:\n    """Probe."""\n    print("zz")\n    return 1\n',
+    swallowed: 'def zz_probe() -> int:\n    """Probe."""\n    try:\n        return run()\n    except Exception as error:\n        return 2\n',
   },
   php: {
     comment: "<?php\n// e2e probe\n",
@@ -278,12 +281,14 @@ const PROBES = {
     untyped: "<?php\n\n/** Probes. */\nfunction zz_probe()\n{\n    return 1;\n}\n",
     typed: "<?php\n\n/** Probes. */\nfunction zz_probe(): int\n{\n    return 1;\n}\n",
     swallowed: "<?php\n\n/** Probes. */\nfunction zz_probe(): int\n{\n    try {\n        return 1;\n    } catch (\\Exception $e) {\n        return 2;\n    }\n}\n",
+    printed: "<?php\n\n/** Probes. */\nfunction zz_probe(): int\n{\n    echo 'zz';\n    return 1;\n}\n",
   },
   go: {
     comment: "// e2e probe\npackage zzprobe\n",
     subclass: null,
     undocumented: "package zzprobe\n\nfunc ZzProbe() {}\n",
     documented: "package zzprobe\n\n// ZzProbe probes.\nfunc ZzProbe() {}\n",
+    printed: "package zzprobe\n\n// ZzProbe probes.\nfunc ZzProbe() {\n\tfmt.Println(\"zz\")\n}\n",
   },
   java: {
     comment: "// e2e probe\n",
@@ -291,24 +296,30 @@ const PROBES = {
     undocumented: "public class ZzProbe {\n    public void probe() {}\n}\n",
     documented: "public class ZzProbe {\n    /** Probes. */\n    public void probe() {}\n}\n",
     swallowed: "class ZzProbe {\n    void probe() {\n        try {\n            run();\n        } catch (Exception e) {\n            return;\n        }\n    }\n}\n",
+    printed: "class ZzProbe {\n    void probe() {\n        System.out.println(\"zz\");\n    }\n}\n",
   },
   csharp: {
     comment: "// e2e probe\n",
     subclass: "class ZzProbe : NotTheBase {}\n",
     undocumented: "public class ZzProbe\n{\n    public void Probe() { }\n}\n",
     documented: "public class ZzProbe\n{\n    /// <summary>Probes.</summary>\n    public void Probe() { }\n}\n",
+    printed: "public class ZzProbe\n{\n    /// <summary>Probes.</summary>\n    public void Probe() { Console.WriteLine(\"zz\"); }\n}\n",
+    swallowed: "public class ZzProbe\n{\n    /// <summary>Probes.</summary>\n    public void Probe()\n    {\n        try { Run(); }\n        catch (Exception error) { return; }\n    }\n}\n",
   },
   rust: {
     comment: "// e2e probe\n",
     subclass: null,
     undocumented: "pub fn zz_probe() {}\n",
     documented: "/// Probes.\npub fn zz_probe() {}\n",
+    printed: "/// Probes.\npub fn zz_probe() {\n    println!(\"zz\");\n}\n",
   },
   kotlin: {
     comment: "// e2e probe\n",
     subclass: "class ZzProbe : NotTheBase()\n",
     undocumented: "fun zzProbe() {}\n",
     documented: "/** Probes. */\nfun zzProbe() {}\n",
+    printed: "/** Probes. */\nfun zzProbe() {\n    println(\"zz\")\n}\n",
+    swallowed: "/** Probes. */\nfun zzProbe() {\n    try {\n        run()\n    } catch (e: Exception) {\n        return\n    }\n}\n",
   },
 };
 
@@ -317,6 +328,7 @@ const SITE_PROBES = {
   public_doc_comment: { claim: "undocumented", counter: "documented" },
   declared_return_type: { claim: "untyped", counter: "typed" },
   caught_error_used: { claim: "swallowed" },
+  logger_over_print: { claim: "printed" },
 };
 
 assertKeyed("PROBES", PROBES, [...new Set(LANGUAGES.map((l) => l.family))]);

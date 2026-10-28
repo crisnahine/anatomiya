@@ -272,6 +272,18 @@ test("a JavaScript base row extends something the repository does not", () => {
   assert.match(plan.body, /^class ZzProbe extends NotTheBase\b/);
 });
 
+test("a tree-sitter base row gets a class that inherits something the repository does not, read back through its grammar", async () => {
+  const { parseTreeFile } = await import("../plugins/anatomiya/lib/tree-sitter-file.mjs");
+  for (const [lang, ext] of [["python", ".py"], ["php", ".php"], ["java", ".java"], ["csharp", ".cs"], ["kotlin", ".kt"]]) {
+    const area = { id: "a", path: "src", kinds: { exts: [[ext, 20]] }, dimensions: [dim("class_inherits", { learned: "Model" })] };
+    const plan = probePlan({ areas: [area] });
+
+    assert.equal(plan.dimension, "class_inherits", lang);
+    const read = await parseTreeFile(plan.body, plan.path, lang);
+    assert.deepEqual((read.hits.class_inherits ?? []).map((h) => h.class), ["NotTheBase"], lang);
+  }
+});
+
 test("a row the map suppressed states nothing, so there is nothing to break", () => {
   const suppressed = probePlan({ areas: [rubyArea([dim("file_naming_case", { states: null, directive: null })])] });
   const byDefault = probePlan({ areas: [rubyArea([dim("file_naming_case", { matchesDefault: true })])] });
@@ -753,7 +765,7 @@ test("where no naming or base row is stated, the probe breaks a row its language
     return (read.hits[key] ?? []).map((h) => h.conforming);
   };
   for (const [lang, ext] of Object.entries(SEVEN_EXT)) {
-    for (const key of ["public_doc_comment", "declared_return_type", "caught_error_used"]) {
+    for (const key of ["public_doc_comment", "declared_return_type", "caught_error_used", "logger_over_print"]) {
       const { langs, claim, counterClaim } = rowByKey(key);
       const stated = probePlan({ areas: [areaOf(ext, [row(key)])] });
       if (!langs.includes(lang)) {

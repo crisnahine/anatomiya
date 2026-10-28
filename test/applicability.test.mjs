@@ -732,6 +732,9 @@ container = document.createElement("div")`,
     applicable: [
       { source: `<?php\ntry { a(); } catch (E $e) { } catch (F $f) { log($f); }\n`, sites: 2 },
       { lang: "java", source: `class A {\n    void m() {\n        try { a(); } catch (E e) { } catch (F e) { b(); }\n    }\n}\n`, sites: 2 },
+      { lang: "python", source: `try:\n    a()\nexcept E as e:\n    pass\n` },
+      { lang: "csharp", source: `class A {\n    void M() {\n        try { B(); } catch (E e) { }\n    }\n}\n` },
+      { lang: "kotlin", source: `fun m() {\n    try { a() } catch (e: E) { }\n}\n` },
     ],
     inapplicable: [
       // A try that only cleans up catches nothing.
@@ -739,6 +742,46 @@ container = document.createElement("div")`,
       // A type and no name: the handler used what it was given.
       `<?php\ntry { a(); } catch (E) { } catch (A | B) { return null; }\n`,
       { lang: "java", source: `class A {\n    void m() {\n        try { a(); } finally { b(); }\n    }\n}\n` },
+      { lang: "python", source: `try:\n    a()\nexcept E:\n    pass\nexcept F as _:\n    pass\n` },
+      { lang: "csharp", source: `class A {\n    void M() {\n        try { B(); } catch (E) { }\n    }\n}\n` },
+      { lang: "kotlin", source: `fun m() {\n    try { a() } catch (_: E) { }\n}\n` },
+    ],
+  },
+  class_inherits: {
+    lang: "python",
+    applicable: [
+      `class A(models.Model):\n    pass\n`,
+      { lang: "php", source: `<?php\nclass A extends Base {}\n` },
+      { lang: "java", source: `class A extends Base {}\n` },
+      { lang: "csharp", source: `class A : Base, IThing {}\n` },
+      { lang: "kotlin", source: `class A : Base(), Thing\n` },
+    ],
+    inapplicable: [
+      // A class naming no base, or naming only what is no class it inherits.
+      `class A:\n    pass\n\n\nclass B(object):\n    pass\n`,
+      { lang: "php", source: `<?php\ninterface J extends K {}\n` },
+      { lang: "java", source: `class A implements I {}\n` },
+      { lang: "csharp", source: `class A : IThing {}\n` },
+      { lang: "kotlin", source: `class A : Thing\n` },
+    ],
+  },
+  logger_over_print: {
+    lang: "python",
+    applicable: [
+      { source: `def f():\n    print("x")\n    logger.info("y")\n`, sites: 2 },
+      { lang: "php", source: `<?php\necho "x";\n` },
+      { lang: "java", source: `class A { void f() { System.out.println(1); } }\n` },
+      { lang: "csharp", source: `class A { void F() { _logger.LogWarning("x"); } }\n` },
+      { lang: "rust", source: `fn f() { println!("x"); }\n` },
+      { lang: "kotlin", source: `fun f() {\n    println(1)\n}\n` },
+      { lang: "go", source: `package a\n\nfunc f() {\n\tfmt.Println(1)\n}\n` },
+    ],
+    inapplicable: [
+      // Setting a logger up writes nothing.
+      `def f():\n    logging.basicConfig(level=1)\n`,
+      { lang: "rust", source: `fn f() { vec![1]; }\n` },
+      { lang: "java", source: `class A { void f() { out.println(1); } }\n` },
+      { lang: "go", source: `package a\n\nfunc f() string {\n\treturn fmt.Sprintf("x")\n}\n` },
     ],
   },
   public_doc_comment: {

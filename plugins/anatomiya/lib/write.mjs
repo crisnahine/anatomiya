@@ -11,6 +11,7 @@ import { byCode } from "./paths.mjs";
 import { isWholeArea } from "./slot.mjs";
 import {
   COMMIT_LOCK,
+  INDEX_FILE,
   REFRESH_LOCK,
   REFRESH_STATE,
   RULES_DIR,
@@ -385,7 +386,7 @@ function untouchedPlan({ target, state, reason, remedy, on, leftAlone, unwritabl
 const recorded = (previous, target) => [...(recordFor(previous, target).names ?? [])].sort();
 
 // The files a scan, a refresh, a pin, a lock create and a history walk stage in the store, by name.
-const STORE_STAGED = [...[FACTS_PATH, LAYOUT_PATH, REFRESH_STATE, PIN_PATH, REFRESH_LOCK, COMMIT_LOCK].map((path) => basename(path)), ...Object.values(HISTORY_FILES)];
+const STORE_STAGED = [...[FACTS_PATH, LAYOUT_PATH, REFRESH_STATE, PIN_PATH, REFRESH_LOCK, COMMIT_LOCK].map((path) => basename(path)), ...Object.values(HISTORY_FILES), INDEX_FILE];
 
 // Where a build before the lock tokens moved a dead refresh lock aside to break it.
 const LOCK_ASIDE = /^refresh\.lock\.stale-(\d+)-[0-9a-f]{16}$/;

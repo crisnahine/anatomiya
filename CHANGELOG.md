@@ -7,6 +7,67 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and
 
 ## [Unreleased]
 
+## [0.20.0] - 2026-10-29
+
+A scan now writes a code index of every definition it reads, in all nine languages, and the end-of-turn
+reuse check hands its subagent `find` in place of a grep. On four reuse tasks with Haiku, 20 sessions
+per arm, 67 of 80 sessions called the helper the repository already had, against 65 of 80 on 0.19.0,
+at $0.0157 a session against $0.0164; no task's change is one 20 sessions can tell from chance. The
+search itself got cheaper: on eslint and mastodon its median fresh input fell from 43,410 and 68,801
+tokens to 33,145 and 37,955. Each tree-sitter language also gets the rows its grammar can spell, and
+the check no longer asks about its own fix when its search ran in the background.
+
+### Added
+
+- A code index. A scan now keeps `.claude/anatomiya/index.json.gz`: every function, method, class and
+  type that no function holds, a module, a namespace or a class around it included, and Go's and Rust's constants and package variables, in all nine languages, with its line, the class it sits in, its parameters, the first
+  sentence of its doc comment and how many other files import it. `/anatomiya:find <words>` lists the
+  six closest, a rare word outweighing a common one and a test ranked behind the helper it covers
+  (H60, B82).
+- `/anatomiya:doctor`, run inside a mapped repository, says how many definitions its code index holds.
+- Constructors in Java, C# and Kotlin, C# delegates, Kotlin type aliases, Rust macros and Python
+  lambdas bound to a name are in the index too.
+- The end-of-turn reuse check hands that command to its subagent in place of a grep over shared
+  modules, at most three calls, and leaves grep the calls an index cannot name. Against the same check
+  with no index, its search spent a quarter to a half less fresh input and a third less output (A124).
+- Every tree-sitter language now gets the rows its grammar can spell. Two are new:
+  `class_inherits` (Python, PHP, Java, C#, Kotlin), which class a class here inherits, and
+  `logger_over_print` (Python, PHP, Java, C#, Rust, Kotlin, Go), whether output goes through a logger
+  (C69, C70). `caught_error_used` now asks Python, C# and Kotlin as well as PHP and Java. Four of
+  these pairs miss the bar the refused rows were measured by and are asked anyway (C71).
+
+### Fixed
+
+- The reuse check no longer asks about its own fix a second time when the search ran in the
+  background. Claude Code 2.1.312 runs a subagent in the background by default, and the turn its
+  result opens was read as new work: 28 of 61 sessions on the builds without the fix ran a second
+  search, and 0 of 40 with it (A125). A message that arrives while the session works, which Claude
+  Code queues rather than records as a prompt, counts too: a prompt typed then is asked about, and
+  the check's own result arriving mid-turn is not asked about again.
+- `logger_over_print` counts Kotlin's `System.err` and C#'s `Console.Error` as prints, as Java's
+  `System.err` already was.
+
+### Changed
+
+- The refresh rescans a map that has no code index, so a map an older build wrote, or one whose
+  index was deleted, gets one without a hand scan. A linked worktree's `find` reads its main
+  checkout's index, as its map is borrowed.
+- A scan with no engine for one language keeps the last index's definitions for that language's
+  files, as it keeps that language's areas, so `find` does not lose them on a machine without Ruby.
+- A lone letter or a filler word such as `the` in a `find` query asks nothing, and a word's rarity is counted over the name, class and doc it is matched in.
+- `find --format json` says whether there was an index to ask, and a Ruby `module` is listed as a
+  module, not a class.
+- A Java or C# definition is listed at its name's line, not its first annotation's; a call written
+  `util::parse` credits the function an inline Rust `mod util` holds; and doctor and `find` say so
+  when the last scan could not write an index, rather than asking for a scan that would fail the same
+  way. A dry run builds no index.
+
+### Security
+
+- A committed code index is read only as long as a scan writes it: a row with a name, parameter
+  list, doc sentence or path past the scan's own caps is dropped, so a repository cannot hand the
+  reuse check's subagent a page of text through `find`.
+
 ## [0.19.0] - 2026-10-26
 
 The reuse check and the "most imported from here" line reach every language the plugin reads, and the
@@ -5318,7 +5379,8 @@ which are partial; several listed there are not implemented yet.
 - No claim that this catches defects. Measured across ten repositories, 1 of 317 defect review
   comments was preventable by a conventions map.
 
-[Unreleased]: https://github.com/crisnahine/anatomiya/compare/v0.19.0...HEAD
+[Unreleased]: https://github.com/crisnahine/anatomiya/compare/v0.20.0...HEAD
+[0.20.0]: https://github.com/crisnahine/anatomiya/compare/v0.19.0...v0.20.0
 [0.19.0]: https://github.com/crisnahine/anatomiya/compare/v0.18.2...v0.19.0
 [0.18.2]: https://github.com/crisnahine/anatomiya/compare/v0.18.1...v0.18.2
 [0.18.1]: https://github.com/crisnahine/anatomiya/compare/v0.18.0...v0.18.1

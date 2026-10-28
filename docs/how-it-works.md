@@ -587,13 +587,13 @@ average of 80 to 310.
 
 ## 4. Dimensions and the three numbers
 
-A dimension is one claim about one area. 57 ship, the filename row included: 29 for JavaScript, 34
+A dimension is one claim about one area. 59 ship, the filename row included: 29 for JavaScript, 34
 reachable in JSX, and 19 that speak Ruby, plus the one type-checked row, which sits in the total and
 reaches a scan only when the checker runs. Beside them are 9 file-to-file obligations, all Ruby,
-which makes the 28 for Ruby and the 66 dimensions the README and `docs/usage.md` count. A component's script block is
-asked most of the 29: 25 for Vue and 25 for Svelte. Four are asked of a tree-sitter tree, each of
-the languages whose measured repositories differ on it: 3 for Python, 3 for PHP, 1 for Go, 3 for
-Java, 2 for C#, 2 for Rust and 1 for Kotlin. Each is defined by three quantities, not one.
+which makes the 28 for Ruby and the 68 dimensions the README and `docs/usage.md` count. A component's script block is
+asked most of the 29: 25 for Vue and 25 for Svelte. Six are asked of a tree-sitter tree, each of
+the languages whose measured repositories differ on it, or that were asked to have it: 6 for Python,
+5 for PHP, 2 for Go, 5 for Java, 5 for C#, 3 for Rust and 4 for Kotlin. Each is defined by three quantities, not one.
 
 | Quantity | Meaning |
 |---|---|
@@ -705,9 +705,11 @@ in `check`.
 | `endpoint_segment_case` | partial | python, java, csharp, rust | URL path segments here are `<style>`, learned |
 | `strong_params_style` | partial | ruby | request parameters are filtered through `params.<style>`, learned |
 | `spec_type_declared` | precise | ruby | specs declare their `type:` metadata |
-| `caught_error_used` | partial | php, java | exception handlers use the error they caught |
+| `caught_error_used` | partial | php, java, python, csharp, kotlin | exception handlers use the error they caught |
 | `public_doc_comment` | partial | python, php, go, java, csharp, rust, kotlin | public functions carry a doc comment |
 | `declared_return_type` | precise | python, php | functions declare what they return |
+| `class_inherits` | partial | python, php, java, csharp, kotlin | classes here inherit `<style>`, learned |
+| `logger_over_print` | partial | python, php, java, csharp, rust, kotlin, go | output goes through a logger, not print |
 
 The rows over a tree-sitter tree leave out what each language's own tools leave out (C50,
 C51, C53). The two function rows hold no site in a file the layout counts as a test file, a
@@ -715,8 +717,8 @@ C51, C53). The two function rows hold no site in a file the layout counts as a t
 counts no constructor (a PHP `__construct` or `__destruct`), no entry point (a static `main` in
 Java, a static `Main` in C#, a `main` at the top of a Kotlin or Rust file), and in Go no method
 golint asks no comment of: `Error`, `Read`, `ServeHTTP`, `String`, `Write`, `Unwrap`, and `Len`,
-`Less` and `Swap` on a type the file gives all three. The handler row reads a Java clause that
-names what it caught `ignored` as binding nothing, as `_` binds nothing. A site of these rows
+`Less` and `Swap` on a type the file gives all three. The handler row reads a Java or Kotlin clause
+that names what it caught `ignored` as binding nothing, as `_` binds nothing in Kotlin, Python and C#. A site of these rows
 carries the class beside the name, `Views.run`, in Go the receiver's type, or for a Kotlin extension
 function its class and its receiver as written, `Host.List<User>.toDtos`, which is what tells a
 new method from an older one of the same name in another class when `check` asks what a branch
@@ -1233,6 +1235,9 @@ reason ends in a mark for each changed source file, taken over its content, and 
 session's transcript already holds is not named again. The stop right after the hook's own block
 records what the check left in a `systemMessage`, which the transcript keeps, so the check's own fix
 is not asked about on the next turn, and the hook writes nothing a later `git status` would report.
+Where the subagent runs in the background, its result opens a turn of its own as a task notification,
+and the session applies the fix there: a stop that ends a turn opened by the notification of an
+`Agent` call launched after the last ask records the same way (A125).
 
 Some changed source holds nothing anybody would reuse, and is not asked about: a migration, whose name
 starts with a number right under a `migrate` or `migrations` directory or a `<name>_migrate` one such as
@@ -1850,8 +1855,8 @@ A temporary file a scan left behind, by a kill or through a directory swapped un
 by the next scan that writes or removes in that directory: a regular file named as a map file plus
 `.tmp-<pid>-<16 hex>`, where no process of that id is running. The summary counts the ones under
 `.claude/rules`, `1 temporary file an earlier run left in .claude/rules was removed`.
-`.claude/anatomiya` is swept for eight names, `facts.json`, `layout.json`, `refresh.json`,
-`baseline.json`, `refresh.lock`, `commit.lock`, `history-authors.gz` and `history-cochange.gz` plus
+`.claude/anatomiya` is swept for nine names, `facts.json`, `layout.json`, `refresh.json`,
+`baseline.json`, `refresh.lock`, `commit.lock`, `history-authors.gz`, `history-cochange.gz` and `index.json.gz` plus
 that suffix (`STORE_STAGED`), counted on a line of their own: `3 temporary files an earlier run
 left in .claude/anatomiya were removed`. So what a killed pin or a killed create of either lock
 staged goes too. The same sweep takes, and counts with them, what a killed breaker of either lock
@@ -2127,6 +2132,43 @@ naming the checkout's directory as it is on disk, quoted, with only unprintable 
 accepting its own work, and a sentence there naming how to accept it is the suggestion E5 refuses. A
 lock is given back only while it is still the worker's own, so a takeover between three workers
 never frees a fourth.
+
+### The code index
+
+A scan also writes `.claude/anatomiya/index.json.gz`: every function, method, class and type no
+function holds, in every language the scan reads, and Go's and Rust's constants, statics and package variables, each with its line, the class or
+module or type it sits in, its parameter list as written and the first sentence of its doc comment
+or docstring, and how many other files import or call it (H60). In JavaScript that is a module's own
+functions, classes, types and the functions it binds to a `const` or to `exports`, and the methods
+and function-valued fields of a class the module declares; an object literal's methods and an
+anonymous default export are not indexed. In the seven tree-sitter languages a constructor (Java,
+C#, a Kotlin `constructor`), a C# delegate, a Kotlin `typealias`, a Rust `macro_rules!` and a Python
+lambda bound to a name are indexed as well; a property, a field and a Kotlin or Java constant are
+values and are not, and a function in an inline Rust `mod`, nearly always `mod tests`, has no
+container. Two definitions on one line take the comment above it once, the first. Each engine's facets carry the same
+six fields (`symbols.mjs`): oxc reads the tree and the comment above, tree-sitter the same and a
+Python docstring from the body, and the Ruby child sends a method's parameters and the comments that
+end on the line above a definition with each node (B82). A blank line between a comment and its
+definition, a pragma (`eslint-disable`, `# frozen_string_literal`) and a tag block (`@param`,
+`Args:`) are not documentation. The importer count is the reuse line's own map of who reaches which
+name out of which file (H58, H59): a call written `Class.method` credits that class's method and the
+class, one qualified by a module or a package (`db.GetEngine`) the file's own function of that name.
+
+Nothing on a hook's path reads it. `anatomiya find '<words>'` does, from the repository, the words in
+one single-quoted argument so a shell globs none of them (`local_url?` is a pattern to zsh): it splits the
+words as it splits a name, so `compareUrls` and `compare urls` ask the same, folds an ending
+(`urls`, `indentation`, `comparing`) and reads a name run together as one word too (`unindent` finds
+`unIndent`). Each asked word weighs by how rare it is among the index's names, so `uuid` outweighs
+`new` and `id` in the same question. A word counts its weight once, in the best place it matches: three
+times in the name, twice in its class, once in its doc sentence or path. The sum is multiplied by `1 + 0.15 log2(1 + importers)`:
+1.35 for 4 importers, 1.65 for 19, 2.2 for 252, and halved in a test file, since a test is named for
+what it tests and matched every word of django's `get_object_or_404` ahead of the function itself.
+It prints the best 6 on one line each:
+`name(params)  path:line  kind, N files import it  - doc`. A word only the path holds finds nothing,
+since every definition in that file would tie. `/anatomiya:find` runs it for a session, and the reuse
+check's reason names it with the absolute path of the bin that ran the hook, so the subagent's first
+search is one call (A124). The index is the last scan's: a function written since is not in it, and
+the first line of every answer says so.
 
 ## 7b. What lives where
 

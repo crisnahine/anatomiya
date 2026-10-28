@@ -19,6 +19,7 @@ import { extOf, extOrName } from "./paths.mjs";
 import { MANIFESTS, ownPackages } from "./own-packages.mjs";
 import { isLink, readHead } from "./rules.mjs";
 import { commonImports, mostImported } from "./siblings.mjs";
+import { buildIndex, readIndex } from "./code-index.mjs";
 
 // A manifest larger than this is no manifest anybody wrote by hand, and is not read.
 const MANIFEST_MOST_BYTES = 256 * 1024;
@@ -394,6 +395,9 @@ async function scanning(cwd, { guards = null, runChecker = runSemantic, resolveS
 
   return {
     root,
+    // Every definition read at HEAD and who imports it, for `find`. Written beside the map, never into the record.
+    // Built only by a scan that writes it: a dry run throws it away.
+    codeIndex: () => buildIndex(files, head.records, corpusRels, own, { previous: unreadable.length > 0 ? readIndex(root) : null, unread: unreadable }),
     // Whether the checker ran, and how it went. Absent is not the same as
     // clean: a reader has to be able to tell a scan that never asked from one
     // that asked and got a bad answer (B8).

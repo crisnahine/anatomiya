@@ -14,6 +14,7 @@ const USAGE = [
   "usage: anatomiya scan   [path] [--dry-run] [--targets <list>] [--format <name>]",
   "       anatomiya check  [path] [--base <ref>] [--format <name>]",
   "       anatomiya pin    [path] [--dry-run] [--format <name>]",
+  "       anatomiya find   <words>... [--format <name>]",
   "       anatomiya doctor",
   "       anatomiya setup  [--dry-run]",
   "",
@@ -54,19 +55,26 @@ const USAGE = [
   "overview behind, and the next scan without --targets finishes the job.",
   "",
   "[path] picks the repository, not a subtree: every command covers the whole",
-  "repository the path is in, and scan prints the root it resolved to. doctor",
-  "and setup take no path: they answer about this installation. doctor also",
-  "prints a line for each Cursor or Copilot target that is on in the",
-  "repository it is run in, which says off at the next scan where a killed",
-  "scan was turning it off; one for a target the record names that it cannot",
-  "read; and one for any directory the map is written to where the next scan",
-  "removes files a killed scan was about to remove.",
+  "repository the path is in, and scan prints the root it resolved to. find,",
+  "doctor and setup take no path: find asks the repository it is run in, and",
+  "doctor and setup answer about this installation. doctor also prints a line",
+  "for each Cursor or Copilot target that is on in the repository it is run",
+  "in, which says off at the next scan where a killed scan was turning it off;",
+  "one for a target the record names that it cannot read; and one for any",
+  "directory the map is written to where the next scan removes files a killed",
+  "scan was about to remove.",
   "",
   "doctor prints a line for node, one for each engine (oxc, prism and",
   "tree-sitter) and one for each package beside them: flow-remove-types and",
   "the optional typescript. The tree-sitter line counts the grammar files that",
   "load and are the ones this plugin shipped (grammars: 7 of 7). tree-sitter",
-  "reads Python, PHP, Go, Java, C#, Rust and Kotlin.",
+  "reads Python, PHP, Go, Java, C#, Rust and Kotlin. Run inside a mapped",
+  "repository it also says how many definitions its code index holds.",
+  "",
+  "find lists the six definitions in the code index the last scan wrote that",
+  "best answer its words, each with its parameters, place, kind, how many",
+  "files import it and its doc sentence. The index is of the last commit a",
+  "scan read.",
   "",
   "setup installs the packages the node-hosted engines load, in the plugin's",
   "own directory. It is the only command that installs anything and the only",
@@ -127,6 +135,18 @@ const COMMANDS = {
       const { summary } = await runPin(cwd, { dryRun: opts.dryRun });
       if (opts.format === "json") process.stdout.write(pinJson(summary));
       else console.log(pinLines(summary).join("\n"));
+    },
+  },
+  find: {
+    path: false,
+    words: true,
+    dryRun: false,
+    formats: ["text", "json"],
+    async run(_cwd, opts) {
+      const { runFind } = await import("../lib/commands.mjs");
+      const { lines, hits, indexed } = await runFind(sessionDir(false), opts.words);
+      if (opts.format === "json") process.stdout.write(`${JSON.stringify({ indexed, hits })}\n`);
+      else console.log(lines.join("\n"));
     },
   },
   doctor: {
@@ -285,7 +305,7 @@ function parseArgs(argv) {
   }
   const cmd = argv.shift();
   const spec = COMMANDS[cmd];
-  const opts = { cmd, path: null, dryRun: false, baseRef: null, format: "text", targets: null };
+  const opts = { cmd, path: null, dryRun: false, baseRef: null, format: "text", targets: null, words: [] };
 
   for (let i = 0; i < argv.length; i++) {
     const arg = argv[i];
@@ -331,11 +351,16 @@ function parseArgs(argv) {
       continue;
     }
     if (arg.startsWith("-")) refuse(`unknown option: ${arg}`);
+    if (spec.words) {
+      opts.words.push(arg);
+      continue;
+    }
     if (!spec.path) refuse(`${cmd} takes no path: it answers about this installation`);
     if (opts.path !== null) refuse("only one path may be given");
     opts.path = arg;
   }
 
+  if (spec.words && opts.words.length === 0 && !opts.help) refuse(`${cmd} needs at least one word to look for`);
   return opts;
 }
 

@@ -136,6 +136,9 @@ export function leaves(node, except = NONE) {
   return out;
 }
 
+/** The last non-empty leaf, as a qualified or generic name ends in its own name, or null. */
+export const lastLeaf = (node, except = NONE) => leaves(node, except).filter(Boolean).at(-1) ?? null;
+
 /** The first child filling this field of the node, or null. */
 export const fieldOf = (node, name) => node.children.find((child) => child.field === name) ?? null;
 

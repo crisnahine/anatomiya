@@ -40,6 +40,65 @@ const TEST_FILES = {
  * source that holds the neighbouring construct and no site.
  */
 const CASES = {
+  logger_over_print: {
+    python: [
+      ["def f():\n    print('x')\n    logger.info('y')\n    self.log.warning('z')\n    logging.exception('w')\n", [false, true, true, true]],
+      ["def f():\n    logger.debug('y')\n", [true]],
+      // Configuring a logger writes nothing, and a level on anything else is no logger.
+      ["def f():\n    logging.basicConfig(level=1)\n    logger.setLevel(2)\n    flask.info('x')\n", []],
+    ],
+    php: [
+      ["<?php\nfunction f() { echo 'x'; print 'y'; var_dump($a); $this->logger->info('z'); Log::error('e'); }\n", [false, false, false, true, true]],
+      ["<?php\nfunction f() { $this->logger->warning('z'); }\n", [true]],
+      ["<?php\nfunction f() { $this->logger->setLevel(1); $cache->info('x'); }\n", []],
+      // A template's `echo` writes the page; a dump in it is still a dump.
+      ["<h1><?php echo htmlspecialchars($title); print $x; var_dump($y); ?></h1>\n", [false]],
+      // A closing tag with nothing after it, or a shebang line, is no markup.
+      ["<?php\nfunction f() { echo 'a'; var_dump($x); }\n?>\n", [false, false]],
+      ["#!/usr/bin/env php\n<?php\necho 'a';\nprint 'b';\n", [false, false]],
+    ],
+    java: [
+      ['class A { void f() { System.out.println(1); System.err.printf("x"); LOG.info("x"); logger.severe("y"); out.println(2); } }\n', [false, false, true, true]],
+      ['class A { void f() { log.debug("x"); } }\n', [true]],
+      ['class A { void f() { out.println(2); LOG.isDebugEnabled(); } }\n', []],
+    ],
+    csharp: [
+      ['class A { void F() { Console.WriteLine(1); _logger.LogInformation("x"); Log.Error("y"); Debug.WriteLine(2); } }\n', [false, true, true]],
+      ['class A { void F() { _logger.LogWarning("x"); } }\n', [true]],
+      // The console's error and output streams print too.
+      ['class A { void F() { Console.Error.WriteLine("e"); Console.Out.Write("o"); } }\n', [false, false]],
+      // Type arguments are no part of the callee, nested ones included.
+      ['class A { void F() { _logger.LogInformation<Dictionary<string, List<int>>>("x"); } }\n', [true]],
+      ['class A { void F() { Debug.WriteLine(2); _logger.BeginScope("x"); } }\n', []],
+    ],
+    rust: [
+      ['fn f() {\n    println!("x");\n    info!("y");\n    tracing::warn!("z");\n    log::error!("e");\n    dbg!(1);\n    vec![1];\n}\n', [false, true, true, true, false]],
+      ['fn f() {\n    tracing::info!("y");\n}\n', [true]],
+      ['fn f() {\n    vec![1];\n    format!("x");\n}\n', []],
+    ],
+    kotlin: [
+      ['class A {\n    fun f() {\n        println(1)\n        logger.info { "x" }\n        LOG.warn("z", e)\n        list.info()\n    }\n}\n', [false, true, true]],
+      ['class A {\n    fun f() {\n        log.debug("x")\n    }\n}\n', [true]],
+      // Kotlin writes to stderr through Java's own stream.
+      ['class A {\n    fun f() {\n        System.err.println("e")\n        System.out.print("o")\n    }\n}\n', [false, false]],
+      ['class A {\n    fun f() {\n        list.info()\n    }\n}\n', []],
+    ],
+    go: [
+      ['package a\n\nfunc f() {\n\tfmt.Println(1)\n\tlog.Printf("x")\n\tslog.Info("y")\n\tlogger.Error("z")\n\tfmt.Sprintf("w")\n}\n', [false, true, true, true]],
+      ['package a\n\nfunc f() {\n\tklog.V(2).Infof("x")\n\tzap.L().Info("y")\n}\n', [true, true]],
+      // A chain writes once, at its end, and a field built for a log line writes nothing itself.
+      ['package a\n\nfunc f() {\n\tlog.Info().Msg("x")\n\tslog.Info("x", slog.String("k", v), slog.Int("n", 1))\n}\n', [true, true]],
+      // zap's package functions build fields, and a receiver a call returns is named by that call.
+      ['package a\n\nfunc f() {\n\tlogger.Error("x", zap.Error(err))\n}\n', [true]],
+      ['package a\n\nfunc f() {\n\tcaddy.Log().Info("y")\n}\n', [true]],
+      // A logger derived from one is still that logger, and klog's structured calls write too.
+      ['package a\n\nfunc f() {\n\tlogger.With(zap.String("k", "v")).Info("y")\n\tlogger.Sugar().Infof("x")\n\tklog.InfoS("x")\n\tslog.LogAttrs(ctx, 1, "x")\n\tLog[int]().Info("z")\n}\n', [true, true, true, true, true]],
+      // Formatting a string writes nothing, and a method named for a level on anything else is no logger.
+      ['package a\n\nfunc f() {\n\tfmt.Sprintf("w")\n\tcache.Info()\n}\n', []],
+      // Setting a logger up writes nothing.
+      ['package a\n\nfunc f() {\n\tlog.SetFlags(0)\n\tzap.NewProduction()\n\tdefer logger.Sync()\n}\n', []],
+    ],
+  },
   caught_error_used: {
     php: [
       ["<?php\ntry { a(); } catch (E $e) { log($e); }\n", [true]],
@@ -98,6 +157,54 @@ const CASES = {
       // Restoring the interrupt flag reads nothing of the error.
       ["class A {\n    void m() {\n        try { a(); } catch (InterruptedException e) { Thread.currentThread().interrupt(); }\n    }\n}\n", [false]],
       ["class A {\n    void m() {\n        try { a(); } finally { }\n    }\n}\n", []],
+    ],
+    python: [
+      ["try:\n    a()\nexcept E as e:\n    log(e)\n", [true]],
+      ["try:\n    a()\nexcept (A, B) as e:\n    pass\n", [false]],
+      ["try:\n    a()\nexcept E as e:\n    raise\n", [true]],
+      ["try:\n    a()\nexcept E as e:\n    raise F() from None\n", [true]],
+      ['try:\n    a()\nexcept E as e:\n    return f"failed: {e}"\n', [true]],
+      ["try:\n    a()\nexcept E as e:\n    run(lambda: e)\n", [true]],
+      // An attribute and a keyword argument of that name are not the error.
+      ["try:\n    a()\nexcept E as e:\n    x.e = 1\n    f(e=2)\n", [false]],
+      ["try:\n    a()\nexcept E:\n    pass\n", []],
+      ["try:\n    a()\nexcept E as _:\n    pass\n", []],
+      ["try:\n    a()\nfinally:\n    b()\n", []],
+    ],
+    csharp: [
+      ["class A { void M() { try { a(); } catch (E e) { Log(e); } } }\n", [true]],
+      ["class A { void M() { try { a(); } catch (E e) { Log(e.Message); } } }\n", [true]],
+      ["class A { void M() { try { a(); } catch (E e) { throw; } } }\n", [true]],
+      ["class A { int M() { try { return a(); } catch (E e) { return b ?? throw new F(); } } }\n", [true]],
+      // A filter that reads the error has used it.
+      ["class A { void M() { try { a(); } catch (E e) when (e.Code == 5) { } } }\n", [true]],
+      ["class A { void M() { try { a(); } catch (E e) { } catch (F f) { Log(f); } } }\n", [false, true]],
+      // A member and a named argument of that name are not the error.
+      ["class A { void M() { try { a(); } catch (E e) { x.e = 1; F(e: 2); } } }\n", [false]],
+      // An object initializer's member is not the error; the value assigned to it is.
+      ["class A { void M() { try { a(); } catch (E e) { var o = new O { e = 1 }; } } }\n", [false]],
+      ["class A { void M() { try { a(); } catch (E e) { var o = new O { Error = e }; } } }\n", [true]],
+      // A collection initializer's entries are values, and an indexer's key is read.
+      ['class A { void M() { try { a(); } catch (E e) { var l = new List<string> { e.Message + "x" }; } } }\n', [true]],
+      ["class A { void M() { try { a(); } catch (E e) { var o = new O { [e] = 1 }; } } }\n", [true]],
+      ["class A { void M() { try { a(); } catch (E) { } catch { } } }\n", []],
+      ["class A { void M() { try { a(); } catch (E _) { } } }\n", []],
+    ],
+    kotlin: [
+      ["fun m() {\n    try { a() } catch (e: E) { log(e) }\n}\n", [true]],
+      ["fun m() {\n    try { a() } catch (e: E) { throw e }\n}\n", [true]],
+      ["fun m() {\n    try { a() } catch (e: E) { log(e.message) }\n}\n", [true]],
+      ['fun m() {\n    try { a() } catch (e: E) { log("failed: $e") }\n}\n', [true]],
+      // Another name that starts with it is not it.
+      ['fun m() {\n    try { a() } catch (e: E) { log("failed: $ee $eé") }\n}\n', [false]],
+      ["fun m() {\n    try { a() } catch (e: E) { }\n}\n", [false]],
+      // A member after a dot or `::` is not the error.
+      ["fun m() {\n    try { a() } catch (e: E) { x.e; run(A::e) }\n}\n", [false]],
+      ["fun m() {\n    try { a() } catch (_: E) { }\n}\n", []],
+      ["fun m() {\n    try { a() } catch (ignored: E) { }\n}\n", []],
+      // A named argument's name is not the error; the value after it is.
+      ["fun m() {\n    try { a() } catch (error: E) { emit(State(error = null)) }\n}\n", [false]],
+      ["fun m() {\n    try { a() } catch (error: E) { emit(State(error = error)) }\n}\n", [true]],
     ],
   },
 
@@ -355,10 +462,12 @@ test("the rows are registered, each for the languages whose measured repositorie
   const langs = Object.fromEntries(TREE_DIMENSIONS.map((d) => [d.key, d.langs]));
 
   assert.deepEqual(langs, {
-    caught_error_used: ["php", "java"],
+    caught_error_used: ["php", "java", "python", "csharp", "kotlin"],
     public_doc_comment: ["python", "php", "go", "java", "csharp", "rust", "kotlin"],
     declared_return_type: ["python", "php"],
     endpoint_segment_case: ["python", "java", "csharp", "rust"],
+    class_inherits: ["python", "php", "java", "csharp", "kotlin"],
+    logger_over_print: ["python", "php", "java", "csharp", "rust", "kotlin", "go"],
   });
   for (const d of TREE_DIMENSIONS) {
     assert.ok(ALL_DIMENSIONS.includes(d), `${d.key} is not in the list the worker runs`);
@@ -387,6 +496,33 @@ for (const [key, byLang] of Object.entries(CASES)) {
  * empty list is a source holding the neighbouring construct and no site.
  */
 const WORDS = {
+  class_inherits: {
+    python: [
+      ["class A(models.Model, Mixin, metaclass=M):\n    pass\n", ["A:Model"]],
+      // `object` names no base anybody chose, and a class naming none is no site.
+      ["class A(object):\n    pass\n\n\nclass B:\n    pass\n\n\nclass C(Base[T]):\n    pass\n", ["C:Base"]],
+      // Bases spread from a list name none, and typing's Generic and Protocol are no class anybody inherits behaviour from.
+      ["class A(*bases):\n    pass\n\n\nclass B(Generic[T], Repo):\n    pass\n\n\nclass C(Protocol):\n    pass\n", ["B:Repo"]],
+    ],
+    php: [
+      ["<?php\nclass A extends \\App\\Http\\Controller implements I {}\nclass B {}\n", ["A:Controller"]],
+      // An interface extends interfaces, which is no class it inherits.
+      ["<?php\ninterface J extends K {}\n", []],
+    ],
+    java: [
+      ["class A extends p.Base<T> implements I {}\nclass B {}\ninterface C extends D {}\n", ["A:Base"]],
+    ],
+    csharp: [
+      ["class A : Base<T>, IThing {}\nclass B : IThing {}\nclass C {}\n", ["A:Base"]],
+    ],
+    kotlin: [
+      // The one specifier that calls a constructor is the class; an interface is named without parentheses.
+      ["class A : p.Base<T>(), Runnable\nclass B : Runnable\nclass C(x: Int) : Base(x)\n", ["A:Base", "C:Base"]],
+      // An object declaration inherits as a class does.
+      ["object D : Base(), Runnable\nobject E\n", ["D:Base"]],
+      ["class F {\n    companion object : Base()\n}\n", ["null:Base"]],
+    ],
+  },
   endpoint_segment_case: {
     python: [
       ['from django.urls import path, re_path\n\nurlpatterns = [\n    path("saved-searches/<int:pk>/", v),\n    path("audit_logs/", v),\n    re_path(r"^raw_data/$", v),\n]\n', ["saved-searches:kebab-case", "audit_logs:snake_case"]],
@@ -458,7 +594,9 @@ for (const [key, byLang] of Object.entries(WORDS)) {
       for (const [source, want] of cases) {
         const got = await hits(key, lang, source);
         assert.deepEqual(got.map((h) => `${h.where}:${h.class}`), want, JSON.stringify(source));
-        assert.ok(got.every((h) => h.conforming === false && typeof h.section === "string"), "a learned site votes with its class and its section");
+        assert.ok(got.every((h) => h.conforming === false), "a learned site votes with its class");
+        // A route table is one file by many hands, so a path's words vote per declaration; a class is its file's.
+        if (key === "endpoint_segment_case") assert.ok(got.every((h) => typeof h.section === "string"), "a path's word votes with its section");
       }
     });
   }
@@ -660,7 +798,7 @@ for (const [key, { lang, declined, counted }] of Object.entries(TREE_DECLINED)) 
 
 test("what the doc comment row cannot see in Rust, and what it leaves out, is said on the row", () => {
   const rust = TREE_DIMENSIONS.filter((d) => d.langs.includes("rust"));
-  assert.deepEqual(rust.map((d) => d.key), ["public_doc_comment", "endpoint_segment_case"]);
+  assert.deepEqual(rust.map((d) => d.key), ["public_doc_comment", "endpoint_segment_case", "logger_over_print"]);
   const { sites, blind } = rust[0].applicabilityPredicate;
   assert.match(blind, /Rust code inside a macro call is not in the tree/);
   assert.match(sites, /`#\[cfg\(test\)\]`, alone or inside `all\(\.\.\)`, on an item or as `#!\[cfg\(test\)\]` on the file/);

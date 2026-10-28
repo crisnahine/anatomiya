@@ -10,7 +10,7 @@ import { asksById, exitsWhere, scriptGit, unaskedOn, unaskedWhere } from "./git-
 import { needsPosixPermissions, needsShebang, needsSymlinks, removeTree } from "./platform.mjs";
 import { installWithoutDependencies } from "./plugin-install.mjs";
 import { scratch } from "./git-worktrees.mjs";
-import { runCheck, runDoctor, runPin, runScan, runSetup } from "../plugins/anatomiya/lib/commands.mjs";
+import { runCheck, runDoctor, runFind, runPin, runScan, runSetup } from "../plugins/anatomiya/lib/commands.mjs";
 import { pinJson, pinLines, scanLines } from "../plugins/anatomiya/lib/summary.mjs";
 import { PIN_PATH, readPin } from "../plugins/anatomiya/lib/baseline.mjs";
 import { Unasked } from "../plugins/anatomiya/lib/git.mjs";
@@ -1068,9 +1068,63 @@ test("a doctor run inside a repository says which other targets are on there, an
   const { lines } = await runDoctor({ cwd: join(dir, "src") });
 
   assert.deepEqual(lines.slice(engines.length), [
+    "code index: 0 definitions, as of the last scan",
     ".cursor/rules: on, 2 files",
     ".github/instructions: could not be read (.github is a link)",
   ]);
+});
+
+// The target lines alone, where a test is about them: the code index line has its own test.
+const notIndex = (line) => !line.startsWith("code index: ");
+
+test("a doctor run inside a mapped repository says how many definitions its code index holds, or that it has none", async (t) => {
+  const dir = repo(t);
+  const engines = (await runDoctor()).lines;
+  writeFileSync(join(dir, "src", "util.ts"), "/** Adds. */\nexport function add(a: number, b: number) {\n  return a + b;\n}\n");
+  execFileSync("git", ["add", "-A"], { cwd: dir, stdio: "pipe" });
+  execFileSync("git", ["commit", "-qm", "util"], { cwd: dir, stdio: "pipe" });
+  assert.deepEqual((await runDoctor({ cwd: dir })).lines, engines, "nothing where no scan made a map");
+
+  await runScan(dir);
+  assert.deepEqual((await runDoctor({ cwd: dir })).lines.slice(engines.length), ["code index: 1 definition, as of the last scan"]);
+  // A linked worktree with no map of its own reads its main checkout's index, as find and the reuse check do.
+  const linked = mkdtempSync(join(tmpdir(), "anatomiya-linked-"));
+  t.after(() => removeTree(linked));
+  rmSync(linked, { recursive: true });
+  execFileSync("git", ["worktree", "add", "-q", linked], { cwd: dir, stdio: "pipe" });
+  assert.deepEqual((await runDoctor({ cwd: linked })).lines.slice(engines.length), ["code index: 1 definition, as of the last scan"]);
+  rmSync(join(dir, ".claude", "anatomiya", "index.json.gz"));
+  assert.deepEqual((await runDoctor({ cwd: dir })).lines.slice(engines.length), ["code index: none; the next scan or refresh writes one"]);
+});
+
+test("find says whether there is an index, whether the words asked anything, and what matched", async (t) => {
+  const dir = repo(t);
+  writeFileSync(join(dir, "src", "util.ts"), "/** Adds two numbers. */\nexport function addNumbers(a: number, b: number) {\n  return a + b;\n}\n");
+  execFileSync("git", ["add", "-A"], { cwd: dir, stdio: "pipe" });
+  execFileSync("git", ["commit", "-qm", "util"], { cwd: dir, stdio: "pipe" });
+
+  const none = await runFind(dir, ["add"]);
+  assert.deepEqual([none.indexed, none.hits], [false, []]);
+  assert.match(none.lines[0], /^No code index here yet/);
+
+  await runScan(dir);
+  const found = await runFind(dir, ["add", "numbers"]);
+  assert.equal(found.indexed, true);
+  assert.deepEqual(found.hits.map((h) => h.name), ["addNumbers"]);
+  assert.match(found.lines[1], /^addNumbers\(a: number, b: number\)  src\/util\.ts:2  fn/);
+
+  // A refresh whose scan could not write the index records so, and another scan would hit the same wall.
+  rmSync(join(dir, ".claude", "anatomiya", "index.json.gz"));
+  writeFileSync(join(dir, ".claude", "anatomiya", "refresh.json"), JSON.stringify({ stamp: "x", ok: true, error: null, at: new Date().toISOString(), indexed: false }));
+  const refused = await runFind(dir, ["add"]);
+  assert.match(refused.lines[0], /^The last scan could not write a code index/);
+  const engines = (await runDoctor()).lines;
+  assert.deepEqual((await runDoctor({ cwd: dir })).lines.slice(engines.length), ["code index: none; the last scan could not write one, past the size a scan writes"]);
+  await runScan(dir);
+
+  const empty = await runFind(dir, ["a", "x"]);
+  assert.deepEqual([empty.indexed, empty.hits], [true, []]);
+  assert.match(empty.lines[0], /^"a x" holds no word to look up/);
 });
 
 test("a doctor counts the names a scan gives a file, and says when the directory cannot be listed", needsPosixPermissions, async (t) => {
@@ -1081,7 +1135,7 @@ test("a doctor counts the names a scan gives a file, and says when the directory
   // A copy somebody kept: this tool's key, under a name no scan gives a file.
   writeFileSync(join(rules, "anatomiya-my-notes.mdc"), readFileSync(join(rules, "anatomiya-overview.mdc")));
 
-  assert.deepEqual((await runDoctor({ cwd: dir })).lines.slice(engines.length), [
+  assert.deepEqual((await runDoctor({ cwd: dir })).lines.slice(engines.length).filter(notIndex), [
     ".cursor/rules: on, 2 files",
     ".cursor/rules holds 1 entry named anatomiya-* that a scan neither writes nor removes",
   ]);
@@ -1089,7 +1143,7 @@ test("a doctor counts the names a scan gives a file, and says when the directory
   // Entered and not listed: the overview still reads as this tool's.
   chmodSync(rules, 0o311);
   try {
-    assert.deepEqual((await runDoctor({ cwd: dir })).lines.slice(engines.length), [".cursor/rules: on, could not be listed"]);
+    assert.deepEqual((await runDoctor({ cwd: dir })).lines.slice(engines.length).filter(notIndex), [".cursor/rules: on, could not be listed"]);
   } finally {
     chmodSync(rules, 0o755);
   }
@@ -1111,7 +1165,7 @@ test("a doctor counts as a target's files what a scan counts as written, and the
     "wrote 2 files under .cursor/rules for Cursor",
     ".cursor/rules holds 3 entries named anatomiya-* that this scan neither wrote nor removed; they were left as they are",
   ]);
-  assert.deepEqual((await runDoctor({ cwd: dir })).lines.slice(engines.length), [
+  assert.deepEqual((await runDoctor({ cwd: dir })).lines.slice(engines.length).filter(notIndex), [
     ".cursor/rules: on, 2 files",
     ".cursor/rules holds 3 entries named anatomiya-* that a scan neither writes nor removes",
   ]);
@@ -1128,7 +1182,7 @@ test("a doctor says which keyed files the next scan removes, where the record wa
   const record = join(dir, ".claude", "anatomiya", "facts.json");
   writeFileSync(record, JSON.stringify({ ...JSON.parse(readFileSync(record, "utf8")), removing: { cursor: ["anatomiya-area-deadbeef.mdc"] } }));
 
-  assert.deepEqual((await runDoctor({ cwd: dir })).lines.slice(engines.length), [
+  assert.deepEqual((await runDoctor({ cwd: dir })).lines.slice(engines.length).filter(notIndex), [
     ".cursor/rules: on, 2 files",
     ".cursor/rules holds 1 entry named anatomiya-* that a scan neither writes nor removes",
     ".cursor/rules holds 1 entry named anatomiya-* that the next scan removes, since the scan that wrote the map was about to remove it",
@@ -1137,7 +1191,7 @@ test("a doctor says which keyed files the next scan removes, where the record wa
   // A record that names no file there still says what it was about to remove, and a scan removes it.
   const { targets, ...rest } = JSON.parse(readFileSync(record, "utf8"));
   writeFileSync(record, JSON.stringify({ ...rest, targets: { copilot: targets.copilot ?? [] }, removing: { cursor: ["anatomiya-area-0badf00d.mdc", "anatomiya-area-deadbeef.mdc"] } }));
-  assert.deepEqual((await runDoctor({ cwd: dir })).lines.slice(engines.length), [
+  assert.deepEqual((await runDoctor({ cwd: dir })).lines.slice(engines.length).filter(notIndex), [
     ".cursor/rules: on, 2 files",
     ".cursor/rules holds 2 entries named anatomiya-* that the next scan removes, since the scan that wrote the map was about to remove them",
   ]);
@@ -1153,14 +1207,14 @@ test("a doctor says which keyed files the next scan removes from .claude/rules, 
   writeFileSync(join(rules, "anatomiya-area-0badf00d.md"), keyed);
   const record = join(dir, ".claude", "anatomiya", "facts.json");
   const facts = JSON.parse(readFileSync(record, "utf8"));
-  assert.deepEqual((await runDoctor({ cwd: dir })).lines.slice(engines.length), [], "a keyed file the record does not name is the scan summary's to count");
+  assert.deepEqual((await runDoctor({ cwd: dir })).lines.slice(engines.length).filter(notIndex), [], "a keyed file the record does not name is the scan summary's to count");
 
   writeFileSync(record, JSON.stringify({ ...facts, removing: { claude: ["anatomiya-area-deadbeef.md"] } }));
-  assert.deepEqual((await runDoctor({ cwd: dir })).lines.slice(engines.length), [
+  assert.deepEqual((await runDoctor({ cwd: dir })).lines.slice(engines.length).filter(notIndex), [
     ".claude/rules holds 1 entry named anatomiya-* that the next scan removes, since the scan that wrote the map was about to remove it",
   ]);
   writeFileSync(record, JSON.stringify({ ...facts, removing: { claude: ["anatomiya-area-deadbeef.md", "anatomiya-area-0badf00d.md"] } }));
-  assert.deepEqual((await runDoctor({ cwd: dir })).lines.slice(engines.length), [
+  assert.deepEqual((await runDoctor({ cwd: dir })).lines.slice(engines.length).filter(notIndex), [
     ".claude/rules holds 2 entries named anatomiya-* that the next scan removes, since the scan that wrote the map was about to remove them",
   ]);
 });
@@ -1171,7 +1225,7 @@ test("a doctor counts a target's files where the clone holds them and no record"
   await runScan(dir, { targets: ["claude", "cursor"] });
   rmSync(join(dir, ".claude", "anatomiya"), { recursive: true });
 
-  assert.deepEqual((await runDoctor({ cwd: dir })).lines.slice(engines.length), [".cursor/rules: on, 2 files"]);
+  assert.deepEqual((await runDoctor({ cwd: dir })).lines.slice(engines.length).filter(notIndex), [".cursor/rules: on, 2 files"]);
 });
 
 test("a doctor run outside any repository answers about the installation alone", async (t) => {

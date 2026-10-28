@@ -1,0 +1,434 @@
+{
+  "scenario": "scripts/ab/scenarios/mastodon-local-url-reuse.json",
+  "scenarioSha256": "2efc200a4416fba6ca43d70adf36ef1b0d58de79f454732abbeef0e204bb49fd",
+  "label": "github.com/mastodon/mastodon",
+  "sha": "3f5c32f43f57751f994919335cf7b065c53044d1",
+  "engine": {
+    "model": "claude-haiku-5-5",
+    "effort": "medium",
+    "contextWindow": 1000000
+  },
+  "versions": {
+    "claude": "2.1.312 (Claude Code)",
+    "anatomiya": "0.19.0 at e7246fe02ce9, with uncommitted changes"
+  },
+  "said": {
+    "a": "app/lib: 94 files",
+    "b": "NONE"
+  },
+  "a": [
+    {
+      "ok": true,
+      "reason": null,
+      "wrote": [
+        "app/lib/link_policy.rb",
+        "spec/lib/link_policy_spec.rb"
+      ],
+      "did": true,
+      "checks": {
+        "it calls the existing TagManager#local_url?": false,
+        "it reads no configured domain itself": false
+      },
+      "spent": {
+        "costUsd": 0.015035204999999998,
+        "inputTokens": 34,
+        "outputTokens": 12542,
+        "cacheReadTokens": 292013,
+        "wallMs": 88505
+      },
+      "answer": "The reuse check found no existing function I can call as-is, so I'm keeping `LinkPolicy` unchanged.\n\nThe closest match is `TagManager#local_url?` in `app/lib/tag_manager.rb:25`. It does the same parse-and-compare job, but it falls short in ways this change needs:\n- It compares against `web_domain`, not `local_domain`. I read \"this server, port included\" as `local_domain`, which carries the port.\n- It returns `false` on a parse failure. `external?` needs `true` there.\n- It does not handle `nil`. `Addressable::URI.parse(nil)` returns nil, and the `.normalize` call on it raises an error its rescue does not catch.\n\nMaking `local_url?` fit would change what its 6 existing callers get, so I did not edit it. `TagManager#local_domain?` has no port handling and treats `nil` as local, so it can't stand in either.\n\nFinal state, unchanged since my last message:\n- `app/lib/link_policy.rb`: `LinkPolicy.external?(url)`\n- `spec/lib/link_policy_spec.rb`: 6 examples, all passing. RuboCop reports no offenses.\n\nIf you want `external?` to use `WEB_DOMAIN` instead, it could delegate to `local_url?` for that case. That is a small change, but it is a behavior choice, so tell me if you want it."
+    },
+    {
+      "ok": true,
+      "reason": null,
+      "wrote": [
+        "app/lib/link_policy.rb",
+        "spec/lib/link_policy_spec.rb"
+      ],
+      "did": true,
+      "checks": {
+        "it calls the existing TagManager#local_url?": true,
+        "it reads no configured domain itself": true
+      },
+      "spent": {
+        "costUsd": 0.016156919999999998,
+        "inputTokens": 38,
+        "outputTokens": 13378,
+        "cacheReadTokens": 357172,
+        "wallMs": 97771
+      },
+      "answer": "`LinkPolicy.external?(url)` is in `app/lib/link_policy.rb` and its spec is in `spec/lib/link_policy_spec.rb`. The new spec and the existing `TagManager` spec pass (21 examples, 0 failures).\n\nThe reuse check found `TagManager#local_url?` already does this job, so `external?` now delegates to it:\n\n```ruby\nclass LinkPolicy\n  def self.external?(url)\n    !TagManager.instance.local_url?(url.to_s)\n  end\nend\n```\n\nI removed my own host-and-port comparison, which was the duplicate. I kept the class because you asked for it by name. If you'd rather callers use `TagManager.instance.local_url?` directly, I can delete `LinkPolicy` and its spec.\n\nTwo behaviour points:\n- **Domain checked:** `local_url?` compares against `WEB_DOMAIN`, not `LOCAL_DOMAIN`. When `WEB_DOMAIN` is unset the two are the same, so nothing changes. If they differ, URLs on the account domain would now count as external. I did not change `local_url?`, because its existing callers depend on the web-domain check.\n- **`nil` input:** `url.to_s` turns `nil` into an empty string, which counts as external.\n\nThe spec now sets `web_domain` and covers `nil` as well."
+    },
+    {
+      "ok": true,
+      "reason": null,
+      "wrote": [
+        "app/lib/link_policy.rb",
+        "spec/lib/link_policy_spec.rb"
+      ],
+      "did": true,
+      "checks": {
+        "it calls the existing TagManager#local_url?": true,
+        "it reads no configured domain itself": true
+      },
+      "spent": {
+        "costUsd": 0.01281334,
+        "inputTokens": 30,
+        "outputTokens": 10955,
+        "cacheReadTokens": 235634,
+        "wallMs": 81105
+      },
+      "answer": "The reuse check is done and I made no changes. `TagManager#local_url?` already does the whole job for the three cases you specified, so `LinkPolicy.external?` stays a one-line negation of it. The spec passes (4 examples, 0 failures).\n\nThe check found two gaps in `local_url?`. I left both alone because your spec doesn't require them:\n\n- **Alternate domains and a separate `LOCAL_DOMAIN`:** `local_url?` checks only `WEB_DOMAIN`. A URL on `ALTERNATE_DOMAINS`, or on `LOCAL_DOMAIN` when it differs from `WEB_DOMAIN`, counts as external. `WebfingerResource#local_domain` does consult those domains, so this is a real gap if \"this server\" should include them. Say if you want that added to `LinkPolicy`.\n- **`nil` input:** `Addressable::URI.parse(nil)` returns nil, so `local_url?(nil)` raises `NoMethodError`. The spec doesn't test `nil`, and I haven't run that case."
+    },
+    {
+      "ok": true,
+      "reason": null,
+      "wrote": [
+        "app/lib/link_policy.rb",
+        "app/lib/tag_manager.rb",
+        "spec/lib/link_policy_spec.rb"
+      ],
+      "did": true,
+      "checks": {
+        "it calls the existing TagManager#local_url?": true,
+        "it reads no configured domain itself": true
+      },
+      "spent": {
+        "costUsd": 0.019253025,
+        "inputTokens": 34,
+        "outputTokens": 15846,
+        "cacheReadTokens": 344215,
+        "wallMs": 113095
+      },
+      "answer": "`LinkPolicy.external?` now reuses the existing `TagManager#local_url?` instead of its own host-comparison code. The two specs pass (19 examples, 0 failures), and RuboCop is clean on the three files I touched. Nothing is committed.\n\nWhat changed:\n\n- **`app/lib/tag_manager.rb`**: `local_url?` takes an opt-in `local_domain:` keyword. The default is `false`, so the existing callers (`status.rb`, `status_finder.rb`, `activitypub/activity/create.rb`, `fetch_link_card_service.rb`, `resolve_url_service.rb`, `process_status_update_service.rb`) get the same results as before.\n- **`app/lib/link_policy.rb`**: `external?` is now `url.nil? || !TagManager.instance.local_url?(url, local_domain: true)`. The private `own_authorities` helper is gone.\n\nThe reuse check found `ActivityPub::TagManager#local_uri?` as an alternative. I didn't use it because it returns the opposite polarity and raises on unparseable input, while `local_url?` returns `false` for it, which `external?` needs.\n\nBehaviour to be aware of:\n\n- Unparseable and host-less URLs return `true` (external), and `nil` does too.\n- The local-domain check compares `host:port` as a string, not as integers, so a URL with a default port that the config omits (for example `:443`) may not match. The spec doesn't cover that case.\n- I didn't add a `local_url?` spec for the new keyword. The `LinkPolicy` spec exercises it."
+    },
+    {
+      "ok": true,
+      "reason": null,
+      "wrote": [
+        "app/lib/link_policy.rb",
+        "spec/lib/link_policy_spec.rb"
+      ],
+      "did": true,
+      "checks": {
+        "it calls the existing TagManager#local_url?": true,
+        "it reads no configured domain itself": true
+      },
+      "spent": {
+        "costUsd": 0.011862275,
+        "inputTokens": 28,
+        "outputTokens": 9023,
+        "cacheReadTokens": 222505,
+        "wallMs": 66591
+      },
+      "answer": "`LinkPolicy.external?` already reuses the repository's own `TagManager#local_url?` (`app/lib/tag_manager.rb:25`), so the reuse check found nothing to change and I left both files as they were.\n\nThe reuse check found no existing helper that duplicates this job. Its closest match is the function `LinkPolicy` already calls. The same pattern appears inline in several callers, such as `app/services/fetch_link_card_service.rb:94`. The spec still passes (6 examples, 0 failures).\n\nTwo points the check did not settle:\n- Explicit default ports, such as `https://host:443/` against a bare `host` web domain, are unverified. I did not test whether Addressable drops the port during normalization.\n- Non-HTTP URLs with no host, such as `mailto:`, return external (`true`). The spec does not cover that case.\n\nNothing has been committed."
+    },
+    {
+      "ok": true,
+      "reason": null,
+      "wrote": [
+        "app/lib/link_policy.rb",
+        "spec/lib/link_policy_spec.rb"
+      ],
+      "did": true,
+      "checks": {
+        "it calls the existing TagManager#local_url?": true,
+        "it reads no configured domain itself": true
+      },
+      "spent": {
+        "costUsd": 0.01310364,
+        "inputTokens": 30,
+        "outputTokens": 11183,
+        "cacheReadTokens": 243964,
+        "wallMs": 86068
+      },
+      "answer": "The reuse check found no duplicate to delete, so I left the code as it was.\n\n**Reuse check result:** `LinkPolicy.external?` already reuses the closest existing function, `TagManager#local_url?` (`app/lib/tag_manager.rb:25`), which does the host and port comparison and rescues parse errors. My method calls it for that work and adds only the blank guard and the negation. Nothing in the repository already provides an `external?` method, so there is no copy to replace.\n\nTwo other candidates were considered and not used:\n- **`ActivityPub::TagManager#local_uri?`** checks both local and web domains, but it has no rescue, so an unparseable URL raises. Switching to it would change the result for invalid input, so I kept `local_url?`.\n- **`link_details_extractor.rb:236`** compares hosts for same-origin, which is a different job.\n\nThe subagent's optional suggestion was to inline `!TagManager.instance.local_url?(url)` at call sites instead of keeping the wrapper. I kept the wrapper because you asked for `LinkPolicy.external?` specifically.\n\nThe subagent ran the find tool and grep but did not run the specs. Its import counts come from the last index scan and may not include the new untracked files. The earlier spec run (5 examples, 0 failures) and the RuboCop check still stand."
+    },
+    {
+      "ok": true,
+      "reason": null,
+      "wrote": [
+        "app/lib/link_policy.rb",
+        "spec/lib/link_policy_spec.rb"
+      ],
+      "did": true,
+      "checks": {
+        "it calls the existing TagManager#local_url?": false,
+        "it reads no configured domain itself": true
+      },
+      "spent": {
+        "costUsd": 0.014857975000000002,
+        "inputTokens": 30,
+        "outputTokens": 12376,
+        "cacheReadTokens": 289735,
+        "wallMs": 97993
+      },
+      "answer": "`LinkPolicy.external?` is in place, now reusing the existing `ActivityPub::TagManager#local_uri?`. The new spec and the existing ActivityPub tag manager spec pass (84 examples, 0 failures), and RuboCop reports no offenses.\n\nThe reuse check, run by a subagent, found `ActivityPub::TagManager#local_uri?` as the closest existing function. It already does the same job: nil → not local, parse, `host:port`, then the local or web domain check. I deleted my copy of that logic.\n\n`local_uri?` raises on unparseable input, and I did not change that. Adding a rescue inside it would change what its current callers get, so `LinkPolicy` rescues those errors itself and returns `true` (external).\n\n```ruby\nclass LinkPolicy\n  def self.external?(url)\n    !ActivityPub::TagManager.instance.local_uri?(url)\n  rescue Addressable::URI::InvalidURIError, IDN::Idna::IdnaError, TypeError\n    true\n  end\nend\n```\n\nThe subagent's `anatomiya find` returned no closer match. Its only other candidates were URL-building helpers that do not check whether a URL is local."
+    },
+    {
+      "ok": true,
+      "reason": null,
+      "wrote": [
+        "app/lib/link_policy.rb"
+      ],
+      "did": true,
+      "checks": {
+        "it calls the existing TagManager#local_url?": true,
+        "it reads no configured domain itself": true
+      },
+      "spent": {
+        "costUsd": 0.010389520000000001,
+        "inputTokens": 26,
+        "outputTokens": 8105,
+        "cacheReadTokens": 195477,
+        "wallMs": 59553
+      },
+      "answer": "The reuse check found nothing to change. `LinkPolicy.external?` already calls the existing `TagManager.instance.local_url?` (app/lib/tag_manager.rb:25-34), which does the same job. The new method is just its negation, so no copy of the logic exists to delete. I left the files as they were.\n\nThe new file is still `app/lib/link_policy.rb`, which holds the class you asked for. The subagent's notes on the existing helper:\n\n- **Covers the job:** it parses the URL, compares host and port against `web_domain`, and returns false for unparseable URLs, so `external?` returns true for them.\n- **Only checks `web_domain`:** a link to the `local_domain` host would count as external. Tell me if \"this server\" should include `local_domain`, and I'll extend the check without changing `local_url?`'s current callers.\n- **Relative URLs count as external:** `local_url?` returns false when there is no host.\n\nI did not verify how port normalization behaves with `web_domain`. The earlier smoke test covered explicit ports on the same host, which returned the expected results."
+    },
+    {
+      "ok": true,
+      "reason": null,
+      "wrote": [
+        "app/lib/link_policy.rb",
+        "spec/lib/link_policy_spec.rb"
+      ],
+      "did": true,
+      "checks": {
+        "it calls the existing TagManager#local_url?": true,
+        "it reads no configured domain itself": true
+      },
+      "spent": {
+        "costUsd": 0.013845765,
+        "inputTokens": 32,
+        "outputTokens": 11345,
+        "cacheReadTokens": 293854,
+        "wallMs": 91297
+      },
+      "answer": "The reuse check found that `LinkPolicy.external?` already reuses the existing `TagManager#local_url?` (`app/lib/tag_manager.rb:25`). It is `!TagManager.instance.local_url?(url)`, so I made no further changes.\n\nThe check's one recommendation was to delete `LinkPolicy` and call `!TagManager.instance.local_url?(url)` at call sites instead. I didn't do that because you asked for the class by name. Say if you want it removed.\n\nThe check also surfaced two behaviours of `local_url?` that the spec doesn't cover:\n- It checks only the web domain. A URL on `local_domain` or an `ALTERNATE_DOMAINS` host counts as external.\n- An explicit default port such as `https://host.example:443` is not normalised, so it counts as external.\n\nChanging either would alter what `local_url?` returns for its existing callers, so I left it alone.\n\nThe spec passed earlier (4 examples), and RuboCop is clean on both new files. I did not re-run either after the reuse check, since nothing changed."
+    },
+    {
+      "ok": true,
+      "reason": null,
+      "wrote": [
+        "app/lib/link_policy.rb",
+        "spec/lib/link_policy_spec.rb"
+      ],
+      "did": true,
+      "checks": {
+        "it calls the existing TagManager#local_url?": true,
+        "it reads no configured domain itself": true
+      },
+      "spent": {
+        "costUsd": 0.0122156,
+        "inputTokens": 26,
+        "outputTokens": 9544,
+        "cacheReadTokens": 211135,
+        "wallMs": 73151
+      },
+      "answer": "The reuse check found no duplicate logic, so I'm keeping `LinkPolicy` as written.\n\n`TagManager#local_url?` (`app/lib/tag_manager.rb:25`) already does the whole job, and `LinkPolicy.external?` calls it, so the new code adds no second parser or host and port comparison. The stop hook asks to delete the copy a new function replaces. I didn't, because the copy would be the class you asked for by name, and that request takes priority over the hook's suggestion. If you'd rather have no wrapper, the replacement is `!TagManager.instance.local_url?(url)` at each call site, and I'd delete both new files.\n\nThe spec's four cases overlap with `spec/lib/tag_manager_spec.rb` (the `#local_url?` examples). I didn't trim them. Only the unparseable-URL case seems unique, but I haven't confirmed that by reading the tag manager spec.\n\nThe earlier `LinkPolicy` change passes its spec (4 examples, 0 failures) and RuboCop reports no offenses. I made no edits in this turn."
+    }
+  ],
+  "b": [
+    {
+      "ok": true,
+      "reason": null,
+      "wrote": [
+        "app/lib/link_policy.rb"
+      ],
+      "did": true,
+      "checks": {
+        "it calls the existing TagManager#local_url?": false,
+        "it reads no configured domain itself": false
+      },
+      "spent": {
+        "costUsd": 0.0035455400000000002,
+        "inputTokens": 8,
+        "outputTokens": 2689,
+        "cacheReadTokens": 43344,
+        "wallMs": 22517
+      },
+      "answer": "I added `LinkPolicy` in `app/lib/link_policy.rb`. It returns `false` when the URL's host and port match `Rails.configuration.x.local_domain`, and `true` otherwise, including when the URL can't be parsed.\n\nI checked it in plain Ruby with `local_domain` stubbed to `localhost:3000`:\n\n- `http://localhost:3000/a` → `false`\n- `//localhost:3000/x` → `false`\n- `http://localhost:3001/` → `true`\n- `https://localhost/` → `true`\n- `https://example.com/` → `true`\n- `http://[::bad` → `true`\n\nI did not run it inside Rails or add a spec, since you asked for something small.\n\nChoices I made:\n- **Scheme is ignored.** `http://` and `https://` URLs on the same host and port both count as local.\n- **Only `local_domain` is checked.** `web_domain` and `ALTERNATE_DOMAINS` are not treated as this server. If those should count too, it's a small change."
+    },
+    {
+      "ok": true,
+      "reason": null,
+      "wrote": [
+        "app/lib/link_policy.rb"
+      ],
+      "did": true,
+      "checks": {
+        "it calls the existing TagManager#local_url?": false,
+        "it reads no configured domain itself": false
+      },
+      "spent": {
+        "costUsd": 0.00389969,
+        "inputTokens": 10,
+        "outputTokens": 3960,
+        "cacheReadTokens": 65469,
+        "wallMs": 27398
+      },
+      "answer": "I added `LinkPolicy` in `app/lib/link_policy.rb`:\n\n```ruby\n# frozen_string_literal: true\n\nclass LinkPolicy\n  def self.external?(url)\n    uri = URI.parse(url)\n    local = URI.parse(\"#{Rails.configuration.x.use_https ? 'https' : 'http'}://#{Rails.configuration.x.local_domain}\")\n\n    !(uri.host.to_s.casecmp?(local.host) && uri.port == local.port)\n  rescue URI::InvalidURIError\n    true\n  end\nend\n```\n\nI checked the logic with plain Ruby and a stubbed `Rails.configuration` (local domain `localhost:3000`, HTTP). Same-host, same-port URLs return false. A different port, a different host, an unparseable string, and `nil` all return true. I did not run it inside Rails or add a spec, and I did not commit.\n\nDecisions to confirm:\n\n- **\"This server\" means `LOCAL_DOMAIN`.** I did not include `WEB_DOMAIN` or `ALTERNATE_DOMAINS`. Say if you want those treated as local too.\n- **The scheme comes from config, but only the port is compared.** `https://localhost:3000` counts as local when the server runs HTTP on port 3000. Default ports still differ by scheme, so `https://example.com` does not match an HTTP `example.com`.\n- **Relative URLs such as `/foo` return true**, because they have no host."
+    },
+    {
+      "ok": true,
+      "reason": null,
+      "wrote": [
+        "app/lib/link_policy.rb",
+        "spec/lib/link_policy_spec.rb"
+      ],
+      "did": true,
+      "checks": {
+        "it calls the existing TagManager#local_url?": false,
+        "it reads no configured domain itself": false
+      },
+      "spent": {
+        "costUsd": 0.004838650000000001,
+        "inputTokens": 16,
+        "outputTokens": 4080,
+        "cacheReadTokens": 117645,
+        "wallMs": 40654
+      },
+      "answer": "I added `LinkPolicy` in `app/lib/link_policy.rb` with `external?(url)`. Its spec passes (4 examples) and RuboCop reports no offenses on either file.\n\n- **Local check:** a URL is internal when its host matches `Rails.configuration.x.local_domain` (case-insensitive) and its port matches. A missing port is inferred from the scheme, so `https://localhost` and `localhost:443` compare as equal.\n- **Unparseable or hostless input:** returns `true`, including `nil` and malformed strings.\n- **Parser:** uses Addressable, which the rest of `app/lib` already uses.\n\nI also added `spec/lib/link_policy_spec.rb` to cover the same-server, different-port, other-host, and unparseable cases. I checked against `local_domain` only, not `web_domain`. If your deployment serves the web UI from a separate `WEB_DOMAIN`, say so and I'll count that host as local too."
+    },
+    {
+      "ok": true,
+      "reason": null,
+      "wrote": [
+        "app/lib/link_policy.rb"
+      ],
+      "did": true,
+      "checks": {
+        "it calls the existing TagManager#local_url?": false,
+        "it reads no configured domain itself": false
+      },
+      "spent": {
+        "costUsd": 0.0034714999999999998,
+        "inputTokens": 10,
+        "outputTokens": 3410,
+        "cacheReadTokens": 63370,
+        "wallMs": 24930
+      },
+      "answer": "I added `app/lib/link_policy.rb` with `LinkPolicy.external?(url)`. Its syntax checks out, but I have not run it against the Rails app or written a spec.\n\n```ruby\nclass LinkPolicy\n  def self.external?(url)\n    uri = Addressable::URI.parse(url)\n    return true if uri.nil?\n\n    local = Addressable::URI.parse(\"#{Rails.configuration.x.use_https ? 'https' : 'http'}://#{Rails.configuration.x.local_domain}\")\n\n    uri.normalized_host != local.normalized_host || uri.inferred_port != local.inferred_port\n  rescue Addressable::URI::InvalidURIError, TypeError\n    true\n  end\nend\n```\n\nChoices I made:\n- **Local server:** it comes from `Rails.configuration.x.local_domain`, which the `LOCAL_DOMAIN` env var sets and which defaults to `localhost:3000`. The scheme follows `use_https`.\n- **Port:** compared with `inferred_port`, so a URL with no explicit port matches the local default for its scheme (443 for https, 80 for http).\n- **Unparseable input:** returns `true`, including `nil`.\n- **Relative URLs** like `/foo` have no host, so they count as external. The spec didn't cover them. Tell me if they should count as local.\n- **Alternate domains** (`ALTERNATE_DOMAINS`) are not treated as local, since you asked only about this server."
+    },
+    {
+      "ok": true,
+      "reason": null,
+      "wrote": [
+        "app/lib/link_policy.rb"
+      ],
+      "did": true,
+      "checks": {
+        "it calls the existing TagManager#local_url?": false,
+        "it reads no configured domain itself": false
+      },
+      "spent": {
+        "costUsd": 0.00335126,
+        "inputTokens": 10,
+        "outputTokens": 3390,
+        "cacheReadTokens": 61646,
+        "wallMs": 25344
+      },
+      "answer": "I added `LinkPolicy` in `app/lib/link_policy.rb` with `external?(url)`. A standalone Ruby check of the logic passed all eight cases. I did not run the Rails test suite.\n\n```ruby\nclass LinkPolicy\n  def self.external?(url)\n    uri = URI.parse(url)\n\n    [Rails.configuration.x.local_domain, Rails.configuration.x.web_domain].none? do |domain|\n      local_server?(uri, domain)\n    end\n  rescue URI::InvalidURIError\n    true\n  end\n\n  def self.local_server?(uri, domain)\n    scheme = Rails.configuration.x.use_https ? 'https' : 'http'\n    local = URI.parse(\"#{scheme}://#{domain}\")\n\n    uri.host&.casecmp?(local.host) && uri.port == local.port\n  end\n  private_class_method :local_server?\nend\n```\n\nChoices I made that you may want to change:\n\n- **\"This server\" means the local domain or the web domain.** Both come from `config/initializers/1_hosts.rb`, and they are the same unless `WEB_DOMAIN` is set. I left out `ALTERNATE_DOMAINS`.\n- **Port comparison uses the scheme default when the URL has no port.** For example, `https://example.com` is port 443. With HTTPS enabled, a plain `http://localhost` URL does not match `localhost:3000`, so it counts as external.\n- **Relative URLs like `/path` count as external.** They have no host, so they don't clearly point to this server. If you want them treated as internal, that is a one-line change.\n- **Host comparison ignores case.**"
+    },
+    {
+      "ok": true,
+      "reason": null,
+      "wrote": [
+        "app/lib/link_policy.rb"
+      ],
+      "did": true,
+      "checks": {
+        "it calls the existing TagManager#local_url?": false,
+        "it reads no configured domain itself": false
+      },
+      "spent": {
+        "costUsd": 0.0040912,
+        "inputTokens": 12,
+        "outputTokens": 4104,
+        "cacheReadTokens": 78900,
+        "wallMs": 26126
+      },
+      "answer": "I added `LinkPolicy` in `app/lib/link_policy.rb` with a single class method, `external?(url)`:\n\n```ruby\n# frozen_string_literal: true\n\nclass LinkPolicy\n  def self.external?(url)\n    uri = URI.parse(url)\n    local = URI.parse(\"#{Rails.configuration.x.use_https ? 'https' : 'http'}://#{Rails.configuration.x.local_domain}\")\n\n    !(uri.host.present? && uri.host.casecmp?(local.host) && uri.port == local.port)\n  rescue URI::InvalidURIError\n    true\n  end\nend\n```\n\nIt compares host and port against `Rails.configuration.x.local_domain`, which already includes the port (for example `localhost:3000`). The scheme comes from `use_https`, so default ports line up.\n\nI checked it with a plain Ruby script using a stubbed `Rails` config, because the full app isn't loaded here. Results:\n- `http://localhost:3000/users/a` and `https://localhost:3000/` return false (not external), and so does the host in uppercase.\n- `localhost:3001`, `localhost` with no port, `example.com`, and a malformed `http://[::` URL return true.\n- Under HTTPS with `example.com`, `https://example.com:443/` returns false.\n\nChoices I made that you may want to change:\n- **Only `local_domain` counts as \"this server.\"** `web_domain` and `ALTERNATE_DOMAINS` are not checked.\n- **URLs with no host count as external.** So a relative path like `/foo` returns true.\n- **I didn't add a spec file**, to keep this small. The check above ran outside the repo and was deleted. Say if you want a spec under `spec/lib/`."
+    },
+    {
+      "ok": true,
+      "reason": null,
+      "wrote": [
+        "app/lib/link_policy.rb"
+      ],
+      "did": true,
+      "checks": {
+        "it calls the existing TagManager#local_url?": false,
+        "it reads no configured domain itself": false
+      },
+      "spent": {
+        "costUsd": 0.0027700700000000003,
+        "inputTokens": 10,
+        "outputTokens": 2621,
+        "cacheReadTokens": 60677,
+        "wallMs": 18761
+      },
+      "answer": "I added `LinkPolicy` in `app/lib/link_policy.rb` with a class method `external?(url)`.\n\n```ruby\nclass LinkPolicy\n  def self.external?(url)\n    uri = URI.parse(url)\n    local = URI.parse(\"#{Rails.configuration.x.use_https ? 'https' : 'http'}://#{Rails.configuration.x.local_domain}\")\n\n    !(uri.host&.casecmp?(local.host) && uri.port == local.port)\n  rescue URI::InvalidURIError\n    true\n  end\nend\n```\n\nI checked it with a standalone Ruby script that stubs `Rails.configuration`, using `localhost:3000` as the local domain. Six cases passed: the same host and port returns false, a different port returns true, host case is ignored, a different domain returns true, an unparseable URL returns true, and a relative URL returns true. I did not run it inside the Rails app or add a spec file.\n\nChoices I made:\n- \"This server\" means `config.x.local_domain`, which is `LOCAL_DOMAIN` with the port, defaulting to `localhost:3000`. I did not include `WEB_DOMAIN` or `ALTERNATE_DOMAINS`. Say if those should count as local too.\n- The scheme comes from `config.x.use_https`, so a default port (80 or 443) matches when the local domain has no explicit port."
+    },
+    {
+      "ok": true,
+      "reason": null,
+      "wrote": [
+        "app/lib/link_policy.rb"
+      ],
+      "did": true,
+      "checks": {
+        "it calls the existing TagManager#local_url?": false,
+        "it reads no configured domain itself": false
+      },
+      "spent": {
+        "costUsd": 0.0031625800000000003,
+        "inputTokens": 8,
+        "outputTokens": 3321,
+        "cacheReadTokens": 47528,
+        "wallMs": 24462
+      },
+      "answer": "I added `LinkPolicy` at `app/lib/link_policy.rb`. It's a single class method, `external?(url)`:\n\n```ruby\n# frozen_string_literal: true\n\nclass LinkPolicy\n  def self.external?(url)\n    uri = URI.parse(url)\n    return true if uri.host.nil? || uri.scheme.nil?\n\n    local = URI.parse(\"#{uri.scheme}://#{Rails.configuration.x.local_domain}\")\n\n    !(uri.host.casecmp?(local.host) && uri.port == local.port)\n  rescue URI::InvalidURIError\n    true\n  end\nend\n```\n\nIt compares the host (case-insensitive) and port against `Rails.configuration.x.local_domain`, which `config/initializers/1_hosts.rb` builds from `LOCAL_DOMAIN` and defaults to `localhost:3000`. Unparseable URLs, URLs without a host or scheme (such as `mailto:`), and anything else return `true`.\n\nI checked the logic in plain Ruby with a stubbed `Rails.configuration`, not inside the Rails app, so the class hasn't been loaded by Rails or run under the test suite. Results:\n\n- `http://localhost:3000/a` → false\n- `http://LOCALHOST:3000` → false\n- `http://localhost:3001/` → true\n- `https://evil.com/` → true\n- `not a url`, `mailto:a@b`, `http://[::` → true\n\nOne behavior to confirm: `https://localhost:3000` returns false. The scheme isn't part of the comparison, so any scheme on the same host and port counts as local. That matches \"host and port\" as you described it. If you want the scheme to matter, it's a one-line change.\n\nI didn't add `web_domain` or `alternate_domains` to the check, since you described it as \"this server.\" Those would be easy to add if they should count as local too."
+    },
+    {
+      "ok": true,
+      "reason": null,
+      "wrote": [
+        "app/lib/link_policy.rb"
+      ],
+      "did": true,
+      "checks": {
+        "it calls the existing TagManager#local_url?": false,
+        "it reads no configured domain itself": false
+      },
+      "spent": {
+        "costUsd": 0.00359172,
+        "inputTokens": 8,
+        "outputTokens": 3932,
+        "cacheReadTokens": 47132,
+        "wallMs": 30902
+      },
+      "answer": "I added `LinkPolicy` in `app/lib/link_policy.rb` with `LinkPolicy.external?(url)`.\n\n```ruby\nclass LinkPolicy\n  def self.external?(url)\n    uri = Addressable::URI.parse(url)\n    return true if uri.nil? || uri.host.nil?\n\n    local = Addressable::URI.parse(\"//#{Rails.configuration.x.local_domain}\")\n    local_port = local.port || (Rails.configuration.x.use_https ? 443 : 80)\n\n    uri.normalized_host != local.normalized_host || uri.inferred_port != local_port\n  rescue Addressable::URI::InvalidURIError\n    true\n  end\nend\n```\n\nThe server identity comes from `Rails.configuration.x.local_domain` (set in `config/initializers/1_hosts.rb`, e.g. `localhost:3000`). Host comparison is case-insensitive, and a URL without an explicit port is compared against the server's default port for its scheme.\n\nI checked the cases with a stubbed `Rails` config. Same host and port returns false. Different port, different host, no host, nil, and unparseable input all return true. Rubocop passes. I did not add a spec file or run the Rails test suite.\n\nDecisions for you to confirm:\n- **Scheme is ignored.** `http://` and `https://` to the same host and port count as internal. The request only mentioned port, so I left scheme out. If you want scheme compared too, that's a one-line change.\n- **Relative URLs count as external.** `/path` has no host, so it can't be shown to point at this server. Say if you'd rather treat it as internal."
+    },
+    {
+      "ok": true,
+      "reason": null,
+      "wrote": [
+        "app/lib/link_policy.rb"
+      ],
+      "did": true,
+      "checks": {
+        "it calls the existing TagManager#local_url?": false,
+        "it reads no configured domain itself": false
+      },
+      "spent": {
+        "costUsd": 0.00390743,
+        "inputTokens": 10,
+        "outputTokens": 4255,
+        "cacheReadTokens": 62033,
+        "wallMs": 29836
+      },
+      "answer": "I added `LinkPolicy.external?(url)` in `app/lib/link_policy.rb`. It returns `false` only when the URL's host and port match `Rails.configuration.x.local_domain`, and `true` otherwise.\n\n```ruby\n# frozen_string_literal: true\n\nclass LinkPolicy\n  def self.external?(url)\n    uri = URI.parse(url)\n    return true unless uri.scheme && uri.host\n\n    local = URI.parse(\"#{uri.scheme}://#{Rails.configuration.x.local_domain}\")\n\n    !(uri.host.casecmp?(local.host) && uri.port == local.port)\n  rescue URI::InvalidURIError\n    true\n  end\nend\n```\n\nI checked the logic with a stubbed `Rails` config rather than the full app. `http://localhost:3000/a` and `http://LOCALHOST:3000` return `false`. `localhost:4000`, `localhost` with no port, `https://example.com/x`, unparseable input, and `mailto:` all return `true`. With a local domain of `example.com`, `https://example.com/a` returns `false`, and so does `http://example.com/a`, since the default ports match. `https://example.com:8443/a` returns `true`.\n\nChoices I made that you may want to change:\n- **Relative URLs count as external.** A path like `/foo` has no scheme or host, so it returns `true`. If relative links should count as this server, that's a one-line change.\n- **Only `local_domain` is compared.** `WEB_DOMAIN` and `ALTERNATE_DOMAINS` are not treated as this server.\n- **No spec was added**, and the RSpec suite was not run."
+    }
+  ]
+}

@@ -1,0 +1,154 @@
+{
+  "method": "findSymbols as shipped, over code indexes the build wrote for five corpus repositories at the commits the A/B scenarios name (django at its 2026-10-28 head). The queries were written by the author after a first ranking had been seen. find prints six hits; a rank past six is null.",
+  "meanReciprocalRank": 0.879,
+  "queries": [
+    {
+      "repository": "atuin",
+      "query": "uuid v7",
+      "helper": "uuid_v7",
+      "rank": 1
+    },
+    {
+      "repository": "atuin",
+      "query": "run script id new uuid",
+      "helper": "uuid_v7",
+      "rank": 1
+    },
+    {
+      "repository": "atuin",
+      "query": "new uuid id",
+      "helper": "uuid_v7",
+      "rank": 1
+    },
+    {
+      "repository": "gitea",
+      "query": "database engine session context",
+      "helper": "GetEngine",
+      "rank": 1
+    },
+    {
+      "repository": "gitea",
+      "query": "db engine",
+      "helper": "GetEngine",
+      "rank": 1
+    },
+    {
+      "repository": "gitea",
+      "query": "get engine",
+      "helper": "GetEngine",
+      "rank": 1
+    },
+    {
+      "repository": "gitea",
+      "query": "count rows table",
+      "helper": "Count",
+      "rank": 5
+    },
+    {
+      "repository": "mastodon",
+      "query": "compare urls",
+      "helper": "compareUrls",
+      "rank": 1
+    },
+    {
+      "repository": "mastodon",
+      "query": "same url",
+      "helper": "compareUrls",
+      "rank": null
+    },
+    {
+      "repository": "mastodon",
+      "query": "local url",
+      "helper": "local_url?",
+      "rank": 1
+    },
+    {
+      "repository": "mastodon",
+      "query": "url local domain",
+      "helper": "local_url?",
+      "rank": 2
+    },
+    {
+      "repository": "eslint",
+      "query": "unindent template",
+      "helper": "unIndent",
+      "rank": 1
+    },
+    {
+      "repository": "eslint",
+      "query": "strip indentation",
+      "helper": "unIndent",
+      "rank": 2
+    },
+    {
+      "repository": "eslint",
+      "query": "remove leading indentation from template literal",
+      "helper": "unIndent",
+      "rank": 1
+    },
+    {
+      "repository": "eslint",
+      "query": "unindent",
+      "helper": "unIndent",
+      "rank": 1
+    },
+    {
+      "repository": "django",
+      "query": "get object or 404",
+      "helper": "get_object_or_404",
+      "rank": 1
+    },
+    {
+      "repository": "django",
+      "query": "object or 404",
+      "helper": "get_object_or_404",
+      "rank": 1
+    },
+    {
+      "repository": "django",
+      "query": "slugify",
+      "helper": "slugify",
+      "rank": 1
+    },
+    {
+      "repository": "django",
+      "query": "escape html",
+      "helper": "escape",
+      "rank": 2
+    }
+  ],
+  "variants": [
+    "current        MRR 0.794 top1 13 top3 16 of 19 | 1 2 1 1 1 1 4 1 11 1 1 1 4 1 1 1 2 1 2",
+    "best           MRR 0.833 top1 14 top3 17 of 19 | 1 1 1 1 1 1 5 1 8 1 2 1 2 1 1 1 1 1 2",
+    "bestWhole      MRR 0.833 top1 14 top3 17 of 19 | 1 1 1 1 1 1 5 1 8 1 2 1 2 1 1 1 1 1 2",
+    "bestWholeCap   MRR 0.790 top1 13 top3 17 of 19 | 1 2 1 1 2 1 19 1 8 1 1 1 2 1 1 1 1 1 3",
+    "bestWholeSqrt  MRR 0.777 top1 13 top3 16 of 19 | 1 4 1 1 1 1 19 1 8 1 2 1 2 1 1 1 1 1 3",
+    "bestWholeNone  MRR 0.684 top1 11 top3 14 of 19 | 1 7 4 4 2 1 19 1 8 1 1 1 3 1 1 1 1 1 3",
+    "sumWholeCap    MRR 0.644 top1 10 top3 13 of 19 | 1 11 2 3 4 1 19 1 15 1 1 1 5 1 1 1 2 1 4",
+    "shipped: rarity over name, class and doc, filler words dropped, six hits  MRR 0.879 top1 16 top3 17 of 19, 18 of 19 in the six | 1 1 1 1 1 1 5 1 - 1 1 1 2 1 1 1 1 1 1"
+  ],
+  "scale": {
+    "djangoDefinitions": 39257,
+    "djangoIndexBytes": 669539,
+    "definitionsInOneQuery": 205659,
+    "msPerQuery": 282,
+    "atuinDefinitions": 9995
+  },
+  "sampleOutput": {
+    "atuin: uuid v7": [
+      "uuid_v7()  crates/atuin-common/src/utils.rs:34  fn, 19 files import it",
+      "NotUuidV7  crates/atuin-octavo/src/pb.rs:19  type, 1 file imports it",
+      "Error  crates/atuin-octavo/src/pb.rs:22  type of UuidV7"
+    ],
+    "gitea: database engine session context": [
+      "GetEngine(ctx context.Context)  models/db/context.go:73  fn, 252 files import it  - GetEngine gets an existing db Engine/Statement or creates a new Session",
+      "PrepareTestDatabase()  models/unittest/testdb.go:232  fn, 206 files import it  - PrepareTestDatabase load test fixtures into test database",
+      "SetSessionPagination(sess Engine, p Paginator)  models/db/list.go:28  fn, 24 files import it  - SetSessionPagination sets pagination for a database session"
+    ],
+    "mastodon: compare urls": [
+      "compareUrls(href1: string, href2: string)  app/javascript/mastodon/utils/compare_urls.ts:1  fn, 4 files import it",
+      "compareId(id1: string, id2: string)  app/javascript/mastodon/compare_id.ts:1  fn, 9 files import it",
+      "CompareHistoryModal()  app/javascript/mastodon/features/ui/util/async-components.js:210  fn, 1 file imports it"
+    ]
+  }
+}

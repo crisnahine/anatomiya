@@ -10,7 +10,7 @@ import { language } from "./langs.mjs";
 import { collect, corpusByName, countUntrackedSource, gitRoot, lsFiles } from "./corpus.mjs";
 import { buildPin, readPin, writePin, pinDelta, pinTarget, PIN_PATH } from "./baseline.mjs";
 import { ask, askWhether, caseMagic, headSha } from "./git.mjs";
-import { encodePath } from "./encode.mjs";
+import { encodePath, printableOnly } from "./encode.mjs";
 import { byCode } from "./paths.mjs";
 import { plural } from "./render-layout.mjs";
 import { auditRules, EXCLUDE_LINES, isMapName, listSome, LISTED, PREFIX, recordFor, RULES_DIR, targetStatus, trackedRulesDir, turningOff } from "./rules.mjs";
@@ -21,6 +21,8 @@ import { otherEntries, pinSummary, scanSummary } from "./summary.mjs";
 import { untrackedSentence } from "./render.mjs";
 import { removeStaleHook } from "./hook.mjs";
 import { saveHistory } from "./history.mjs";
+import { findSymbols, formatHit, queryWords, readIndex, saveIndex } from "./code-index.mjs";
+import { indexHome, indexRefused } from "./index-home.mjs";
 
 /**
  * One entry per command: the whole recipe, composed once.
@@ -38,7 +40,8 @@ import { saveHistory } from "./history.mjs";
  * `carried` is the checker's last measured verdict, which only a refresh hands
  * in: the scan then does not run the checker, and a scan a person runs always does.
  * `history` in the answer says, per history walk, how many commits its store
- * supplied, how many git was asked for, and whether the store was written.
+ * supplied, how many git was asked for, and whether the store was written, and
+ * `indexed` whether the code index was.
  */
 export async function runScan(cwd, { dryRun = false, targets = null, leaveAlone = [], carried = null } = {}) {
   const history = {};
@@ -55,6 +58,7 @@ export async function runScan(cwd, { dryRun = false, targets = null, leaveAlone 
   // drops what its walks read: the history stores are copies of what git
   // printed, kept beside the record, in no plan and no summary.
   await saveHistory(result.root, history, { write: !dryRun });
+  const indexed = !dryRun && saveIndex(result.root, result.codeIndex());
   // 0.2.4 through 0.2.6 installed the re-delivery hook into the repository's own
   // settings, where `${CLAUDE_PLUGIN_ROOT}` is never substituted and Claude Code
   // refuses the hook by name on every prompt and every tool call. The plugin
@@ -62,7 +66,40 @@ export async function runScan(cwd, { dryRun = false, targets = null, leaveAlone 
   // answers with a refusal rather than throwing one; the reasons are in
   // `removeStaleHook`.
   const hook = removeStaleHook(result.root, { dryRun });
-  return { result, plan, hook, history, summary: scanSummary(result, plan, { dryRun, hook }) };
+  return { result, plan, hook, history, indexed, summary: scanSummary(result, plan, { dryRun, hook }) };
+}
+
+/** The code index that answers for a checkout, its own or its main checkout's, and where it lives. */
+function indexFor(root) {
+  const home = indexHome(root);
+  return { home, index: home === null ? null : readIndex(home) };
+}
+
+// The index's line when there is none to read: one the last scan could not write, another would not either.
+const noIndex = (root) => (indexRefused(root) ? "none; the last scan could not write one, past the size a scan writes" : "none; the next scan or refresh writes one");
+
+/**
+ * The definitions the last scan indexed that best answer `words`, as lines to
+ * print and as hits. The index is the last scan's, so a function written since
+ * is not in it, and the first line says so.
+ */
+export async function runFind(cwd, words) {
+  const root = await gitRoot(cwd);
+  const { index } = indexFor(root);
+  if (index === null) {
+    const line = indexRefused(root)
+      ? "The last scan could not write a code index: it was past the size a scan writes, and another scan would not write one either."
+      : "No code index here yet: run `anatomiya scan` in this repository first.";
+    return { indexed: false, hits: [], lines: [line] };
+  }
+  const asked = printableOnly(words.join(" "));
+  if (queryWords(words).length === 0) return { indexed: true, hits: [], lines: [`"${asked}" holds no word to look up: a letter alone or a word like "the" is in nearly every name.`] };
+  const hits = findSymbols(index, words);
+  if (hits.length === 0) {
+    return { indexed: true, hits, lines: [`No definition among the ${index.count} the last scan indexed matches "${asked}". Code written since that scan is not in it.`] };
+  }
+  const head = `The ${hits.length} of ${index.count} indexed definitions closest to "${asked}", as of the last scan:`;
+  return { indexed: true, hits, lines: [head, ...hits.map(formatHit)] };
 }
 
 /**
@@ -245,7 +282,9 @@ export async function runDoctor({ cwd = null } = {}) {
 }
 
 /**
- * One line per Cursor or Copilot target that is on, or that the record names
+ * The lines a doctor prints about this repository: how many definitions its code
+ * index holds, where a scan made a map here or in the main checkout. Then
+ * one line per Cursor or Copilot target that is on, or that the record names
  * files in and nobody can read; none for any other. One a killed scan was
  * turning off reads as off at the next scan. A target that is on gets a
  * second line where its directory holds entries a scan counts as left there,
@@ -261,6 +300,9 @@ async function targetLines(cwd) {
   }
   const facts = readFacts(root).facts;
   const lines = [];
+  // Where a scan made a map here, or in the main checkout a linked worktree reads: elsewhere no index is missing.
+  const { home, index } = indexFor(root);
+  if (facts || home !== null) lines.push(`code index: ${index === null ? noIndex(root) : `${plural(index.count, "definition")}, as of the last scan`}`);
   const claude = auditRules(root, facts).removing.length;
   if (claude > 0) lines.push(removingLine(TARGETS.claude.dir, claude));
   for (const target of Object.values(TARGETS).filter((t) => !isClaude(t))) {

@@ -14,6 +14,7 @@
  * in. What is kept is this object, a few strings per file.
  */
 import { walk, isFunctionLike } from "./walk.mjs";
+import { commentAbove, docLine, lineAt, lineStarts, paramsText, symbol } from "./symbols.mjs";
 import { constName, args } from "./ruby-walk.mjs";
 import { MINITEST_NAME } from "./test-shape.mjs";
 
@@ -167,6 +168,7 @@ function visitorOf(node, done) {
 /**
  * `program` for the walk, `module` for the parser's own record of the imports
  * and exports it saw. The record is already built and was being discarded.
+ * `source`, the text the tree was read off, asks for the file's `symbols`.
  *
  * Its own walk, ahead of the rows', because the facets choose which rows the
  * file gets. It costs 502ms of `parseFile` beside the rows' 4,269ms on
@@ -175,7 +177,7 @@ function visitorOf(node, done) {
  * a file on this repository walks 25, and its workers' CPU rose 9% there with
  * the scan's wall flat.
  */
-export function jsFacets({ program, module: mod }) {
+export function jsFacets({ program, module: mod, source = null }) {
   const imports = [];
   // Which of the entries above still run: a statement where every specifier is
   // `isType` (an `import type`, or every named specifier carrying `type`)
@@ -236,6 +238,14 @@ export function jsFacets({ program, module: mod }) {
   // Names, not a count: a `module.exports = { helper }` sits at the foot of the
   // file and the function it publishes was walked past long before it.
   const helpers = [];
+  const symbols = [];
+  const starts = source === null ? null : lineStarts(source);
+  const define = (id, kind, at, fn = null, container = null) => {
+    if (starts === null || typeof id?.name !== "string") return;
+    const line = lineAt(starts, at.start);
+    const params = fn?.params ? `(${fn.params.length ? source.slice(fn.params[0].start, fn.params.at(-1).end) : ""})` : null;
+    symbols.push(symbol(id.name, kind, line, container, paramsText(params), docLine(commentAbove(source, starts, line))));
+  };
 
   const node = (n, ctx) => {
     if (n.type === "JSXElement" || n.type === "JSXFragment") jsx = true;
@@ -249,9 +259,27 @@ export function jsFacets({ program, module: mod }) {
       }
     }
 
+    // A method of a class the module itself declares, by a name a caller can write: not `[key]` or `#hidden`.
+    // `handleOpen = (event) => {}` is how a class written for React declares one.
+    const method = (n.type === "MethodDefinition" && n.kind === "method") || (n.type === "PropertyDefinition" && n.value && isFunctionLike(n.value));
+    if (method && !n.computed && n.key?.type !== "PrivateIdentifier" && ctx.stack.length === 1 && ctx.cls?.id) {
+      define(n.key, "method", n, n.value, ctx.cls.id.name);
+    }
+
     // Everything below is a claim about the module's own top level, and
     // `enclosing` is null there and nowhere else.
     if (ctx.enclosing !== null) return;
+
+    if (n.type === "ExpressionStatement" && n.expression?.type === "AssignmentExpression" && isFunctionLike(n.expression.right)) {
+      // `exports.f = function () {}` and `module.exports.f = () => {}` define `f` as surely as a declaration does.
+      const left = n.expression.left;
+      const host = left?.object?.type === "MemberExpression" ? left.object.property?.name === "exports" && left.object.object?.name === "module" : left?.object?.name === "exports";
+      if (left?.type === "MemberExpression" && !left.computed && host) define(left.property, "fn", n, n.expression.right);
+    }
+    if (n.type === "FunctionDeclaration") define(n.id, "fn", n, n);
+    else if (n.type === "ClassDeclaration") define(n.id, "class", n);
+    else if (n.type === "TSInterfaceDeclaration" || n.type === "TSTypeAliasDeclaration" || n.type === "TSEnumDeclaration") define(n.id, "type", n);
+    else if (n.type === "VariableDeclarator" && n.id?.type === "Identifier" && n.init && isFunctionLike(n.init)) define(n.id, "fn", n, n.init);
 
     if (n.type === "VariableDeclarator" && n.init?.type === "CallExpression" && n.init.callee?.name === "require") {
       const m = stringValue(n.init.arguments?.[0]);
@@ -303,6 +331,7 @@ export function jsFacets({ program, module: mod }) {
       // almost every file holds something.
       ...(program.body?.length ? {} : { empty: true }),
       ...(reexports.length ? { reexports } : {}),
+      ...(symbols.length ? { symbols } : {}),
     };
   };
 
@@ -444,8 +473,16 @@ function rubyRefs() {
     refs.push({ const: written, nesting, name });
   };
   const defines = new Set();
+  const symbols = [];
   const node = (n, ctx) => {
     if (n.t === "def" && typeof n.name === "string") defines.add(n.name);
+    if (ctx.def === null && (n.t === "def" || n.t === "class" || n.t === "module")) {
+      const lastOf = (path) => constName(path)?.split("::").at(-1) ?? null;
+      const name = n.t === "def" ? n.name : lastOf(n.constant_path);
+      const container = ctx.cls ? lastOf(ctx.cls.constant_path) : null;
+      const kind = n.t === "module" ? "module" : n.t === "class" ? "class" : container ? "method" : "fn";
+      if (typeof name === "string") symbols.push(symbol(name, kind, n.line, container, n.t === "def" ? paramsText(`(${n.sig ?? ""})`) : null, docLine(n.doc)));
+    }
     if (consumed.has(n)) return;
     if (n.t === "class" || n.t === "module") {
       if (isConst(n.constant_path)) consume(n.constant_path);
@@ -465,7 +502,7 @@ function rubyRefs() {
       }
     } else if (isConst(n)) add(n, nestingOf(ctx.stack), "");
   };
-  return { node, refs, defines };
+  return { node, refs, defines, symbols };
 }
 
 /** What `jsFacets` is for a Ruby tree: a visitor for the Ruby walk. */
@@ -550,6 +587,7 @@ export function rubyFacets(program, rel = "") {
       ...(reached.refs.length ? { refs: reached.refs } : {}),
       // The methods a file defines, which is what a reference calling one of them is named by.
       ...(reached.defines.size ? { defines: [...reached.defines].sort() } : {}),
+      ...(reached.symbols.length ? { symbols: reached.symbols } : {}),
     };
   };
 

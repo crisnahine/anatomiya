@@ -84,6 +84,8 @@ It writes `.claude/rules/anatomiya-overview.md`, one file per area beside it,
 `.claude/anatomiya/facts.json`, and `layout.json` beside it. It also keeps
 `history-authors.gz` and `history-cochange.gz` there: what it read of the history, so the next scan
 reads from git only the commits it has not seen. Deleting either costs one full read of the history.
+And it keeps `index.json.gz`, the code index `/anatomiya:find` reads; a deleted one is written again
+by the next scan or refresh.
 Pass `--dry-run` to see the plan without writing anything. It writes nowhere else unless the map is on for Cursor or GitHub Copilot
 as well, which is [Other tools](#other-tools). The one other file a scan can change is
 `.claude/settings.local.json`: where it still holds the hook entry versions 0.2.4 to 0.2.6 put
@@ -171,6 +173,12 @@ alone. What the four do:
   where an added comment, import or name bound to a literal asks nothing and any other added line
   asks. A file counts as the turn's work only when it was last written during one of the session's
   own tool calls, so a file another session or an editor saved in between is not asked about.
+  Where the scan wrote a code index, the subagent is handed `find` to search it, with the full path
+  of the plugin's own binary, and greps only for code making the same calls.
+- **The code index** is not a hook: the scan writes it and `/anatomiya:find` reads it. It holds every
+  function, method, class and type the scan read, in every source language above (a view template is not indexed), with its line, the class
+  it sits in, its parameters, the first sentence of its doc and how many other files import it. A
+  linked worktree reads its main checkout's, and the refresh writes it again with the map.
 
 > [!NOTE]
 > A session that is already running holds the overview it started with, and gets a changed one
@@ -430,11 +438,11 @@ clause.
 
 ## What it measures
 
-66 dimensions ship: 29 for JavaScript, 34 reachable in JSX, 28 for Ruby, and one more for
+68 dimensions ship: 29 for JavaScript, 34 reachable in JSX, 28 for Ruby, and one more for
 JavaScript and JSX that needs the type checker. A Vue or Svelte script
-block is asked most of the JavaScript ones: 25 for Vue, 25 for Svelte. Four are asked of the
-languages a tree-sitter grammar reads, each where measured repositories differ on it: 3 for
-Python, 3 for PHP, 1 for Go, 3 for Java, 2 for C#, 2 for Rust, 1 for Kotlin. Each is one claim
+block is asked most of the JavaScript ones: 25 for Vue, 25 for Svelte. Six are asked of the
+languages a tree-sitter grammar reads: 6 for Python, 5 for PHP, 2 for Go, 5 for Java, 5 for C#,
+3 for Rust, 4 for Kotlin. Each is one claim
 about one area, with a precision marker where the predicate cannot see every site. Among them:
 
 - **Syntax habits**: error handling, `??` vs `||`, `?.` vs `!`, `import type`, hooks, handlers,
@@ -469,10 +477,11 @@ agent's own output cannot raise the bar it is judged against. Gates and threshol
 | `/anatomiya:scan` | Walks tracked source, counts every dimension per directory, applies the gates, rewrites the map, and reports what it could not cover: files in no area, files that failed to parse, files over the size cap, and any file in `.claude/rules/` it did not write. With `--targets cursor,copilot` it writes the same map for those tools too ([Other tools](#other-tools)). |
 | `/anatomiya:check` | Reports which stated conventions the branch broke, as MUST-FIX or FIX, and as a NIT where it goes against a count the map printed without stating a rule or, for a new test, where the run could not tell what the change added. It also reports a new file whose kind the history adds together with another change the branch does not make. The base side is the merge base; the side being judged is the working tree, so it answers before you commit. |
 | `/anatomiya:pin` | Accepts the current file population as the baseline the gates read, and prints which files enter and leave it. Without one, every claim is measured against the working tree and no finding can exceed FIX. |
-| `/anatomiya:doctor` | Says whether each engine this parses with is installed, with the version it answered and, for one that is not ready, what to do about it. Exits 0 either way. |
+| `/anatomiya:find` | Lists the functions, classes and types the last scan indexed that best match some words, six at most, each with its parameters, `path:line`, how many other files import it and the first sentence of its doc. A name in any casing asks its words, and a rare word outweighs a common one. The end-of-turn reuse check hands the same command to its subagent. |
+| `/anatomiya:doctor` | Says whether each engine this parses with is installed, with the version it answered and, for one that is not ready, what to do about it. Run inside a mapped repository, it also says how many definitions the code index holds. Exits 0 either way. |
 | `/anatomiya:setup` | Installs the packages the two node-hosted engines load, in the plugin's own directory. The grammar files are not packages: they ship in the plugin, and a damaged one is fixed by reinstalling the plugin. The only command that installs anything or reaches a package registry, and no other one runs it. On Windows it prints the command to run by hand. |
 
-The three that read a repository take `--format json`, which prints the same answer as a record
+The four that read a repository take `--format json`, which prints the same answer as a record
 rather than as lines, for a CI job or another tool to read. `check` also takes `--format github`,
 which prints one annotation per finding.
 
@@ -493,6 +502,10 @@ it, or a clone brings a committed overview file with it. To ask:
 ```
 node plugins/anatomiya/bin/anatomiya.mjs scan /path/to/your/repo --targets cursor,copilot
 ```
+
+The code index is the same for every tool: any of them can run
+`node plugins/anatomiya/bin/anatomiya.mjs find '<words>'` from the repository, though only Claude Code's
+end-of-turn check hands it to a subagent.
 
 Inside Claude Code, ask `/anatomiya:scan` for the Cursor or Copilot map and it passes the flag. The
 scan then writes two more copies, an overview and one file per area in each, with the frontmatter
@@ -793,7 +806,7 @@ old (a local named `in1`, `get(` on the line after a `val`). A C# file with `#if
 expression is read with the first branch of each conditional kept, and the scan counts those files
 too. A Python stub (`.pyi`) is not read.
 
-One of the 66 needs the type checker and is the only
+One of the 68 needs the type checker and is the only
 thing the type checker adds: `a call chain stays inside one type`. The scan runs the checker on its
 own when the optional `typescript` 5.x dependency is installed, the scanned repository's own
 dependencies are on disk inside it (a `node_modules` linked in from elsewhere is not read and counts

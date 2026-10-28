@@ -1,0 +1,122 @@
+{
+  "method": "Tokens the reuse check's subagents spent per session with anatomiya, from the usage Claude Code records on each subagent's assistant turns: output tokens, fresh input (input plus cache creation) and cache reads; medians per repository and build. A 2026-10-28 build is told by the bin path its reason names; the build with no finder names none and is every other 2.1.312 session. 0.19.0 ran on Claude Code 2.1.310. Read 2026-10-28.",
+  "by_repository_and_build": {
+    "atuin / 0.19.0": {
+      "sessions": 40,
+      "median_subagent_output_tokens": 8133.0,
+      "median_subagent_fresh_input_tokens": 50302.0,
+      "median_subagent_cache_reads": 127638.5,
+      "median_subagent_tool_calls": 7.0,
+      "median_find_calls": 0.0,
+      "median_subagents": 1.0
+    },
+    "atuin / third: find, 12 lines": {
+      "sessions": 10,
+      "median_subagent_output_tokens": 9533.5,
+      "median_subagent_fresh_input_tokens": 56468.0,
+      "median_subagent_cache_reads": 118385.0,
+      "median_subagent_tool_calls": 6.0,
+      "median_find_calls": 2.0,
+      "median_subagents": 1.0
+    },
+    "eslint / 0.19.0": {
+      "sessions": 89,
+      "median_subagent_output_tokens": 10195,
+      "median_subagent_fresh_input_tokens": 31794,
+      "median_subagent_cache_reads": 120073,
+      "median_subagent_tool_calls": 9,
+      "median_find_calls": 0,
+      "median_subagents": 1
+    },
+    "eslint / no find in the reason": {
+      "sessions": 10,
+      "median_subagent_output_tokens": 11486.5,
+      "median_subagent_fresh_input_tokens": 43410.0,
+      "median_subagent_cache_reads": 90419.0,
+      "median_subagent_tool_calls": 8.0,
+      "median_find_calls": 0.0,
+      "median_subagents": 1.0
+    },
+    "eslint / shipped: find, 6 lines, three calls": {
+      "sessions": 10,
+      "median_subagent_output_tokens": 7593.5,
+      "median_subagent_fresh_input_tokens": 33145.0,
+      "median_subagent_cache_reads": 120179.0,
+      "median_subagent_tool_calls": 6.0,
+      "median_find_calls": 1.0,
+      "median_subagents": 1.0
+    },
+    "eslint / third: find, 12 lines": {
+      "sessions": 10,
+      "median_subagent_output_tokens": 13069.0,
+      "median_subagent_fresh_input_tokens": 56336.0,
+      "median_subagent_cache_reads": 156867.0,
+      "median_subagent_tool_calls": 7.5,
+      "median_find_calls": 2.0,
+      "median_subagents": 1.0
+    },
+    "gitea / 0.19.0": {
+      "sessions": 40,
+      "median_subagent_output_tokens": 9168.0,
+      "median_subagent_fresh_input_tokens": 34732.5,
+      "median_subagent_cache_reads": 110828.0,
+      "median_subagent_tool_calls": 8.0,
+      "median_find_calls": 0.0,
+      "median_subagents": 1.0
+    },
+    "gitea / third: find, 12 lines": {
+      "sessions": 10,
+      "median_subagent_output_tokens": 10926.5,
+      "median_subagent_fresh_input_tokens": 48397.5,
+      "median_subagent_cache_reads": 138637.5,
+      "median_subagent_tool_calls": 7.0,
+      "median_find_calls": 2.0,
+      "median_subagents": 1.0
+    },
+    "mastodon / 0.19.0": {
+      "sessions": 174,
+      "median_subagent_output_tokens": 7413.5,
+      "median_subagent_fresh_input_tokens": 37230.5,
+      "median_subagent_cache_reads": 85839.5,
+      "median_subagent_tool_calls": 6.0,
+      "median_find_calls": 0.0,
+      "median_subagents": 1.0
+    },
+    "mastodon / final build, 3 sessions": {
+      "sessions": 3,
+      "median_subagent_output_tokens": 14358,
+      "median_subagent_fresh_input_tokens": 48392,
+      "median_subagent_cache_reads": 94449,
+      "median_subagent_tool_calls": 7,
+      "median_find_calls": 3,
+      "median_subagents": 1
+    },
+    "mastodon / no find in the reason": {
+      "sessions": 10,
+      "median_subagent_output_tokens": 17005.5,
+      "median_subagent_fresh_input_tokens": 68800.5,
+      "median_subagent_cache_reads": 139977.5,
+      "median_subagent_tool_calls": 10.0,
+      "median_find_calls": 0.0,
+      "median_subagents": 1.0
+    },
+    "mastodon / shipped: find, 6 lines, three calls": {
+      "sessions": 10,
+      "median_subagent_output_tokens": 11689.0,
+      "median_subagent_fresh_input_tokens": 37954.5,
+      "median_subagent_cache_reads": 113375.0,
+      "median_subagent_tool_calls": 6.5,
+      "median_find_calls": 1.0,
+      "median_subagents": 1.0
+    },
+    "mastodon / third: find, 12 lines": {
+      "sessions": 10,
+      "median_subagent_output_tokens": 14001.0,
+      "median_subagent_fresh_input_tokens": 57194.0,
+      "median_subagent_cache_reads": 169786.5,
+      "median_subagent_tool_calls": 7.5,
+      "median_find_calls": 1.5,
+      "median_subagents": 1.0
+    }
+  }
+}

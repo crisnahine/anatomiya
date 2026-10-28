@@ -12,12 +12,14 @@
  */
 import { createHash } from "node:crypto";
 import { join } from "node:path";
+import { fileURLToPath } from "node:url";
 
 import { addedRanges, pendingPaths } from "./changeset.mjs";
 import { corpusDrop, isCorpusPath } from "./corpus.mjs";
 import { encodePath } from "./encode.mjs";
 import { ask, operationUnfinished, unaskedAs, Unasked } from "./git.mjs";
 import { isPathTaken } from "./hook.mjs";
+import { indexHome } from "./index-home.mjs";
 import { INERT_ENGINES, inertLinesOf, REUSE_PARSE_MS } from "./inert.mjs";
 import { embeddedIn, engineOf, language } from "./langs.mjs";
 import { MAX_FILE_BYTES } from "./limits.mjs";
@@ -25,7 +27,7 @@ import { byCode } from "./paths.mjs";
 import { readHead, readTail, realpathOf } from "./rules.mjs";
 import { blankOutside, scriptBlocks } from "./script-blocks.mjs";
 import { markupCodeLines, templateInertLines, templateOf } from "./templates.mjs";
-import { sessionStartIn } from "./transcript.mjs";
+import { sessionStartIn, turnOpenersIn } from "./transcript.mjs";
 
 /** What an ask or a record carries, so a later stop can tell which files it covered. */
 export const REUSE_MARK = "anatomiya reuse check";
@@ -37,6 +39,8 @@ export const REUSE_GIT_MS = 10_000;
 const leftOf = (gitBy) => Math.ceil(gitBy - performance.now());
 
 const REASON_OPENING = "Before you finish, give one subagent this change's diff";
+// How the transcript records a Stop hook's block reason.
+const FEEDBACK = "Stop hook feedback:";
 
 // The reason points at the change and the subagent reads the diff itself, so a
 // long list buys nothing but tokens on every block.
@@ -117,8 +121,29 @@ const PLAIN_PATH = /^[\w./@+-]+$/;
 
 const tag = (files) => `(${REUSE_MARK} ${files.slice(0, MARKED_MOST).map((f) => f.mark).join(" ")})`;
 
-/** The measured wording, with the lines these files added and the tag that covers them. */
-export function reuseReason(files) {
+// The bin this hook runs from, which is the copy whose `find` reads the index this scan's build wrote.
+const BIN = fileURLToPath(new URL("../bin/anatomiya.mjs", import.meta.url));
+// A UNC path's leading `\\` is one backslash to a shell, so it is not.
+const QUOTABLE = /^(?!\\\\)[\w ./@+:\\-]+$/;
+
+/** Whether a shell reads a path inside double quotes back as itself. */
+export const quotable = (path) => QUOTABLE.test(path);
+
+/**
+ * The command that asks this checkout's code index, or null where no scan wrote
+ * one or the path to the bin could not be quoted safely.
+ */
+export function finderFor(root) {
+  if (!quotable(BIN) || indexHome(root) === null) return null;
+  // One single-quoted argument, so a shell globs none of the words: `local_url?` is a pattern to zsh.
+  return `node "${BIN}" find '<words>'`;
+}
+
+/**
+ * The measured wording, with the lines these files added and the tag that covers them.
+ * `finder` is the command that asks the code index, which takes the grep's place where there is one.
+ */
+export function reuseReason(files, { finder = null } = {}) {
   const lines = files.flatMap((f) => {
     const shown = PLAIN_PATH.test(f.path) ? f.path : encodePath(f.path);
     return f.hunks.map((h) => `${shown}:${h.from}-${h.to}${h.created ? " (new file)" : ""}`);
@@ -127,7 +152,12 @@ export function reuseReason(files) {
   const list = `${lines.slice(0, LISTED_MOST).join("; ")}${more > 0 ? `; and ${more} more` : ""}`;
   return (
     `${REASON_OPENING} and these added functions: ${list}. ` +
-    "Have it grep shared and utility modules, files near the change, and code making the same calls, then name every existing function that does the same job or part of it. " +
+    // Where the scan indexed the repository, the index is the search and grep is left the calls it cannot name:
+    // told to do both, a subagent did both, and the turn cost more for the same hits.
+    (finder === null
+      ? "Have it grep shared and utility modules, files near the change, and code making the same calls, "
+      : `Have it run \`${finder}\` in the repository, two or three words with no quote mark for what each added function does, at most three calls, which lists the closest functions by name, doc and path with how many files import each; have it grep only for code making the same calls, `) +
+    "then name every existing function that does the same job or part of it. " +
     "For each added function, call the closest one it names, the repository's own before a package's, and delete the copy it replaces. Where one does part of the job, call it for that part. " +
     // A session that named the helper kept a copy where it fell short on one case (A123).
     "Where one falls short on a case this change needs, make the new code fit it, or extend it without changing what it returns to its current callers, and call it. " +
@@ -377,6 +407,30 @@ export function askedMarksIn(tail) {
  */
 export function continuedByReuseIn(tail) {
   if (typeof tail !== "string") return false;
-  const last = tail.lastIndexOf("Stop hook feedback:");
+  const last = tail.lastIndexOf(FEEDBACK);
   return last !== -1 && tail.indexOf(REASON_OPENING, last) !== -1;
+}
+
+/**
+ * Whether the turn a stop ends was opened by the result of a subagent launched
+ * after this hook's last ask: a search run in the background returns as a task
+ * notification, a turn of its own, and what that turn writes is the check's own
+ * fix, which the stop records as the stop right after a block does.
+ */
+export function resumedByReuseIn(tail) {
+  if (typeof tail !== "string") return false;
+  // The last ask's line, found from the end, so only what follows it is split: the tail runs to 64 MiB.
+  let at = tail.length;
+  let start = -1;
+  // Past a match at the very start there is nothing before it; a search from -1 finds that one again.
+  while (start === -1 && at > 0 && (at = tail.lastIndexOf(FEEDBACK, at - 1)) !== -1) {
+    const from = tail.lastIndexOf("\n", at) + 1;
+    const to = tail.indexOf("\n", at);
+    if (tail.slice(from, to === -1 ? tail.length : to).includes(REASON_OPENING)) start = from;
+  }
+  if (start === -1) return false;
+  const after = tail.indexOf("\n", start);
+  const { opened, launched } = turnOpenersIn(after === -1 ? "" : tail.slice(after + 1));
+  const last = opened.at(-1) ?? null;
+  return last !== null && launched.has(last) && !opened.includes(null);
 }
