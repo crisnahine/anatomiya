@@ -10,7 +10,7 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and
 ### Added
 
 - A code index. A scan now keeps `.claude/anatomiya/index.json.gz`: every function, method, class and
-  type that no function holds, a module, a namespace or a class around it included, and Go's and Rust's constants, in all nine languages, with its line, the class it sits in, its parameters, the first
+  type that no function holds, a module, a namespace or a class around it included, and Go's and Rust's constants and package variables, in all nine languages, with its line, the class it sits in, its parameters, the first
   sentence of its doc comment and how many other files import it. `/anatomiya:find <words>` lists the
   six closest, a rare word outweighing a common one and a test ranked behind the helper it covers
   (H60, B82).

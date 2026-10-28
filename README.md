@@ -187,7 +187,7 @@ is below, with every miss read.
 ### Look it up before writing it: the code index
 
 Every scan also writes an index of every function, method, class and type a file declares at its top
-level or in a class, and Go's and Rust's constants, in all nine languages (a view template is not
+level or in a class, and Go's and Rust's constants and package variables, in all nine languages (a view template is not
 indexed): where it is, what it takes, the first sentence of its doc comment, and how many other
 files import it. `/anatomiya:find` asks it in plain words, and a name in any casing works:
 

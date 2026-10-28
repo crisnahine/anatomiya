@@ -27,7 +27,7 @@ import { byCode } from "./paths.mjs";
 import { readHead, readTail, realpathOf } from "./rules.mjs";
 import { blankOutside, scriptBlocks } from "./script-blocks.mjs";
 import { markupCodeLines, templateInertLines, templateOf } from "./templates.mjs";
-import { finishedCallOf, parsed, sessionStartIn } from "./transcript.mjs";
+import { sessionStartIn, turnOpenersIn } from "./transcript.mjs";
 
 /** What an ask or a record carries, so a later stop can tell which files it covered. */
 export const REUSE_MARK = "anatomiya reuse check";
@@ -429,32 +429,8 @@ export function resumedByReuseIn(tail) {
     if (tail.slice(from, to === -1 ? tail.length : to).includes(REASON_OPENING)) start = from;
   }
   if (start === -1) return false;
-  // The call each entry that opens a turn after the ask reports finished, or null for a person's prompt.
-  const opened = [];
-  const launched = new Set();
-  for (const line of tail.slice(start).split("\n").slice(1)) {
-    if (!line.includes("\"user\"") && !line.includes("tool_use") && !line.includes("queued_command")) continue;
-    const entry = parsed(line);
-    const content = entry?.message?.content;
-    if (entry?.type === "assistant") {
-      // The subagent tool was `Task` before `Agent`.
-      for (const part of Array.isArray(content) ? content : []) if (part?.type === "tool_use" && (part.name === "Agent" || part.name === "Task")) launched.add(part.id);
-      continue;
-    }
-    // A message that arrives while the session works is queued, not a user entry: a prompt asks again, and the
-    // check's own result answers it; any other call's result opens nothing.
-    if (entry?.type === "attachment" && entry.attachment?.type === "queued_command") {
-      const prompt = typeof entry.attachment.prompt === "string" ? entry.attachment.prompt : "";
-      const id = finishedCallOf(prompt);
-      // A notification that names no call, a forked skill's or a resumed agent's, is no person speaking.
-      if (id === null ? !prompt.trimStart().startsWith("<task-notification>") : launched.has(id)) opened.push(id);
-      continue;
-    }
-    if (entry?.type !== "user" || entry.isMeta === true) continue;
-    if (Array.isArray(content) && content.some((part) => part?.type === "tool_result")) continue;
-    const text = typeof content === "string" ? content : (Array.isArray(content) ? content : []).map((part) => part?.text ?? "").join("\n");
-    opened.push(finishedCallOf(text));
-  }
+  const after = tail.indexOf("\n", start);
+  const { opened, launched } = turnOpenersIn(after === -1 ? "" : tail.slice(after + 1));
   const last = opened.at(-1) ?? null;
   return last !== null && launched.has(last) && !opened.includes(null);
 }

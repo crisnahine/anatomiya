@@ -133,14 +133,16 @@ const TREE = {
   ],
   go: [
     "a.go",
-    "package db\n\n// GetEngine returns the session.\nfunc GetEngine(ctx context.Context) Engine {\n\treturn nil\n}\n\ntype Server struct{}\n\n// Run starts it.\nfunc (s *Server) Run(port int) error { return nil }\n\nconst Max = 3\n\nfunc (l *List[T]) Push(v T) {}\n",
+    "package db\n\n// GetEngine returns the session.\nfunc GetEngine(ctx context.Context) Engine {\n\treturn nil\n}\n\ntype Server struct{}\n\n// Run starts it.\nfunc (s *Server) Run(port int) error { return nil }\n\nconst Max = 3\n\n// EOF is the end of input.\nvar EOF = errors.New(\"EOF\")\n\nfunc (l *List[T]) Push(v T) { var held = v; _ = held }\n",
     [
       ["GetEngine", "fn", 4, null, "(ctx context.Context)", "GetEngine returns the session."],
       ["Server", "type", 8, null, null, null],
       ["Run", "method", 11, "Server", "(port int)", "Run starts it."],
       ["Max", "const", 13, null, null, null],
+      // A package `var` is a value other files reuse, as a Rust static is; one inside a function is not listed.
+      ["EOF", "const", 16, null, null, "EOF is the end of input."],
       // A generic receiver's type is the list's, not its parameter's.
-      ["Push", "method", 15, "List", "(v T)", null],
+      ["Push", "method", 18, "List", "(v T)", null],
     ],
   ],
   java: [
@@ -167,7 +169,7 @@ const TREE = {
   ],
   rust: [
     "a.rs",
-    "/// Makes a v7 uuid.\n#[inline]\npub fn uuid_v7() -> Uuid { todo!() }\n\nstruct Db;\nimpl Db {\n    /// Opens it.\n    pub fn open(path: &Path) -> Self { Db }\n}\nimpl<T> Pool<T> {\n    pub fn new(t: T) -> Self { todo!() }\n}\nimpl crate::store::Bar {\n    fn b(&self) {}\n}\nimpl Foo for (A, B) {\n    fn f(&self) {}\n}\n/// Squares it.\nmacro_rules! square {\n    ($x:expr) => { $x * $x };\n}\n",
+    "/// Makes a v7 uuid.\n#[inline]\npub fn uuid_v7() -> Uuid { todo!() }\n\nstruct Db;\nimpl Db {\n    /// Opens it.\n    pub fn open(path: &Path) -> Self { Db }\n}\nimpl<T> Pool<T> {\n    pub fn new(t: T) -> Self { todo!() }\n}\nimpl crate::store::Bar {\n    fn b(&self) {}\n}\nimpl Foo for (A, B) {\n    fn f(&self) {}\n}\n/// Squares it.\nmacro_rules! square {\n    ($x:expr) => { $x * $x };\n}\n/// The most it holds.\nstatic LIMIT: u32 = 3;\n",
     [
       ["uuid_v7", "fn", 3, null, "()", "Makes a v7 uuid."],
       ["Db", "type", 5, null, null, null],
@@ -177,6 +179,7 @@ const TREE = {
       // A trait implemented for a tuple names no type of its own.
       ["f", "method", 17, null, "(&self)", null],
       ["square", "fn", 20, null, null, "Squares it."],
+      ["LIMIT", "const", 24, null, null, "The most it holds."],
     ],
   ],
   kotlin: [

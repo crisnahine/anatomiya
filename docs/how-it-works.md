@@ -2136,7 +2136,7 @@ never frees a fourth.
 ### The code index
 
 A scan also writes `.claude/anatomiya/index.json.gz`: every function, method, class and type no
-function holds, in every language the scan reads, and Go's and Rust's constants and statics, each with its line, the class or
+function holds, in every language the scan reads, and Go's and Rust's constants, statics and package variables, each with its line, the class or
 module or type it sits in, its parameter list as written and the first sentence of its doc comment
 or docstring, and how many other files import or call it (H60). In JavaScript that is a module's own
 functions, classes, types and the functions it binds to a `const` or to `exports`, and the methods

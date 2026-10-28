@@ -13,6 +13,7 @@ import {
   sessionStartIn,
   toolCallsIn,
   transcriptTail,
+  turnOpenersIn,
   turnStartIn,
   windowBytes,
 } from "../plugins/anatomiya/lib/transcript.mjs";
@@ -55,6 +56,20 @@ test("the record readers over a transcript's text name its start, its last promp
     { from: at + 3000, to: at + 9000 },
     { from: at + MINUTE + 1000, to: at + MINUTE + 1500 },
   ]);
+});
+
+test("the turns a run of records opens name the call that opened each, and the subagents it launched", () => {
+  const records = [
+    prompted(),
+    ...toolCall("toolu_check", 0, 1, { name: "Agent" }),
+    ...toolCall("toolu_tests", 2, 3),
+    notification("toolu_tests", 4, "attachment"),
+    notification("toolu_check", 5, "attachment"),
+    notification("toolu_check", 6, "user"),
+  ];
+  const { opened, launched } = turnOpenersIn(records.map((record) => JSON.stringify(record)).join("\n"));
+  assert.deepEqual(opened, [null, "toolu_check"], "a person's prompt and the subagent's result; another call's result and a meta record open nothing");
+  assert.deepEqual([...launched], ["toolu_check"]);
 });
 
 test("a session whose first stamped record is past the head still has a start", (t) => {
