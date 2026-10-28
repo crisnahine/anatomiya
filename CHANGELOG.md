@@ -7,6 +7,16 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and
 
 ## [Unreleased]
 
+## [0.20.0] - 2026-10-29
+
+A scan now writes a code index of every definition it reads, in all nine languages, and the end-of-turn
+reuse check hands its subagent `find` in place of a grep. On four reuse tasks with Haiku, 20 sessions
+per arm, 67 of 80 sessions called the helper the repository already had, against 65 of 80 on 0.19.0,
+at $0.0157 a session against $0.0164; no task's change is one 20 sessions can tell from chance. The
+search itself got cheaper: on eslint and mastodon its median fresh input fell from 43,410 and 68,801
+tokens to 33,145 and 37,955. Each tree-sitter language also gets the rows its grammar can spell, and
+the check no longer asks about its own fix when its search ran in the background.
+
 ### Added
 
 - A code index. A scan now keeps `.claude/anatomiya/index.json.gz`: every function, method, class and
@@ -5369,7 +5379,8 @@ which are partial; several listed there are not implemented yet.
 - No claim that this catches defects. Measured across ten repositories, 1 of 317 defect review
   comments was preventable by a conventions map.
 
-[Unreleased]: https://github.com/crisnahine/anatomiya/compare/v0.19.0...HEAD
+[Unreleased]: https://github.com/crisnahine/anatomiya/compare/v0.20.0...HEAD
+[0.20.0]: https://github.com/crisnahine/anatomiya/compare/v0.19.0...v0.20.0
 [0.19.0]: https://github.com/crisnahine/anatomiya/compare/v0.18.2...v0.19.0
 [0.18.2]: https://github.com/crisnahine/anatomiya/compare/v0.18.1...v0.18.2
 [0.18.1]: https://github.com/crisnahine/anatomiya/compare/v0.18.0...v0.18.1
