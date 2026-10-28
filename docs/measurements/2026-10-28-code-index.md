@@ -53,7 +53,14 @@ $0.0157 against $0.0164. No task's difference from 0.19.0 is one twenty sessions
 mastodon's 9 against 11 included, so this says the shipped build holds the 0.19.0 result at a little
 less cost. The claude.ai usage limit ended the last four atuin trials and the last two eslint trials of
 each arm before they finished; every trial from the first one it ended was dropped in both arms and run
-again on the same frozen build, and the two runs joined with `--from-raw`. Each task's page is
+again on the same frozen build, and the two runs joined with `--from-raw`.
+
+Mastodon's check asks for one helper, `TagManager#local_url?`, and a session can reach for another that
+also exists. Read off the `app/lib/link_policy.rb` each session left, 19 of 20 sessions on this build
+called an existing `TagManager` helper: 9 `local_url?` and passed, 1 `local_url?` beside a domain read of
+its own, 4 `ActivityPub::TagManager#local_uri?` and 5 another `TagManager` method; 1 wrote its own host
+comparison. On 0.19.0 it was 18 of 20 (11, 5 and 2), with 2 writing their own. The 9 against 11 is which
+of two existing helpers a session picked, not whether it reused one. Each task's page is
 `2026-10-28-code-index-final-<task>-haiku-5-5.md`, with every session in
 `data/2026-10-28-code-index-final-<task>-haiku-5-5.json`.
 
