@@ -65,6 +65,8 @@ const CASES = {
     csharp: [
       ['class A { void F() { Console.WriteLine(1); _logger.LogInformation("x"); Log.Error("y"); Debug.WriteLine(2); } }\n', [false, true, true]],
       ['class A { void F() { _logger.LogWarning("x"); } }\n', [true]],
+      // Type arguments are no part of the callee, nested ones included.
+      ['class A { void F() { _logger.LogInformation<Dictionary<string, List<int>>>("x"); } }\n', [true]],
       ['class A { void F() { Debug.WriteLine(2); _logger.BeginScope("x"); } }\n', []],
     ],
     rust: [

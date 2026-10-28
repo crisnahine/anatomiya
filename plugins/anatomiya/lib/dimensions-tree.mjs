@@ -492,10 +492,22 @@ const LOGGER = /^_*(log|logger|logging)$/i;
 const LEVEL = /^(log)?(trace|debug|info|information|notice|warn|warning|error|critical|fatal|alert|emergency|exception|verbose|severe|fine|finer|finest)$|^log$/i;
 const RUST_LOGGER = /^((log|tracing)::)?(trace|debug|info|warn|error|event|log)$/;
 
+/** Text without what any `<...>` holds, nested ones included: `F<List<int>>` is `F`. */
+function withoutTypeArgs(text) {
+  let depth = 0;
+  let kept = "";
+  for (const char of text) {
+    if (char === "<") depth++;
+    else if (char === ">" && depth > 0) depth--;
+    else if (depth === 0) kept += char;
+  }
+  return kept;
+}
+
 /** A call's callee as written, without blanks, type arguments, a nullable `?` or a macro's `!`. */
 function calleeText(call, sets, source) {
   const args = call.children.find((child) => sets.outputArgs.has(child.type)) ?? call.children[1];
-  return source.slice(call.start, args?.start ?? call.end).replace(/\s+/g, "").replace(/<[^<>]*>/g, "").replace(/[?!]/g, "");
+  return withoutTypeArgs(source.slice(call.start, args?.start ?? call.end).replace(/\s+/g, "")).replace(/[?!]/g, "");
 }
 
 /** Whether a piece outside the tags holds markup: not only blanks, and not a shebang line. */

@@ -7,7 +7,6 @@
  * when it is about to write a function, which is the moment a grep over the
  * whole repository costs the most turns.
  */
-import { lstatSync, readFileSync } from "node:fs";
 import { join } from "node:path";
 import { gunzipSync, gzipSync } from "node:zlib";
 
@@ -18,12 +17,12 @@ import { INDEX_FILE, resolveInside, STORE_DIR } from "./rules.mjs";
 import { reuseIndex } from "./siblings.mjs";
 import { stemWords } from "./stems.mjs";
 import { DOC_MOST, PARAMS_MOST, SYMBOL_KINDS } from "./symbols.mjs";
-import { atomic, quietUnlink } from "./store.mjs";
+import { atomic, quietUnlink, READ_MOST, recordBytes } from "./store.mjs";
 
 const INDEX_SCHEMA = 1;
 
 // Past this a file is not the one this wrote, and is not read.
-const INDEX_MOST = 64 * 1024 * 1024;
+const INDEX_MOST = READ_MOST;
 const UNZIPPED_MOST = 4 * INDEX_MOST;
 
 // What a subagent reads in one call: twelve hits and one call per idea cost its search more tokens
@@ -128,9 +127,10 @@ export function readIndex(root) {
   const path = indexPath(root);
   if (path === null) return null;
   try {
-    const entry = lstatSync(path);
-    if (!entry.isFile() || entry.size > INDEX_MOST) return null;
-    const index = JSON.parse(gunzipSync(readFileSync(path), { maxOutputLength: UNZIPPED_MOST }).toString("utf8"));
+    // Typed and read through one handle, a link refused, so the file read is the file checked.
+    const bytes = recordBytes(path);
+    if (!bytes) return null;
+    const index = JSON.parse(gunzipSync(bytes, { maxOutputLength: UNZIPPED_MOST }).toString("utf8"));
     return index?.schema === INDEX_SCHEMA && Array.isArray(index.files) ? wellFormed(index.files) : null;
   } catch {
     return null;
