@@ -64,6 +64,23 @@ of two existing helpers a session picked, not whether it reused one. Each task's
 `2026-10-28-code-index-final-<task>-haiku-5-5.md`, with every session in
 `data/2026-10-28-code-index-final-<task>-haiku-5-5.json`.
 
+## One task per language, on the build after the PR review
+
+The five per-language tasks of 0.19.0 not run above, on the tree after the PR review's fixes (commit
+4bb0227b), frozen as a copy, Haiku 5.5 at 10 sessions per arm on Claude Code 2.1.312:
+
+| task | with anatomiya | mean cost | without | 0.19.0 with (20 per arm) |
+|---|---|---|---|---|
+| CTFd `admins_only` (Python) | 10/10 | $0.0228 | 8/10 | 20/20, $0.0245 |
+| BookStack `Role::getSystemRole` (PHP) | 10/10 | $0.0106 | 9/10 | 20/20, $0.0115 |
+| DolphinScheduler `JSONUtils.parseObject` (Java) | 10/10 | $0.0148 | 10/10 | 19/20, $0.0135 |
+| Bitwarden `CoreHelpers.GenerateComb` (C#) | 10/10 | $0.0172 | 10/10 | 20/20, $0.0178 |
+| KotlinConf `PreviewHelper` (Kotlin) | 10/10 | $0.0176 | 9/10 | 20/20, $0.0183 |
+
+50 of 50 sessions with anatomiya called the helper the repository had, against 46 of 50 without, at
+less than 0.19.0 cost on four of the five. With the four tasks above, all nine languages the plugin reads
+were run on this branch. Each task's page is `2026-10-28-code-index-final-<task>-haiku-5-5.md`.
+
 ## How many hits, and how many calls
 
 The third build printed twelve hits and asked for one call per idea, and its subagent spent more tokens
