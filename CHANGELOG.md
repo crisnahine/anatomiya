@@ -40,7 +40,7 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and
   checkout's index, as its map is borrowed.
 - A scan with no engine for one language keeps the last index's definitions for that language's
   files, as it keeps that language's areas, so `find` does not lose them on a machine without Ruby.
-- A lone letter in a `find` query asks nothing, since nearly every name holds it.
+- A lone letter or a filler word such as `the` in a `find` query asks nothing, and a word's rarity is counted over the name, class and doc it is matched in.
 - `find --format json` says whether there was an index to ask, and a Ruby `module` is listed as a
   module, not a class.
 

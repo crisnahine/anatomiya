@@ -84,7 +84,7 @@ export async function runFind(cwd, words) {
   const index = indexFor(await gitRoot(cwd));
   if (index === null) return { indexed: false, hits: [], lines: ["No code index here yet: run `anatomiya scan` in this repository first."] };
   const asked = printableOnly(words.join(" "));
-  if (queryWords(words).length === 0) return { indexed: true, hits: [], lines: [`"${asked}" holds no word to look up: a letter alone is in nearly every name.`] };
+  if (queryWords(words).length === 0) return { indexed: true, hits: [], lines: [`"${asked}" holds no word to look up: a letter alone or a word like "the" is in nearly every name.`] };
   const hits = findSymbols(index, words);
   if (hits.length === 0) {
     return { indexed: true, hits, lines: [`No definition among the ${index.count} the last scan indexed matches "${asked}". Code written since that scan is not in it.`] };

@@ -1,6 +1,6 @@
 {
   "method": "findSymbols as shipped, over code indexes the build wrote for five corpus repositories at the commits the A/B scenarios name (django at its 2026-10-28 head). The queries were written by the author after a first ranking had been seen. find prints six hits; a rank past six is null.",
-  "meanReciprocalRank": 0.826,
+  "meanReciprocalRank": 0.879,
   "queries": [
     {
       "repository": "atuin",
@@ -124,7 +124,8 @@
     "bestWholeCap   MRR 0.790 top1 13 top3 17 of 19 | 1 2 1 1 2 1 19 1 8 1 1 1 2 1 1 1 1 1 3",
     "bestWholeSqrt  MRR 0.777 top1 13 top3 16 of 19 | 1 4 1 1 1 1 19 1 8 1 2 1 2 1 1 1 1 1 3",
     "bestWholeNone  MRR 0.684 top1 11 top3 14 of 19 | 1 7 4 4 2 1 19 1 8 1 1 1 3 1 1 1 1 1 3",
-    "sumWholeCap    MRR 0.644 top1 10 top3 13 of 19 | 1 11 2 3 4 1 19 1 15 1 1 1 5 1 1 1 2 1 4"
+    "sumWholeCap    MRR 0.644 top1 10 top3 13 of 19 | 1 11 2 3 4 1 19 1 15 1 1 1 5 1 1 1 2 1 4",
+    "shipped: rarity over name, class and doc, filler words dropped, six hits  MRR 0.879 top1 16 top3 17 of 19, 18 of 19 in the six | 1 1 1 1 1 1 5 1 - 1 1 1 2 1 1 1 1 1 1"
   ],
   "scale": {
     "djangoDefinitions": 39257,

@@ -182,24 +182,29 @@ const wordsOf = (text) => (text ? stemWords(text.replace(/[^\p{L}\p{N}]+/gu, " "
 const nameWords = (name) => [...wordsOf(name), fold(name.toLowerCase().replace(/[^\p{L}\p{N}]/gu, ""))];
 const pathTerms = (rel) => wordsOf(rel.replace(/\.[^/.]+$/, "").replace(/\//g, " "));
 
-/** The query's words, split as a name is, so `compareUrls`, `compare urls` and `compare_urls` ask the same; a letter alone asks nothing. */
-export const queryWords = (words) => [...new Set(words.flatMap(wordsOf).filter((word) => !/^\p{L}$/u.test(word)))];
+// Words a sentence carries and no name means: in a doc they match nearly everything. Folded as a query word is.
+const FILLER = new Set(["the", "an", "and", "or", "of", "to", "in", "on", "for", "with", "by", "from", "at", "as", "is", "it", "this", "that", "its", "into"].map(fold));
+
+/** The query's words, split as a name is, so `compareUrls`, `compare urls` and `compare_urls` ask the same; a letter alone or a filler word asks nothing. */
+export const queryWords = (words) => [...new Set(words.flatMap(wordsOf).filter((word) => !/^\p{L}$/u.test(word) && !FILLER.has(word)))];
 
 // What a repository already leans on is the helper to call: 4 importers weigh a match 1.35 times, 19 1.65, 252 2.2.
 const reach = (importers) => 1 + 0.15 * Math.log2(1 + importers);
 
 /**
- * Each asked word's weight: the rarer it is among the index's names, the more it
- * says. A session asks in a sentence's words, and unweighed, `new` or `id` in a
- * hundred names buries `uuid` in one.
+ * Each asked word's weight: the rarer it is among the definitions, by every place a
+ * match is scored, the more it says. A session asks in a sentence's words, and
+ * unweighed, `new` or `id` in a hundred names buries `uuid` in one, and `the` in
+ * every doc outweighs both.
  */
 function weightsOf(index, asked) {
   const seen = new Map([...asked].map((w) => [w, 0]));
   let total = 0;
   for (const [, , symbols] of index.files) {
-    for (const [name] of symbols) {
+    for (const [name, , , container, , doc] of symbols) {
       total++;
-      if (mayHold(name, asked)) for (const w of new Set(nameWords(name))) if (seen.has(w)) seen.set(w, seen.get(w) + 1);
+      if (!mayHold(`${name} ${container ?? ""} ${doc ?? ""}`, asked)) continue;
+      for (const w of new Set([...nameWords(name), ...wordsOf(container), ...wordsOf(doc)])) if (seen.has(w)) seen.set(w, seen.get(w) + 1);
     }
   }
   return new Map([...seen].map(([w, n]) => [w, Math.log(1 + total / (1 + n))]));

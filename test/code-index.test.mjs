@@ -171,6 +171,20 @@ test("a call written Module.method credits the module's method, as a class's", (
   assert.deepEqual(symbols.map(([name, kind, , , , , importers]) => [name, kind, importers]), [["Billing", "module", 1], ["round", "method", 1]]);
 });
 
+test("a word every doc holds weighs little, so a filler word in a query does not reorder the hits", () => {
+  const rows = [
+    ["readIndex", "fn", 1, null, "(root)", "Reads the index the scan wrote."],
+    ["saveIndex", "fn", 2, null, "(root)", "Writes the index to the store."],
+    ["formatHit", "fn", 3, null, "(hit)", "One line for the hit."],
+    ["invokedAs", "fn", 4, null, "(url)", "Whether the module was run as the script."],
+    ["readFacts", "fn", 5, null, "(root)", "Reads the facts the map holds."],
+  ];
+  const index = { schema: 1, count: rows.length, files: [["src/a.mjs", 0, rows.map((r) => [...r, 0])]] };
+  const names = (words) => findSymbols(index, words).map((h) => h.name);
+  assert.deepEqual(names(["read", "the", "index"]), names(["read", "index"]));
+  assert.ok(!names(["format", "the", "hit"]).includes("invokedAs"), "a doc that only shares `the` is no hit");
+});
+
 test("a lone letter asks nothing: it is in nearly every name", () => {
   const { files, records, corpusRels } = repository();
   const index = buildIndex(files, records, corpusRels);
