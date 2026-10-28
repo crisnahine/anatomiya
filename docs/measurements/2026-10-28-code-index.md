@@ -81,6 +81,22 @@ The five per-language tasks of 0.19.0 not run above, on the tree after the PR re
 less than 0.19.0 cost on four of the five. With the four tasks above, all nine languages the plugin reads
 were run on this branch. Each task's page is `2026-10-28-code-index-final-<task>-haiku-5-5.md`.
 
+## Opus 5.5 on the four tasks
+
+The same four tasks on the final tree (commit aad4f66c), frozen as a copy, Claude Opus 5.5 at medium
+effort, 10 sessions per arm on Claude Code 2.1.312:
+
+| task | with anatomiya | mean cost | without | 0.19.0 with (20 per arm) |
+|---|---|---|---|---|
+| atuin `uuid_v7` | 10/10 | $0.3769 | 0/10 | 20/20, $0.3900 |
+| eslint `unIndent` | 10/10 | $0.4117 | 1/10 | 17/20, $0.4866 |
+| gitea `db.GetEngine` | 10/10 | $0.2693 | 10/10 | 20/20, $0.3124 |
+| mastodon `TagManager#local_url?` | 10/10 | $0.3012 | 5/10 | 20/20, $0.3366 |
+
+40 of 40 sessions with anatomiya called the helper, against 16 of 40 without and 77 of 80 on 0.19.0,
+and each task cost less than on 0.19.0: $0.3398 a session against $0.3814 over the four, 11% less.
+Each task's page is `2026-10-28-code-index-final-<task>-opus-5-5.md`.
+
 ## How many hits, and how many calls
 
 The third build printed twelve hits and asked for one call per idea, and its subagent spent more tokens
@@ -137,7 +153,7 @@ history (flask, Slim, gson, serilog, ripgrep, kotlinx.serialization) asked `clas
 
 ## What this does not show
 
-- Opus 5.5 was not run.
+- Opus 5.5 ran the four tasks at 10 sessions per arm, not the five per-language ones.
 - The first three builds ran ten sessions per arm; the build that ships ran twenty. The 0.19.0 numbers
   are twenty per arm on Claude Code 2.1.310, one release before the 2.1.312 every run here used.
 - The eval queries for `find` were written by the author after the first ranking was seen.
