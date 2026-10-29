@@ -14,15 +14,7 @@ import { namesakeCompanions, namesakeIndex } from "./companions.mjs";
 import { familyOf, isComponent, language, placeTestsOf } from "./langs.mjs";
 import { baseOf, dirOf, extOf, stemOf, withoutExtension, byCode } from "./paths.mjs";
 import { PRECEDENT_FLOOR } from "./principles.mjs";
-import {
-  FAMILY_TEST_NAMES,
-  isTestFile,
-  TEST_DIRS,
-  TEST_ROOTS,
-  UNNAMED_RUNNER,
-  namesATestFile,
-  underTestTree,
-} from "./test-shape.mjs";
+import { FAMILY_TEST_NAMES, isTestFile, TEST_DIRS, TEST_ROOTS, UNNAMED_RUNNER, underTestTree } from "./test-shape.mjs";
 
 /**
  * The floor rises with the corpus, so a directory earns a line by holding a
@@ -115,7 +107,6 @@ export function placedTests(files) {
 
 // A component with no script still holds its markup, which is the file.
 const holdsNothing = (facets) => facets?.empty === true && !facets.embedded;
-
 
 // A component in a `__tests__` directory is what the tests there mount, so no test is owed it.
 const isFixture = (f) => isComponent(f.lang) && dirOf(f.rel).split("/").some((seg) => TEST_DIRS.has(seg));

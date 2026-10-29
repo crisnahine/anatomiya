@@ -373,6 +373,9 @@ export async function pendingChange(root, { since = null, turnStart = null, call
   const files = [];
   for (const { path, status } of changed.sort((a, b) => byCode(a.path, b.path))) {
     if (ONE_OFF.test(path) || dropOf(path) !== null) continue;
+    // Its kind before its bytes: a lockfile or an image is never read.
+    const kind = kindOf(path);
+    if (kind === null) continue;
     const entry = readHead(join(root, path), MAX_FILE_BYTES + 1);
     // Past the size the parser skips, or not a file: nothing this reads either.
     if (entry.kind !== "file" || entry.size > MAX_FILE_BYTES) continue;
@@ -382,7 +385,7 @@ export async function pendingChange(root, { since = null, turnStart = null, call
       status === "A"
         ? [{ from: 1, to: lineCount(entry.head), created: true }].filter((h) => h.to > 0)
         : (ranges.get(path) ?? []).map(([from, to]) => ({ from, to, created: false }));
-    const asking = await askingHunks(path, entry.head, added, parsing);
+    const asking = await askingHunks(path, entry.head, added, parsing, kind);
     if (asking === null) continue;
     // Over the checkout too: a sibling repository's copy of a file is another file.
     const mark = createHash("sha256").update(`${home}\0${path}\0`).update(entry.head).digest("hex").slice(0, 12);
@@ -392,21 +395,31 @@ export async function pendingChange(root, { since = null, turnStart = null, call
 }
 
 /**
+ * What a path's kind lets it ask: its template, or its language and the engine
+ * that reads it where that engine has an inert-line rule; null where its files
+ * ask nothing. An engine with no rule cannot tell a function from a comment.
+ */
+function kindOf(path) {
+  const template = templateOf(path);
+  const lang = template === null ? language(path) : null;
+  const engine = lang === null ? null : engineOf(lang);
+  if (template === null && !INERT_ENGINES.includes(engine)) return null;
+  return { template, lang, engine };
+}
+
+/**
  * What one changed file asks, read off its text alone: the hunks among `added`
  * that define something callable, with the names they declare (A126), or null
  * where every added line provably defines nothing (B68, B73). A view template
  * asks by its kind's rule and declares no name. `parsing` holds the deadline
  * every file of one stop shares, set at the first.
  */
-export async function askingHunks(path, source, added, parsing = { deadline: null }) {
-  const template = templateOf(path);
-  // An engine with no rule cannot tell a function from a comment, so its files ask nothing.
-  const lang = template === null ? language(path) : null;
-  const engine = lang === null ? null : engineOf(lang);
-  if (template === null && !INERT_ENGINES.includes(engine)) return null;
-  const kind = lang === null ? null : embeddedIn(lang);
+export async function askingHunks(path, source, added, parsing = { deadline: null }, kind = kindOf(path)) {
+  if (kind === null) return null;
+  const { template, lang, engine } = kind;
+  const embedded = lang === null ? null : embeddedIn(lang);
   parsing.deadline ??= performance.now() + REUSE_PARSE_MS;
-  const script = kind === null ? null : await componentScript(engine, lang, source, kind, parsing.deadline);
+  const script = embedded === null ? null : await componentScript(engine, lang, source, embedded, parsing.deadline);
   const hunks = script === null ? added : clipped(added, script.spans);
   const inert =
     template !== null
@@ -607,12 +620,14 @@ export async function reuseAnswer(checkouts, payload, { own = null } = {}) {
   // left dirty before the session, since no ask it made was ever recorded
   // anywhere it could read back.
   let before = transcriptTail(payload.transcript_path, TRANSCRIPT_MOST);
-  const since = before?.start === 0 ? sessionStartIn(before.text) : sessionStart(payload.transcript_path);
-  if (since === null) return {};
   const turn = turnStartIn(before?.text ?? null);
   const calls = toolCallsIn(before?.text ?? null);
-  // Let go before the git reads, so two 64 MiB tails are never held at once.
+  // Under the bound the tail is the whole transcript and the start is read off it; past it the head
+  // is read apart, after the tail is let go, so two 64 MiB buffers are never held at once.
+  const whole = before?.start === 0 ? before.text : null;
   before = null;
+  const since = whole !== null ? sessionStartIn(whole) : sessionStart(payload.transcript_path);
+  if (since === null) return {};
   // One parse budget and one git deadline for the whole stop, however many checkouts it reads.
   const parsing = { deadline: null };
   const gitBy = performance.now() + REUSE_GIT_MS;

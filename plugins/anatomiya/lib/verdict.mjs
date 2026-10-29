@@ -1,10 +1,9 @@
 /**
  * How far a finding is trusted, which slot speaks for its path, and the one
- * shape every finding has (H24, H46): the check's four producers, the row
- * sites, the filename row, the obligations and the co-change claims, each
- * assembled these for themselves, two with ladders whose rungs sat in a
- * different order and three spelling "counted in an area above" by hand. One
- * module, read by the check alone, and tested as a table without a repository.
+ * shape every finding has (H24, H46, H62): the two ladders with their shared
+ * rungs in one order, "counted in an area above" spelled once, and the finding
+ * record with every field present. Read by the check's producers and by the
+ * placement rule, and tested as a table without a repository.
  */
 import { areaLabel, globsReach, underArea } from "./areas.mjs";
 import { CHANGE_MOST } from "./cochange.mjs";
@@ -207,7 +206,7 @@ export const FINDING_FIELDS = ["severity", "reason", "path", "oldPath", "line", 
 /** One finding, every field present and the optional ones null. */
 export function findingOf({ severity, reason, path, oldPath = null, line, area = null, dimension, claim, toldInClaim, precision, where = null, companion = null, snippet = null, turnsOn, ...rest }) {
   for (const key of Object.keys(rest)) throw new TypeError(`a finding carries no ${key}`);
-  // `toldInClaim` rides beside the claim it speaks for and `turnsOn` last, the places the producers wrote them, so the JSON writer prints a finding as it did.
+  // One order for every producer: `toldInClaim` beside the claim it speaks for, `turnsOn` last.
   return {
     severity,
     reason,

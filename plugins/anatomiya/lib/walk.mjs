@@ -1,7 +1,7 @@
 import { createRequire } from "node:module";
 
 import { exportLetIsProp, holdsTypeSyntax, spokenIn } from "./langs.mjs";
-import { outsideTests } from "./test-shape.mjs";
+import { outsideTestsFor } from "./test-shape.mjs";
 
 /**
  * One walk over an oxc program that yields, for every node, the chain of
@@ -345,10 +345,8 @@ export const HIT_FIELDS = [
  * prism child keeps the file); `comments`, the parser's; `facets`, what the
  * bridge read off the tree before the rows, or null where they ride the rows'
  * own walk (prism). Every field is present, null where a bridge has none, so a
- * row cannot read a field in one engine's scan and `undefined` in its check:
- * the oxc bridge handed three fields, the prism bridge one, the tree bridge
- * four and the check four, and a row reading `facets` counted in the check and
- * not in the scan.
+ * row reads the same field in every engine's scan and in the check: one that
+ * reads `facets` counts the same sites on both sides.
  */
 export const FILE_FIELDS = ["rel", "lang", "source", "comments", "facets"];
 
@@ -396,13 +394,15 @@ export function collectHits(program, dimensions, extra = {}, { walker = walk, al
   const found = new Array(dimensions.length);
   const visiting = [];
   const site = keepNode ? (hit) => (hit.node === undefined ? crossing(hit) : { ...crossing(hit), node: hit.node }) : crossing;
+  // A row that asks nothing of a test file is handed none of its nodes, by the one rule in `test-shape.mjs`,
+  // answered once for the file; a rule that throws costs the row asking, as every other throw here does.
+  const outsideTests = outsideTestsFor(extra);
   for (let i = 0; i < dimensions.length; i++) {
     const dim = dimensions[i];
-    // A row that asks nothing of a test file is handed none of its nodes, by the one rule in `test-shape.mjs`.
-    if (dim.outsideTests && outsideTests(dim, extra)) continue;
     const sites = [];
     const add = (hit) => sites.push(site(hit));
     try {
+      if (dim.outsideTests && outsideTests(dim)) continue;
       // The tree's own side channel: the comments the parser reported, the
       // exact string it parsed, and the path it was read from, for the rows
       // whose question the tree alone cannot answer. Same string, never the

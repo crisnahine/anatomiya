@@ -1,13 +1,15 @@
 /**
  * This repository built at one commit, in a directory the working tree cannot
  * reach: a checkout of the commit, the install the working tree holds beside
- * it, and the versions the build answers with.
+ * it, and the versions the build answers with; and `runFrozen`, which runs a
+ * harness out of that checkout.
  *
  * The corpus run and the two A/B harnesses run `bin/anatomiya.mjs` from the
  * working tree, so a file edited while a run was in flight put two builds in
  * one report, and the freeze before a run was done by hand and recorded only in
- * prose. A frozen build is the same binary at a commit nothing edits, and a
- * rerun names it by that commit.
+ * prose. The harness runs at the commit too, binary and all: run from the
+ * working tree over a frozen binary it read the binary's record against its
+ * own constants and cloned this repository's own row from the working tree.
  *
  * The install is the working tree's `node_modules`, cloned where the filesystem
  * can, so a freeze costs seconds and no network. That is the right install
@@ -16,14 +18,14 @@
  * script here may spawn on Windows, so there it is refused with the reason.
  */
 import { execFileSync, spawnSync } from "node:child_process";
-import { constants, cpSync, existsSync, mkdirSync, readFileSync, rmSync, writeFileSync } from "node:fs";
+import { constants, cpSync, existsSync, mkdirSync, mkdtempSync, readFileSync, renameSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 
 import { REL, ROOT } from "./plugins.mjs";
 
 /** Where the harnesses keep their frozen builds, one directory per commit, reused across runs. */
-export const FROZEN_HOME = join(tmpdir(), "anatomiya-frozen");
+const FROZEN_HOME = join(tmpdir(), "anatomiya-frozen");
 
 /** The file a frozen build carries so a directory is known to be one, and which commit it is. */
 export const FROZEN_FROM = "FROZEN_FROM";
@@ -45,19 +47,59 @@ export function frozenBuild(sha, scratch, { source = ROOT } = {}) {
   const answer = () => ({ sha: full, root, pluginDir, binary: join(pluginDir, "bin", "anatomiya.mjs"), versions: versionsOf(pluginDir, full) });
   if (existsSync(join(root, FROZEN_FROM))) return answer();
 
-  // Half a build left by a run that died is removed rather than trusted.
-  rmSync(root, { recursive: true, force: true });
+  // Built under a name of its own and moved into place whole, so two harnesses
+  // freezing one commit at once never read half a build: the one that moves
+  // second finds the first's and uses it.
   mkdirSync(scratch, { recursive: true });
+  const building = mkdtempSync(join(scratch, `.building-${full.slice(0, 12)}-`));
   try {
-    execFileSync("git", ["clone", "-q", "--shared", "--no-checkout", source, root], { stdio: "pipe" });
-    execFileSync("git", ["checkout", "-q", "--detach", full], { cwd: root, stdio: "pipe" });
-  } catch (err) {
-    return { error: `could not check ${full.slice(0, 12)} out under ${scratch}: ${String(err.stderr ?? err.message).trim().split("\n")[0]}` };
+    try {
+      execFileSync("git", ["clone", "-q", "--shared", "--no-checkout", source, building], { stdio: "pipe" });
+      execFileSync("git", ["checkout", "-q", "--detach", full], { cwd: building, stdio: "pipe" });
+    } catch (err) {
+      return { error: `could not check ${full.slice(0, 12)} out under ${scratch}: ${String(err.stderr ?? err.message).trim().split("\n")[0]}` };
+    }
+    const installed = installInto(building, source);
+    if (installed.error) return installed;
+    writeFileSync(join(building, FROZEN_FROM), `${full}\n`);
+    try {
+      renameSync(building, root);
+    } catch (err) {
+      if (!existsSync(join(root, FROZEN_FROM))) return { error: `could not put the build of ${full.slice(0, 12)} at ${root}: ${err.code ?? err.message}` };
+    }
+  } finally {
+    rmSync(building, { recursive: true, force: true });
   }
-  const installed = installInto(root, source);
-  if (installed.error) return installed;
-  writeFileSync(join(root, FROZEN_FROM), `${full}\n`);
   return answer();
+}
+
+/**
+ * The harness at `scriptRel` run out of the build of `sha`, with `argv` less
+ * the `--frozen` that asked for this, and this process's stdio: `{ status }`,
+ * or `{ error }` where there is no build or no such script at that commit.
+ */
+export function runFrozen(sha, scriptRel, argv, { scratch = FROZEN_HOME, source = ROOT } = {}) {
+  const build = frozenBuild(sha, scratch, { source });
+  if (build.error) return build;
+  const script = join(build.root, scriptRel);
+  if (!existsSync(script)) return { error: `${scriptRel} is not at ${build.sha.slice(0, 12)}, so there is no harness there to run` };
+  console.log(`build: anatomiya ${build.versions.anatomiya}, under ${build.root}`);
+  const ran = spawnSync(process.execPath, [script, ...withoutFrozen(argv)], { stdio: "inherit" });
+  return { status: ran.status ?? 1 };
+}
+
+/** `argv` with its `--frozen <sha>` or `--frozen=<sha>` taken out, so the harness at the commit does not freeze again. */
+export function withoutFrozen(argv) {
+  const out = [];
+  for (let i = 0; i < argv.length; i++) {
+    if (argv[i] === "--frozen") {
+      i += 1;
+      continue;
+    }
+    if (argv[i].startsWith("--frozen=")) continue;
+    out.push(argv[i]);
+  }
+  return out;
 }
 
 /** The full id of `sha` as `source` knows it, or null where it names no commit there. */

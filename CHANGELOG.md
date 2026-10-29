@@ -14,7 +14,8 @@ hook's transcript as one tail; a row takes one file context, one test-file rule 
 vocabulary on every engine; the rules module keeps map ownership and hands the containment and bounded
 reads to a module of their own. A Ruby corpus parses on a child per 100 files, the docs gate reads
 each document once, the release runs its gates at the tag, and the three harnesses can run a build
-frozen at one commit. Byte-identical maps and check reports on the twelve-repository corpus.
+frozen at one commit. Byte-identical maps on the twelve-repository corpus, and byte-identical check
+reports on the three full clones, whose findings are row findings alone.
 
 ### Changed
 
@@ -23,12 +24,14 @@ frozen at one commit. Byte-identical maps and check reports on the twelve-reposi
 - `find` has an entry of its own and loads none of the scan behind the other commands: 121 ms to
   83 ms per call (A100). Each hook verb loads only its own modules, and the echo's load list is held
   by name (A100, A119).
-- The Stop hook's reuse check reads the transcript once, as one tail, before it asks git, where it
-  read the head up to six times (A116).
+- The Stop hook's reuse check reads the transcript's tail before it asks git and once more after,
+  and reads the head apart only past 64 MiB, where it read the head up to six times (A116).
 - The check decides which slot speaks for a path, how far a finding is trusted and the one shape
   every finding has in `verdict.mjs` (H62), reads what a change added and touched the way the
   co-change walk does (C55, F27), collects the corpus once however many fields ask (E14), and names
   the base, the commit the change is read from and the mode as one stage, `comparison` (F29, H46).
+  A finding's keys print in one order for every producer; a report holding an obligation, a co-change
+  claim or a placement finding prints `companion` after `where`, where 0.21.0 printed it third.
 - The placement rule's check half runs on paths alone in `precedent.mjs`, with the merge base's
   listing the one git read between its two halves (H38, C33).
 - Every row takes one file context (B83), one test-file rule, `outsideTests` and
@@ -54,19 +57,17 @@ frozen at one commit. Byte-identical maps and check reports on the twelve-reposi
 ### Added
 
 - `--frozen <sha>` on `scripts/e2e-corpus.mjs`, `scripts/ab.mjs` and `scripts/ab-scenario.mjs`:
-  the binary built at that commit, so the checkout may change while a run is in flight and a rerun
-  names the build by its commit (G21).
+  the harness and the binary at that commit, so the checkout may change while a run is in flight
+  and a rerun names the build by its commit (G21).
 - `plugins/anatomiya/lib/payload.mjs`, `settings.mjs` and `find-command.mjs`: the hook contract on
   the wire, the settings entry an older version arranged, and the `find` command (A24, A45, A100).
 
 ### Fixed
 
 - `check` never enforced `strong_params_style`: the row named no classes a site could be judged by,
-  so every site of it fell to the model default (C60).
+  so the check passed over every site of it as unenforceable (C60).
 - Two git readers carried on without an answer, as if git had said no; each now catches only an
   `Unasked` and rethrows the rest (F29).
-- A finding's keys print in the order the producers wrote them, so the JSON report of 0.21.0 and
-  this build are the same bytes on the corpus.
 
 ### Removed
 

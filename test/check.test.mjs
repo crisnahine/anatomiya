@@ -69,7 +69,7 @@ const dim = (o = {}) => ({
  * because the pin stores no counts, so there is nothing to fall back to when
  * its sha goes unreachable.
  */
-function facts(dir, { sha, dimensions = [dim()], path = "src", fileCount = 8, pinned = null, areas = null, capabilities = [] } = {}) {
+function facts(dir, { sha, dimensions = [dim()], path = "src", fileCount = 8, pinned = null, areas = null, capabilities = [], frameworks = [] } = {}) {
   const store = join(dir, ".claude/anatomiya");
   mkdirSync(store, { recursive: true });
   const mapped = areas
@@ -80,7 +80,7 @@ function facts(dir, { sha, dimensions = [dim()], path = "src", fileCount = 8, pi
   writeFacts(dir, {
     root: dir,
     scannedAt: "2026-01-01T00:00:00.000Z",
-    corpus: { files: fileCount, frameworks: [], capabilities },
+    corpus: { files: fileCount, frameworks, capabilities },
     parse: { parsed: fileCount },
     suppressAll: false,
     areas: mapped,
@@ -6880,4 +6880,28 @@ test("the comparison stage names the base, the commit the change is read from an
   assert.equal(cappedBy("compare", { reason: null }), null);
   assert.equal(cappedBy("added-lines", { reason: null }), "no merge base");
   assert.equal(cappedBy("added-lines", { reason: "no baseline pinned" }), "no baseline pinned; no merge base");
+});
+
+test("a parameter filter in another spelling than the one the map learned is a finding, where the row was passed over as unenforceable before", needsRuby, async (t) => {
+  // The row names its three classes now (C74), so a site voting `require` against a learned `expect`
+  // is judged like a naming site against its class; before, `enforceableClass` knew only the naming
+  // vocabulary and the check passed over every site of this row (C60).
+  const dir = repo(t, ({ git, write, commit }) => {
+    write("app/controllers/posts_controller.rb", "class PostsController < ApplicationController\n  def create\n    params.expect(post: [:title])\n  end\nend\n");
+    commit("init");
+    git("checkout", "-q", "-b", "work");
+    write("app/controllers/comments_controller.rb", "class CommentsController < ApplicationController\n  def create\n    params.require(:comment).permit(:body)\n  end\nend\n");
+    commit("add");
+  });
+  // A Rails row is asked only where the record shows Rails, and the area's globs have to reach the Ruby files.
+  facts(dir, {
+    sha: sha(dir, "main"),
+    frameworks: ["rails"],
+    areas: [{ id: "aaaaaaaa", path: "app", globs: [{ negated: false, dir: "app", tail: "**/*.rb" }], fileCount: 8, dimensions: [dim({ key: "strong_params_style", precision: "partial", learned: "expect" })] }],
+  });
+
+  const found = forKey(await check(dir), "strong_params_style");
+
+  assert.deepEqual(found.map((f) => f.path), ["app/controllers/comments_controller.rb"], JSON.stringify(found));
+  assert.match(found[0].claim, /params\.expect/);
 });

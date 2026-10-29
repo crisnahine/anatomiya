@@ -320,9 +320,8 @@ function leftTokens(lock, judge) {
 /**
  * The store's two named locks, each with the judge it is taken and swept under
  * (A117, A118): the refresh worker's, held for one scan, and a commit's, held
- * for its renames. The pairing lived in three callers, the worker, the commit
- * and the store sweep, and A118's guarantee that the sweep and the taker agree
- * held only while all three said the same.
+ * for its renames. One table, so the taker and the sweep cannot read a lock
+ * under two judges.
  */
 const LOCKS = Object.freeze({
   refresh: Object.freeze({ name: basename(REFRESH_LOCK), judge: workerAge }),

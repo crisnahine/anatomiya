@@ -70,8 +70,8 @@ is run, so a new grammar release is something to look for by hand.
 
 No test framework, no mocks, no fixtures generated at runtime. `node:test` and `node:assert` only.
 Tests that need a repository build one in a temp directory with real `git init` and real commits,
-because half the behaviour under test is git behaviour, through `test/repository.mjs`, the one place the
-branch, the identity, signing and the temp path are decided (G22). A failure no real repository or disk can
+because half the behaviour under test is git behaviour; a file that needs more than one makes them
+through `test/repository.mjs`, where the branch, the identity, signing and the temp path are decided (G22). A failure no real repository or disk can
 produce, such as a git ended by a signal or refusing one question, is stood in for that one call, and
 every other call still reaches the real thing: `test/git-script.mjs` scripts git's answer inside the
 test's own process, `test/git-stub.mjs` puts a stub git ahead on `PATH` for a child process the test

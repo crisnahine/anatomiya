@@ -181,17 +181,6 @@ async function passes(root, store, { scan, pin }) {
 }
 
 /**
- * Record a scan somebody ran by hand as the refresh's own. The echo sends a
- * session to `/anatomiya:scan` when a refresh failed, and without this the
- * warning outlived the scan that answered it, and the next refresh rescanned a
- * checkout that had not moved. What the last automatic pin accepted is kept.
- * `before` is the stamp taken before the scan started: where the checkout moved
- * since, the map is older than the stamp and nothing is recorded, so the next
- * refresh rescans. `scanned` is the scan's answer, whose plan names the
- * directories it left stopped, which the refresh retries as it does its own.
- * Never throws: the scan it follows has already succeeded.
- */
-/**
  * A scan run by hand, which is the refresh's answer too: it clears a failed
  * refresh the echo is reporting, and the next refresh has nothing to redo. A
  * dry run writes nothing, so it records nothing either (A95).
@@ -203,6 +192,17 @@ export async function scanByHand(cwd, { dryRun = false, targets = null } = {}) {
   return scanned;
 }
 
+/**
+ * Record a scan somebody ran by hand as the refresh's own. The echo sends a
+ * session to `/anatomiya:scan` when a refresh failed, and without this the
+ * warning outlived the scan that answered it, and the next refresh rescanned a
+ * checkout that had not moved. What the last automatic pin accepted is kept.
+ * `before` is the stamp taken before the scan started: where the checkout moved
+ * since, the map is older than the stamp and nothing is recorded, so the next
+ * refresh rescans. `scanned` is the scan's answer, whose plan names the
+ * directories it left stopped, which the refresh retries as it does its own.
+ * Never throws: the scan it follows has already succeeded.
+ */
 export async function noteScan(root, before, scanned) {
   try {
     const store = resolveInside(root, STORE_DIR);

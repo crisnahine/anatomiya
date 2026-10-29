@@ -1,6 +1,5 @@
 import { constants } from "node:fs";
 import { open } from "node:fs/promises";
-import { dirname } from "node:path/posix";
 
 import { parseAll } from "./parse.mjs";
 import { ALL_DIMENSIONS } from "./dimensions.mjs";
@@ -15,8 +14,8 @@ import {
   lsFiles,
   ownOutput,
 } from "./corpus.mjs";
-import { familyOf, language, MISSING_STRIPPER, placeTestsOf } from "./langs.mjs";
-import { isProducer, placedTests } from "./layout.mjs";
+import { language, MISSING_STRIPPER, placeTestsOf } from "./langs.mjs";
+import { placedTests } from "./layout.mjs";
 import { areaIndex } from "./areas.mjs";
 import { droppedSlots, unexaminedPhrase, unstatedLine } from "./render.mjs";
 import { auditRules, targetView } from "./rules.mjs";

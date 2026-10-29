@@ -21,7 +21,7 @@ export const USAGE = `usage: node scripts/ab.mjs --repo <path> --task <file> [op
   --min-headroom <r> refuse below this (default 0.05)
   --key <dimension>  measure this claim rather than the top-ranked one
   --area <path>      measure in this area rather than the top-ranked one
-  --frozen <sha>     scan, pin and load the plugin built at this commit, not the working tree's
+  --frozen <sha>     run this harness and the plugin at that commit, not the working tree's
 `;
 
 const OPTIONS = Object.fromEntries(
@@ -41,7 +41,7 @@ export const SCENARIO_USAGE = `usage: node scripts/ab-scenario.mjs --repo <path>
   --raw <path>       every trial's written files too, to score again without a rerun
   --from-raw <path>  score kept raw records instead of running trials; give it once per
                      run to join several runs of one scenario (no --repo then)
-  --frozen <sha>     scan, pin and load the plugin built at this commit, not the working tree's
+  --frozen <sha>     run this harness and the plugin at that commit, not the working tree's
 `;
 
 const SCENARIO_OPTIONS = {

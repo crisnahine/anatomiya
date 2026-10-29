@@ -5,7 +5,7 @@
  *
  * The readers take text, so a hook that needs several answers off one
  * transcript reads it once. `readTail`, `readTailOf` and `readHead` in
- * `rules.mjs` stay the bounded reads under them.
+ * `contained.mjs` stay the bounded reads under them.
  */
 import { readTailOf } from "./contained.mjs";
 

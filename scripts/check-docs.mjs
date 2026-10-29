@@ -22,7 +22,7 @@ import { dirname, join } from "node:path";
 
 import { parseSync } from "oxc-parser";
 
-import { DECISIONS_DIR, escaped, indexRows, readRowFile, shortStatus } from "./decisions.mjs";
+import { DECISIONS_DIR, escaped, indexRows, readRowFile, rowFiles, shortStatus } from "./decisions.mjs";
 import { invokedAs, isFile } from "./entry.mjs";
 import { REL } from "./plugins.mjs";
 import { RELEASES, notesFor, tagFor } from "./release.mjs";
@@ -72,13 +72,7 @@ export function documents(root) {
     has: (rel) => existsSync(join(root, rel)),
     list: (dir) => readdirSync(join(root, dir)),
     // Through `read`, so the sweep over every tracked file reads a row file the record already read.
-    // A directory named as a row file is no row: read, it threw past the gate's own answer.
-    rows: () =>
-      new Map(
-        readdirSync(join(root, DECISIONS_DIR), { withFileTypes: true })
-          .filter((f) => f.isFile() && f.name.endsWith(".md"))
-          .map((f) => [f.name.slice(0, -3), read(`${DECISIONS_DIR}/${f.name}`)])
-      ),
+    rows: () => rowFiles(root, read),
     tracked: () => (listed ??= repositoryFiles(root)),
     at: (rel) => join(root, rel),
   };

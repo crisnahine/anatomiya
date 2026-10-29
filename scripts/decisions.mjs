@@ -113,11 +113,11 @@ export function rebuild(index, files) {
 }
 
 /** The row files under a checkout, row id to text. */
-export function rowFiles(root) {
+export function rowFiles(root, read = (rel) => readFileSync(join(root, rel), "utf8")) {
   const dir = join(root, DECISIONS_DIR);
   // A directory named as a row file is no row: read, it threw past the gate's own answer.
   const names = readdirSync(dir, { withFileTypes: true }).filter((f) => f.isFile() && f.name.endsWith(".md")).map((f) => f.name);
-  return new Map(names.map((f) => [f.slice(0, -3), readFileSync(join(dir, f), "utf8")]));
+  return new Map(names.map((f) => [f.slice(0, -3), read(`${DECISIONS_DIR}/${f}`)]));
 }
 
 if (invokedAs(import.meta.url)) {

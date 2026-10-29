@@ -5,7 +5,7 @@ import { existsSync, mkdtempSync, readFileSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 
-import { FROZEN_FROM, frozenBuild } from "../scripts/frozen-build.mjs";
+import { FROZEN_FROM, frozenBuild, runFrozen, withoutFrozen } from "../scripts/frozen-build.mjs";
 import { REL, ROOT } from "../scripts/plugins.mjs";
 import { removeTree } from "./platform.mjs";
 
@@ -51,4 +51,13 @@ test("a build is the commit checked out with the install beside it, its binary a
   const again = frozenBuild(sha, dir);
   assert.equal(again.root, build.root);
   assert.ok(existsSync(join(build.root, "kept.txt")), "a build already there is answered as it stands, not rebuilt");
+});
+
+test("a frozen run is the harness at the commit, out of the build, with the freeze flag taken off its arguments", needsInstall, (t) => {
+  assert.deepEqual(withoutFrozen(["a", "--frozen", "abc", "b", "--frozen=def", "c"]), ["a", "b", "c"]);
+  const dir = scratch(t);
+  // The manifest gate at this commit, run from the copy: it resolves its own root, so a build that could not run it says so.
+  const ran = runFrozen(head(), "scripts/validate.mjs", ["--frozen", head()], { scratch: dir });
+  assert.deepEqual(ran, { status: 0 });
+  assert.match(runFrozen(head(), "scripts/no-such-harness.mjs", [], { scratch: dir }).error, /is not at/);
 });

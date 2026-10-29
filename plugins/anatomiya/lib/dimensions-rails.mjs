@@ -1,7 +1,7 @@
 import { walkRuby, constName, ownDef, site, args, options } from "./ruby-walk.mjs";
 import { addPathSites, CLASSES, namesWellKnown } from "./stems.mjs";
 import { RUBY_STRING_CAP } from "./limits.mjs";
-import { dirOf } from "./paths.mjs";
+import {  } from "./paths.mjs";
 
 /**
  * Rails-data dimensions, same contract as the other dimension files: one claim,

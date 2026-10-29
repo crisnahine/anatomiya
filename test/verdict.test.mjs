@@ -57,7 +57,10 @@ test("a slot whose scope names the kinds it was counted over raises nothing on a
 
 test("every finding has the one shape: the twelve fields present, the optional ones null, and nothing else", () => {
   const f = findingOf({ severity: "FIX", reason: "r", path: "a.ts", line: 3, dimension: "k", claim: "c", precision: "precise" });
+  assert.deepEqual(Object.keys(f), ["severity", "reason", "path", "oldPath", "line", "area", "dimension", "claim", "precision", "where", "companion", "snippet"]);
   assert.deepEqual(Object.keys(f), FINDING_FIELDS);
+  const spoken = findingOf({ severity: "FIX", reason: "r", path: "a.ts", line: 3, dimension: "k", claim: "c", toldInClaim: true, precision: "precise", companion: "b.ts", turnsOn: [] });
+  assert.deepEqual(Object.keys(spoken), ["severity", "reason", "path", "oldPath", "line", "area", "dimension", "claim", "toldInClaim", "precision", "where", "companion", "snippet", "turnsOn"], "one order whatever a producer hands over");
   assert.deepEqual([f.oldPath, f.area, f.where, f.companion, f.snippet], [null, null, null, null, null]);
   assert.equal(findingOf({ severity: "FIX", reason: "r", path: "a.ts", line: 3, dimension: "k", claim: "c", precision: "precise", toldInClaim: true }).toldInClaim, true);
   assert.throws(() => findingOf({ severity: "FIX", reason: "r", path: "a.ts", line: 3, dimension: "k", claim: "c", precision: "precise", typo: 1 }), /a finding carries no typo/);

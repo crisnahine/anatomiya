@@ -501,8 +501,24 @@ export function isTestFile({ rel, lang, facets }, mirrored = null) {
  * first keeps a runner's cases out of a count of habits. One answer for every
  * engine, where each row file once spelled its own (H57).
  */
-export function outsideTests(row, { rel, lang, facets = null }) {
-  if (!lang) return false;
-  if (isTestFile({ rel, lang, facets })) return true;
-  return row.outsideTestTrees === true && underTestTree(dirOf(rel ?? ""), familyOf(lang));
+export function outsideTests(row, context) {
+  return outsideTestsFor(context)(row);
+}
+
+/**
+ * The same question for every row asked of one file: whether the file is a
+ * test, and whether it sits under a test tree, each answered once however many
+ * rows ask, since both are facts of the file and not of the row.
+ */
+export function outsideTestsFor({ rel, lang, facets = null }) {
+  if (!lang) return () => false;
+  let test = null;
+  let tree = null;
+  return (row) => {
+    test ??= isTestFile({ rel, lang, facets });
+    if (test) return true;
+    if (row.outsideTestTrees !== true) return false;
+    tree ??= underTestTree(dirOf(rel ?? ""), familyOf(lang));
+    return tree;
+  };
 }

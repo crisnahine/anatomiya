@@ -5,10 +5,9 @@
  * `commit.gpgsign` never reach it, and an identity set in the repository so a
  * test may change the author per commit. Removed after the test.
  *
- * Fifteen test files spelled their own copy, and the copies drifted on the
- * three settings `docs/releasing.md` names as having broken CI: `-b main` in
- * fourteen of them, signing off in four, a raw `tmpdir()` against the native
- * path in most.
+ * The three settings are the ones `docs/releasing.md` names as having broken
+ * CI, so they are decided here and nowhere else. `init.defaultBranch` is read
+ * by git 2.28 and later; an older git puts the repository on `master`.
  */
 import { execFileSync } from "node:child_process";
 import { mkdirSync, mkdtempSync, readFileSync, realpathSync, writeFileSync } from "node:fs";

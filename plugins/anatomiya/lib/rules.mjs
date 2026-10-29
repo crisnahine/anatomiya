@@ -456,9 +456,8 @@ export function targetStatus(root, target) {
  * state, reason and remedy, whether the record names the target's overview
  * among the files to remove (`turningOff`), and whether the record names any
  * file of the target's at all (`recorded`), which is what makes an unknown
- * directory one that still loads. The writer, the check and the doctor each
- * built this from three calls, and three spellings of "off at the next scan"
- * could drift.
+ * directory one that still loads. The writer, the check and the doctor read
+ * this one, so "off at the next scan" has one spelling.
  */
 export function targetView(root, facts, target) {
   const status = targetStatus(root, target);

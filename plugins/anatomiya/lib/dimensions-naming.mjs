@@ -13,7 +13,7 @@ import { componentProps, isFunctionLike } from "./walk.mjs";
 import { attrName, jsxElementNames, jsxName, makesComponent, typedAsComponent, yieldsJsx } from "./dimensions-jsx.mjs";
 import { addPathSites, CLASSES, classifyWord, fileStem, namesWellKnown } from "./stems.mjs";
 import { encode } from "./encode.mjs";
-import { dirOf } from "./paths.mjs";
+import {  } from "./paths.mjs";
 
 const NAMESPACE = new Set(["TSModuleDeclaration"]);
 

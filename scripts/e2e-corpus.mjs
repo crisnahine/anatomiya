@@ -32,7 +32,7 @@ import { dirname, join, resolve, sep } from "node:path";
 import { fileURLToPath } from "node:url";
 
 import { corpusRepos, invokedAs, readArgv, selectRepos } from "./entry.mjs";
-import { FROZEN_HOME, frozenBuild } from "./frozen-build.mjs";
+import { runFrozen } from "./frozen-build.mjs";
 import { BINARY, REL } from "./plugins.mjs";
 import { isSource } from "../plugins/anatomiya/lib/corpus.mjs";
 import { hasInstall } from "../plugins/anatomiya/lib/semantic.mjs";
@@ -470,8 +470,8 @@ const USAGE = `usage: node scripts/e2e-corpus.mjs <corpusDir> <scratchDir> [opti
   <scratchDir>       where each clone goes; every clone is removed again
   --only <a,b>       run these repositories rather than every child
   --targets <list>   hand this to each repository's first scan, as cursor,copilot
-  --frozen <sha>     run the binary built at this commit rather than the working tree's, so
-                     the checkout may change while the run is in flight
+  --frozen <sha>     run this harness and the binary at that commit rather than the working tree's,
+                     so the checkout may change while the run is in flight
 `;
 
 export function parseArgs(argv) {
@@ -536,15 +536,14 @@ export function checkDirs(corpus, scratch, entries) {
 
 const HERE = dirname(fileURLToPath(import.meta.url));
 // The plugin the marketplace lists, spelled where `scripts/plugins.mjs` says.
-// The working tree's binary, or the frozen build's once `main` has made one.
-let binary = BINARY;
+const BIN = BINARY;
 const MAX_BUFFER = 256 * 1024 * 1024;
 
 const git = (args, cwd) => run("git", args, cwd);
 // Run from the scratch directory, not from this tool's own tree: a command
 // that reads the working directory would otherwise be answered by the
 // repository under test's own source.
-const anatomiya = (args, cwd) => run(process.execPath, [binary, ...args], cwd);
+const anatomiya = (args, cwd) => run(process.execPath, [BIN, ...args], cwd);
 
 function run(cmd, args, cwd) {
   const r = spawnSync(cmd, args, { cwd, encoding: "utf8", maxBuffer: MAX_BUFFER });
@@ -843,6 +842,15 @@ async function main() {
     console.error(`${opts.error}\n\n${USAGE}`);
     process.exit(2);
   }
+  // Before anything is made: the run is the harness at that commit, this one only starts it.
+  if (opts.frozen !== null) {
+    const ran = runFrozen(opts.frozen, "scripts/e2e-corpus.mjs", process.argv.slice(2));
+    if (ran.error) {
+      console.error(`${ran.error}\n\n${USAGE}`);
+      process.exit(2);
+    }
+    process.exit(ran.status);
+  }
   const corpusDir = resolve(opts.corpus);
   const scratchDir = resolve(opts.scratch);
 
@@ -866,16 +874,6 @@ async function main() {
   if (selected.error) {
     console.error(`${selected.error}\n\n${USAGE}`);
     process.exit(2);
-  }
-  // Before the scratch directory, so a commit that cannot be built leaves none behind either.
-  const build = opts.frozen === null ? null : frozenBuild(opts.frozen, FROZEN_HOME);
-  if (build?.error) {
-    console.error(`${build.error}\n\n${USAGE}`);
-    process.exit(2);
-  }
-  if (build) {
-    binary = build.binary;
-    console.log(`build: anatomiya ${build.versions.anatomiya}, under ${build.root}`);
   }
   // Last, so a run refused for any of the reasons above leaves no directory
   // behind it.
