@@ -9,30 +9,7 @@ import { acquire, commitAge, holdsEntries, leftTokens, processAlive, refreshBloc
 import { LOCKED, MOVE_IT, PUT_BACK, UNLOCK, isFileAt, movedAway, quietUnlink, replaceAll, stagedInStore, tooLarge, tooLargeSentence, tooLargeToPutBack, writeTemp } from "./store.mjs";
 import { byCode } from "./paths.mjs";
 import { isWholeArea } from "./slot.mjs";
-import {
-  COMMIT_LOCK,
-  INDEX_FILE,
-  REFRESH_LOCK,
-  REFRESH_STATE,
-  RULES_DIR,
-  STORE_DIR,
-  areaFilename,
-  auditRules,
-  recordFor,
-  blockedOnTheWay,
-  foldedOnto,
-  isGeneratedName,
-  isMapName,
-  leafReplaceable,
-  outsideClaude,
-  resolveInside,
-  resolveRulesDir,
-  resolveTargetDir,
-  spelledOtherwise,
-  stagedBy,
-  targetStatus,
-  turningOff,
-} from "./rules.mjs";
+import { areaFilename, auditRules, blockedOnTheWay, COMMIT_LOCK, foldedOnto, INDEX_FILE, isGeneratedName, isMapName, leafReplaceable, outsideClaude, recordFor, REFRESH_LOCK, REFRESH_STATE, resolveInside, resolveRulesDir, resolveTargetDir, RULES_DIR, spelledOtherwise, stagedBy, STORE_DIR, targetView } from "./rules.mjs";
 import { TARGETS, TARGET_IDS, areaName, assertTargets, isClaude, overviewName } from "./targets.mjs";
 
 /**
@@ -150,15 +127,15 @@ function otherTargets(root, asked, previous, leaveAlone) {
   return TARGET_IDS.map((id) => TARGETS[id])
     .filter((target) => !isClaude(target))
     .map((target) => {
-      const { state, reason = null, remedy } = targetStatus(root, target);
+      const { state, reason = null, remedy, turningOff: off, recorded: held } = targetView(root, previous, target);
       const explicit = asked !== null;
       if (leaveAlone.includes(target.id)) return { target, state, reason, remedy, explicit, on: false, leftAlone: true };
       // A scan killed while turning this target off leaves its overview behind, and the record naming it to remove.
-      if (state !== "unknown") return { target, state, reason, explicit, on: explicit ? asked.includes(target.id) : state === "on" && !turningOff(previous, target) };
+      if (state !== "unknown") return { target, state, reason, explicit, on: explicit ? asked.includes(target.id) : state === "on" && !off };
       if (asked?.includes(target.id)) {
         throw new Error(`${reason}, so ${target.dir} could not be written and nothing was written anywhere: ${remedy} and scan again`);
       }
-      if (explicit && recordFor(previous, target).names?.size) {
+      if (explicit && held) {
         throw new Error(`${reason}, so ${target.dir} could not be turned off and nothing was written anywhere: ${remedy} and scan again`);
       }
       return { target, state, reason, remedy, explicit, on: false };

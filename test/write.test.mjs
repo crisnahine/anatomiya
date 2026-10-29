@@ -13,7 +13,7 @@ import { areaId } from "../plugins/anatomiya/lib/areas.mjs";
 import { TARGETS, areaName, isClaude, overviewName } from "../plugins/anatomiya/lib/targets.mjs";
 import { writeFacts, readFacts as readFactsFrom, readLayout, FACTS_SCHEMA } from "../plugins/anatomiya/lib/facts.mjs";
 import { stagedPath } from "../plugins/anatomiya/lib/store.mjs";
-import { severityFor } from "../plugins/anatomiya/lib/check.mjs";
+import { severityFor } from "../plugins/anatomiya/lib/verdict.mjs";
 import { runDoctor } from "../plugins/anatomiya/lib/commands.mjs";
 import { acquire } from "../plugins/anatomiya/lib/lock.mjs";
 

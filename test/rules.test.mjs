@@ -23,6 +23,7 @@ import {
   spelledOtherwise,
   targetState,
   targetStatus,
+  targetView,
 } from "../plugins/anatomiya/lib/rules.mjs";
 import { TARGETS, areaName, overviewName } from "../plugins/anatomiya/lib/targets.mjs";
 import { doublingRatio, LINEAR } from "./growth.mjs";
@@ -657,4 +658,15 @@ test("the audit with no target is the audit of Claude Code's directory, every .m
   assert.deepEqual(audit.ours, [OVERVIEW_FILE]);
   assert.deepEqual(audit.foreign, ["team.md"]);
   assert.deepEqual(auditRules(dir, known, claude), audit);
+});
+
+test("a target's view is one answer: its status, whether the record is turning it off, and whether the record names files there", (t) => {
+  const dir = workspace(t);
+  assert.deepEqual(targetView(dir, null, cursor), { state: "off", turningOff: false, recorded: false });
+  put(dir, ".cursor", "a file");
+  const view = targetView(dir, null, cursor);
+  assert.equal(view.state, "unknown");
+  assert.equal(view.turningOff, false);
+  assert.equal(view.recorded, false);
+  assert.ok(typeof view.reason === "string" && typeof view.remedy === "string");
 });

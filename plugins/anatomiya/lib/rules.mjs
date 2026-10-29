@@ -460,6 +460,20 @@ export function targetStatus(root, target) {
   return { state: isOwned(read.head) && listsExactly(dir, overviewName(target)) ? "on" : "off" };
 }
 
+/**
+ * One target directory as every reader composes it (A104, A105): `targetStatus`'s
+ * state, reason and remedy, whether the record names the target's overview
+ * among the files to remove (`turningOff`), and whether the record names any
+ * file of the target's at all (`recorded`), which is what makes an unknown
+ * directory one that still loads. The writer, the check and the doctor each
+ * built this from three calls, and three spellings of "off at the next scan"
+ * could drift.
+ */
+export function targetView(root, facts, target) {
+  const status = targetStatus(root, target);
+  return { ...status, turningOff: status.state === "on" && turningOff(facts, target), recorded: (recordFor(facts, target).names?.size ?? 0) > 0 };
+}
+
 /** Whether the record names a target's own overview among the files it was about to remove, which makes it off at the next scan. */
 export function turningOff(facts, target) {
   return pendingNames(facts, target).has(overviewName(target));

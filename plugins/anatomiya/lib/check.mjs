@@ -19,7 +19,7 @@ import { familyOf, language, MISSING_STRIPPER, placeTestsOf } from "./langs.mjs"
 import { isProducer, placedTests } from "./layout.mjs";
 import { areaIndex } from "./areas.mjs";
 import { droppedSlots, unexaminedPhrase, unstatedLine } from "./render.mjs";
-import { auditRules, readHead, recordFor, resolveInside, targetStatus, turningOff } from "./rules.mjs";
+import { auditRules, readHead, resolveInside, targetView } from "./rules.mjs";
 import { TARGETS, isClaude } from "./targets.mjs";
 import { FACTS_PATH, readFacts } from "./facts.mjs";
 import { statedSide } from "./slot.mjs";
@@ -38,8 +38,8 @@ import { CAVEATS } from "./check-report.mjs";
 import { mainCheckoutOf } from "./worktree.mjs";
 import { declaredParents, newlyIntroduced } from "./introduced.mjs";
 import { cochangeSeverity, deliveredOr, findingOf, outsideScope, slotFor, verdictFor } from "./verdict.mjs";
-import { baseOf, byCode, dirOf, folded } from "./paths.mjs";
-import { claimKey, claimSentence, claimsIn, owedBy, statedClaims } from "./cochange.mjs";
+import { byCode, dirOf, folded } from "./paths.mjs";
+import { changeAccumulator, claimKey, claimSentence, claimsIn, owedBy, statedClaims } from "./cochange.mjs";
 
 /**
  * The check phase: which of the conventions the map stated did this branch
@@ -191,8 +191,11 @@ export async function check(cwd, { baseRef = null } = {}) {
   // A framework's claim is only asked where the corpus shows the framework
   // (C8). `[]` rather than an absent value on the cheap branch: absent means
   // "no filter" to `dimensionsFor`, and this caller can answer the question.
+  // Collected once however many fields ask, on the no-map path alone (E14).
+  let collected = null;
+  const corpus = () => (collected ??= collectCorpus(root));
   const frameworks = examined.some((f) => couldSignal(language(f.path)))
-    ? await storedOrCollected(root, facts, "frameworks", frameworksIn, caveats, CAVEATS.FRAMEWORKS_UNKNOWN,
+    ? await storedOrCollected(corpus, facts, "frameworks", frameworksIn, caveats, CAVEATS.FRAMEWORKS_UNKNOWN,
       "the corpus could not be listed, so no framework's claims were checked")
     : [];
   // The routing rows are offered the way a framework's are: only where the
@@ -202,7 +205,7 @@ export async function check(cwd, { baseRef = null } = {}) {
   // nothing, so an empty diff never pays a corpus collect; a readable schema-9
   // map still does, once, until its repository is re-scanned.
   const capabilities = examined.length
-    ? new Set(await storedOrCollected(root, facts, "capabilities", capabilitiesIn, caveats, CAVEATS.CAPABILITIES_UNKNOWN,
+    ? new Set(await storedOrCollected(corpus, facts, "capabilities", capabilitiesIn, caveats, CAVEATS.CAPABILITIES_UNKNOWN,
       "the corpus could not be listed, so no routing claim was checked"))
     : new Set();
 
@@ -341,10 +344,10 @@ export async function check(cwd, { baseRef = null } = {}) {
   const { foreign, unknown, removing, rules } = audited(TARGETS.claude);
   const targets = {};
   for (const target of Object.values(TARGETS).filter((t) => !isClaude(t))) {
-    const { state, reason } = targetStatus(root, target);
-    if (state === "on") targets[target.id] = { dir: target.dir, state: turningOff(facts, target) ? "off" : state, ...audited(target) };
+    const { state, reason, turningOff: off, recorded } = targetView(root, facts, target);
+    if (state === "on") targets[target.id] = { dir: target.dir, state: off ? "off" : state, ...audited(target) };
     // Unread, and the record says a scan wrote files there: they load whether or not this run saw them.
-    if (state === "unknown" && recordFor(facts, target).names?.size) {
+    if (state === "unknown" && recorded) {
       caveat(caveats, CAVEATS.RULES_UNLISTED, `${target.dir} could not be read (${reason}), so nothing there was examined`);
       targets[target.id] = { dir: target.dir, state, reason, foreign: [], unknown: [], rules: { escaped: false, listed: false, unreadable: [] } };
     }
@@ -399,11 +402,11 @@ export async function check(cwd, { baseRef = null } = {}) {
  * because a probe failed is the blocking behaviour this design rejects. The
  * answer costs the claims that asked, never a wrong one.
  */
-async function storedOrCollected(root, facts, field, derive, caveats, code, refusal) {
+async function storedOrCollected(corpus, facts, field, derive, caveats, code, refusal) {
   const stored = facts && facts.corpus && facts.corpus[field];
   if (Array.isArray(stored)) return stored;
   try {
-    return [...derive((await collectCorpus(root)).files)];
+    return [...derive((await corpus()).files)];
   } catch (err) {
     // The code is the caller's, because one unread corpus costs the framework
     // claims or the routing claims depending on who asked.
@@ -1099,29 +1102,28 @@ function addCochangeFindings(root, findings, { rows = [], pending, areas, capped
   if (claims.length === 0) return;
   const gone = new Set([...(pending?.deleted ?? []), ...(pending?.removed ?? [])]);
   const addedHere = new Set(rows.filter((row) => row.status === "A").map((row) => row.path));
-  // The walk reads the whole branch as one change, where a file deleted and added under its own name is a
-  // move. Deleted from the merge base, that is: a file the branch added and then moved was never there.
-  const committedGone = rows.filter((row) => row.status === "D").map((row) => row.path);
-  const pendingGone = [...gone].filter((path) => !addedHere.has(path));
-  const goneNames = new Set([...committedGone, ...pendingGone].map(baseOf));
-  // The map a scan wrote, the walk leaves out too: an untracked map takes no change past CHANGE_MOST files.
-  const own = ownOutput(root).asWritten;
-  const added = new Set();
-  const touched = new Set();
+  // The whole branch is one change, read through the accumulator the walk reads each commit through, so a
+  // move, a path deleted and added under its own name, is no addition here either. Deleted from the merge
+  // base, that is: a file the branch added and then moved was never there, so its pending deletion is not
+  // a name that left. The map a scan wrote, the walk leaves out too; the bounds are the walk's, since a
+  // branch is graded by its size rather than dropped (`cochangeSeverity`).
+  const rowsOf = changeAccumulator(ownOutput(root).asWritten, { most: Infinity, goneMost: Infinity });
+  for (const path of rows.filter((row) => row.status === "D").map((row) => row.path)) rowsOf.row("D", path);
+  for (const path of [...gone].filter((path) => !addedHere.has(path))) rowsOf.row("D", path);
+  const seen = new Set();
   for (const row of [...rows, ...(pending?.touched ?? [])]) {
-    if (row.status === "D" || gone.has(row.path) || own(row.path)) continue;
-    touched.add(row.path);
+    if (row.status === "D" || gone.has(row.path) || seen.has(row.path)) continue;
+    seen.add(row.path);
     // A pending move of a file the branch added is still that addition, as `withPendingEdits` reads it.
-    const isAdded = row.status === "A" || addedHere.has(row.from);
-    if (isAdded && !goneNames.has(baseOf(row.path))) added.add(row.path);
+    rowsOf.row(row.status === "A" || addedHere.has(row.from) ? "A" : "M", row.path);
   }
-  const change = { added: [...added], touched: [...touched] };
+  const change = rowsOf.close();
   for (const claim of claims) {
     const [path] = owedBy(claim, change);
     if (path === undefined) continue;
     const area = claim.area === null ? null : areas.find((a) => a?.path === claim.area) ?? null;
     const dropped = area ? droppedOf(droppedIn, area, claimKey(claim)) : false;
-    const verdict = deliveredOr(cochangeSeverity(claim, { from: cochange.from, area, dropped, capped, size: touched.size }), area, path);
+    const verdict = deliveredOr(cochangeSeverity(claim, { from: cochange.from, area, dropped, capped, size: change.touched.length }), area, path);
     findings.push(findingOf({ ...verdict, companion: claim.companion.path, path, line: 1, area: claim.area, dimension: "cochange", claim: claimSentence(claim), precision: "precise" }));
   }
 }

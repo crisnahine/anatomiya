@@ -9,7 +9,7 @@
  * claim was counted over is the class it is enforced on.
  */
 import { encode, encodePath } from "./encode.mjs";
-import { byCode } from "./paths.mjs";
+import { baseOf, byCode } from "./paths.mjs";
 import { RUBY_TEST_NAME } from "./test-shape.mjs";
 
 // The record keeps at most this many stated claims and this many near misses,
@@ -22,6 +22,44 @@ export const CLAIMS_MOST = 100;
 export const CHANGE_MOST = 40;
 
 const SUFFIX_TEST_NAME = /_test\.(?:go|py)$/;
+
+/**
+ * One change's additions and the files it touched, taken row by row as git
+ * prints them or as a check reads them, so the walk that counts a claim and
+ * the check that enforces it read a change one way (C55). An `A` row is an
+ * addition, `M` and `T` rows are edits, a `D` row records a name that left,
+ * any other letter is passed over, and a path this tool writes is no part of a
+ * change on either side. `close` answers `{ bulk: true }` where the change
+ * grew past `most` added or modified files or `goneMost` deleted names, and
+ * stops storing there, which is what keeps a vendored import bounded in the
+ * walk (F27); otherwise `{ bulk: false, added, touched }`, where a move, a path
+ * deleted and added under its own name, is no addition. `keep` is how a path is
+ * stored, the walk's one copy of each.
+ */
+export function changeAccumulator(own = () => false, { most = CHANGE_MOST, goneMost = Infinity, keep = (p) => p } = {}) {
+  const added = [];
+  const modified = [];
+  const gone = new Set();
+  let bulk = false;
+  return {
+    row(letter, path) {
+      if (bulk || !path || own(path)) return;
+      if (letter === "D") {
+        gone.add(baseOf(path));
+        if (gone.size > goneMost) bulk = true;
+        return;
+      }
+      const list = letter === "A" ? added : letter === "M" || letter === "T" ? modified : null;
+      if (list === null) return;
+      list.push(keep(path));
+      if (added.length + modified.length > most) bulk = true;
+    },
+    close() {
+      if (bulk) return { bulk: true };
+      return { bulk: false, added: added.filter((p) => !gone.has(baseOf(p))), touched: [...added, ...modified] };
+    },
+  };
+}
 
 // A kind is printed in a sentence, so it holds nothing a sentence could be built from.
 const KIND = /^[\w.-]+$/;

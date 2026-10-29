@@ -13,7 +13,7 @@ import { ask, askWhether, caseMagic, headSha } from "./git.mjs";
 import { encodePath } from "./encode.mjs";
 import { byCode } from "./paths.mjs";
 import { plural } from "./render-layout.mjs";
-import { auditRules, EXCLUDE_LINES, isMapName, listSome, LISTED, PREFIX, recordFor, RULES_DIR, targetStatus, trackedRulesDir, turningOff } from "./rules.mjs";
+import { auditRules, EXCLUDE_LINES, isMapName, LISTED, listSome, PREFIX, recordFor, RULES_DIR, targetView, trackedRulesDir } from "./rules.mjs";
 import { TARGETS, isClaude } from "./targets.mjs";
 import { readFacts } from "./facts.mjs";
 import { NODE_PROBE_IDS, PROBE_IDS, couldNotRead, installProblem, lostGrammar, pluginRoot, probeName, readiness, readinessAfresh, readinessLines, remedyForMissing } from "./readiness.mjs";
@@ -275,9 +275,9 @@ async function targetLines(cwd) {
   const claude = auditRules(root, facts).removing.length;
   if (claude > 0) lines.push(removingLine(TARGETS.claude.dir, claude));
   for (const target of Object.values(TARGETS).filter((t) => !isClaude(t))) {
-    const { state, reason } = targetStatus(root, target);
+    const { state, reason, turningOff: off, recorded } = targetView(root, facts, target);
     const known = recordFor(facts, target).names;
-    if (state === "unknown" && known?.size) lines.push(`${target.dir}: could not be read (${reason})`);
+    if (state === "unknown" && recorded) lines.push(`${target.dir}: could not be read (${reason})`);
     if (state !== "on") continue;
     // The split a scan makes: the files the record names are the map's, and
     // the scan's summary counts every other entry as left there. A clone holds
@@ -285,7 +285,7 @@ async function targetLines(cwd) {
     // a file are all there is to go on.
     const { ours, removing, unknown, foreign, occupied, listed } = auditRules(root, facts, target);
     const mine = known === null ? unknown.filter((name) => isMapName(name, target)) : ours;
-    lines.push(`${target.dir}: ${turningOff(facts, target) ? "off at the next scan" : `on, ${listed ? plural(mine.length, "file") : "could not be listed"}`}`);
+    lines.push(`${target.dir}: ${off ? "off at the next scan" : `on, ${listed ? plural(mine.length, "file") : "could not be listed"}`}`);
     const others = unknown.length - (known === null ? mine.length : 0) + foreign.length + occupied.length;
     if (others > 0) lines.push(`${otherEntries(target.dir, others)} that a scan neither writes nor removes`);
     if (removing.length > 0) lines.push(removingLine(target.dir, removing.length));

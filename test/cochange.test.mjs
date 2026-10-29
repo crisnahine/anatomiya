@@ -2,6 +2,7 @@ import { test } from "node:test";
 import assert from "node:assert/strict";
 
 import {
+  changeAccumulator,
   changesPhrase,
   claimKey,
   claimSentence,
@@ -200,4 +201,31 @@ test("a claim's key keeps two companions of one producer apart and names no dime
   assert.notEqual(a, b);
   assert.notEqual(a, c);
   assert.match(a, /\0/);
+});
+
+test("one accumulator reads a change for the walk and the check: the letters, a move is no addition, a path this tool writes is no part of it, and the bounds make it bulk", () => {
+  const own = (p) => p.startsWith(".claude/");
+  const acc = changeAccumulator(own, { most: 3, goneMost: 2 });
+  acc.row("A", "lib/a.rb");
+  acc.row("M", "lib/b.rb");
+  acc.row("T", "lib/c.rb");
+  acc.row("D", "old/a.rb");
+  acc.row("A", ".claude/rules/anatomiya-overview.md");
+  acc.row("R", "lib/r.rb");
+  acc.row("A", "");
+  assert.deepEqual(acc.close(), { bulk: false, added: [], touched: ["lib/a.rb", "lib/b.rb", "lib/c.rb"] }, "a.rb left under its own name, so its arrival is a move");
+  const bulk = changeAccumulator(() => false, { most: 1 });
+  bulk.row("A", "a");
+  bulk.row("A", "b");
+  bulk.row("A", "c");
+  assert.deepEqual(bulk.close(), { bulk: true }, "past the bound the change stores nothing more");
+  const gone = changeAccumulator(() => false, { goneMost: 1 });
+  gone.row("D", "a");
+  gone.row("D", "b");
+  assert.deepEqual(gone.close(), { bulk: true });
+  const kept = [];
+  const keeping = changeAccumulator(() => false, { keep: (p) => (kept.push(p), p) });
+  keeping.row("A", "x.rb");
+  assert.deepEqual(kept, ["x.rb"], "a path is stored the way the caller keeps one");
+  assert.deepEqual(changeAccumulator().close(), { bulk: false, added: [], touched: [] });
 });
