@@ -2,7 +2,7 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import { chmodSync, existsSync, mkdtempSync, mkdirSync, readdirSync, readFileSync, symlinkSync, writeFileSync } from "node:fs";
-import { execFileSync } from "node:child_process";
+import { execFileSync, spawnSync } from "node:child_process";
 import { tmpdir } from "node:os";
 import { basename, dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
@@ -1410,4 +1410,15 @@ test("the harness completes a run from an empty state and writes the document", 
   // Both arms were removed from the repository under measurement.
   const worktrees = execFileSync("git", ["worktree", "list", "--porcelain"], { cwd: repo, encoding: "utf8" });
   assert.equal(worktrees.split("\n").filter((l) => l.startsWith("worktree ")).length, 1, worktrees);
+});
+
+test("an empty --frozen is refused as no commit, before either harness touches a repository", () => {
+  for (const [script, args] of [
+    ["ab.mjs", ["--repo", "r", "--task", "t"]],
+    ["ab-scenario.mjs", ["--repo", "r", "--scenario", "s"]],
+  ]) {
+    const run = spawnSync(process.execPath, [fileURLToPath(new URL(`../scripts/${script}`, import.meta.url)), ...args, "--frozen="], { encoding: "utf8" });
+    assert.equal(run.status, 2, `${script}: ${run.stderr}`);
+    assert.match(run.stderr, /is not a commit of/, script);
+  }
 });

@@ -1,17 +1,14 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { mkdirSync, rmSync, writeFileSync } from "node:fs";
-import { dirname, join } from "node:path";
+import { rmSync } from "node:fs";
+import { join } from "node:path";
 
 import { repository } from "./repository.mjs";
 import {
   addedRanges, branchChange, pendingPaths, renamesSkipped, unquotePath,
 } from "../plugins/anatomiya/lib/changeset.mjs";
 
-function repo(t) {
-  const { dir, write, git } = repository(t, { prefix: "anatomiya-changeset-" });
-  return { dir, write, git };
-}
+const repo = (t) => repository(t, { prefix: "anatomiya-changeset-" });
 
 test("the pending paths name every kind of uncommitted work the way the check reads it", async (t) => {
   const { dir, write, git } = repo(t);

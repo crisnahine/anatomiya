@@ -303,7 +303,6 @@ function enforceableClass(dim, cls) {
  */
 const isOmission = (hit) => hit.class === undefined || hit.class === null;
 
-/** One row's hits on one tree as the scan collects them. */
 /**
  * The facets a row is handed for one file, the same ones the scan's walk handed
  * it. The Ruby walk reads a file's facets off the pass the rows ride, so its
@@ -312,6 +311,7 @@ const isOmission = (hit) => hit.class === undefined || hit.class === null;
  */
 export const rowFacets = (lang, facets) => (engineOf(lang) === "prism" ? null : facets);
 
+/** One row's hits on one tree as the scan collects them. */
 function hitsOf(dim, program, extra, { keepNode = false } = {}) {
   // A row that threw and a row that found nothing both leave no key, and both leave this file without its findings.
   return collectHits(program, [dim], extra, { walker: walkFor(dim), keepNode })[dim.key] ?? [];

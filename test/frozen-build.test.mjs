@@ -109,4 +109,9 @@ test("a commit whose lockfile is not the working tree's is installed from its ow
   assert.equal(build.error, undefined, build.error);
   assert.equal(readFileSync(log, "utf8"), "ci --ignore-scripts --no-audit --no-fund\n", "the build's own install, with scripts off as every workflow installs");
   assert.ok(existsSync(join(build.root, FROZEN_FROM)));
+  // The plugin's own lockfile alone moving is the same case: Claude Code installs a plugin from it.
+  const again = made.commit("moved root lock");
+  made.write(`${REL.anatomiya}/package-lock.json`, '{ "name": "anatomiya", "lockfileVersion": 3, "moved": true }\n');
+  assert.equal(frozenBuild(again, dir, { source: made.dir }).error, undefined);
+  assert.equal(readFileSync(log, "utf8").split("\n").filter(Boolean).length, 2, "npm ran for the second commit too");
 });

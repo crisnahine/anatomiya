@@ -107,6 +107,9 @@ function publish(building, root) {
         }
         rmSync(aside, { recursive: true, force: true });
       } catch (moved) {
+        // A third freeze can publish at the name while this one holds the leftover aside; its build is
+        // the one answered, and what was moved aside waits for the sweep.
+        if (existsSync(join(root, FROZEN_FROM))) return {};
         return { error: `could not clear ${root}, which holds no build: ${moved.code ?? moved.message}` };
       }
     }
