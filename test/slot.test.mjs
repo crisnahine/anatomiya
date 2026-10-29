@@ -1,6 +1,14 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { isWholeArea, scopeOf, slotRecord, statedSide } from "../plugins/anatomiya/lib/slot.mjs";
+import { execFileSync } from "node:child_process";
+import { mkdirSync, mkdtempSync, writeFileSync } from "node:fs";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
+
+import { runScan } from "../plugins/anatomiya/lib/commands.mjs";
+import { applyGates, reduceArea } from "../plugins/anatomiya/lib/reduce.mjs";
+import { isWholeArea, SCAN_ONLY, scopeOf, SLOT_FIELDS, slotRecord, statedSide } from "../plugins/anatomiya/lib/slot.mjs";
+import { removeTree } from "./platform.mjs";
 
 const dim = (o) => ({
   key: "k",
@@ -140,4 +148,83 @@ test("a scope a sentence could not name is neither stored nor read", () => {
     assert.equal("scope" in slotRecord(dim({ scope })), false, JSON.stringify(scope));
   }
   assert.deepEqual(slotRecord(dim({ scope: [".ts"] })).scope, [".ts"]);
+});
+
+/* --- the fields a slot keeps: what the fold hands it is stored or named as the scan's own --- */
+
+test("every field a scan hands a slot is one the record stores or one the scan keeps for itself", async (t) => {
+  const dir = mkdtempSync(join(tmpdir(), "anatomiya-slot-fields-"));
+  t.after(() => removeTree(dir));
+  const git = (...a) => execFileSync("git", a, { cwd: dir, stdio: "pipe" });
+  mkdirSync(join(dir, "src"), { recursive: true });
+  for (let i = 0; i < 14; i++) {
+    writeFileSync(
+      join(dir, "src", `f${i}.ts`),
+      `import { Base } from "./base";\n\n/** F${i}. */\nexport class F${i} extends Base {\n  run(): number {\n    try {\n      return ${i} ?? 0;\n    } catch (err) {\n      return ${i % 3 === 0 ? "0" : "err.code"};\n    }\n  }\n}\n`,
+    );
+  }
+  writeFileSync(join(dir, "src", "base.ts"), "export class Base {}\n");
+  git("init", "-q", "-b", "main");
+  git("config", "user.email", "t@t.test");
+  git("config", "user.name", "T");
+  git("add", "-A");
+  git("commit", "-qm", "init");
+
+  const { result } = await runScan(dir, { dryRun: true });
+  const fields = new Set(result.areas.flatMap((a) => a.dimensions.flatMap((d) => Object.keys(d))));
+  assert.ok(fields.has("learned") && fields.has("files"), "the fixture reaches a learned row and the scan's own fields");
+  const known = new Set([...SLOT_FIELDS, ...Object.keys(SCAN_ONLY)]);
+  assert.deepEqual([...fields].filter((f) => !known.has(f)).sort(), []);
+});
+
+test("a route table's slot, counted over its sections, holds only fields the two lists name", () => {
+  // The fold gives a slot `sections` and `sectionDirs` only where a site names its declaration, which no plain scan fixture reaches.
+  const rels = ["src/router/routes.tsx", "src/router/Router.tsx", "src/router/index.tsx", "src/router/keys.tsx"];
+  const hits = Array.from({ length: 40 }, (_, i) => ({ conforming: false, where: `seg${i}`, class: "kebab-case", section: `s${i % 10}` }));
+  const parsed = rels.map((rel, i) => ({ rel, ok: true, facets: { jsx: true }, hits: i === 0 ? { url_segment_case: hits } : {} }));
+  const slot = reduceArea({ langs: ["jsx"], files: rels.map((rel) => ({ rel, lang: "jsx" })) }, parsed).find((d) => d.key === "url_segment_case");
+  const gated = { ...slot, ...applyGates(slot, { authors: 3, areaFileCount: 4, areaDirCount: 1 }) };
+  assert.ok("sections" in gated && "sectionDirs" in gated, "the fixture reaches a route table's fields");
+  const known = new Set([...SLOT_FIELDS, ...Object.keys(SCAN_ONLY)]);
+  assert.deepEqual(Object.keys(gated).filter((f) => !known.has(f)).sort(), []);
+});
+
+test("every field the table says the record keeps is one the record reads", () => {
+  const full = {
+    ...dim({ tier: "syntactic", langFileCount: 9, priorBound: 0.5, borrowed: false, matchesDefault: false }),
+    learned: "PascalCase",
+    learnedKind: "module",
+    reaches: ["Base"],
+    narrowed: false,
+    moreExceptions: 1,
+    companionsElsewhere: 2,
+    declined: 1,
+    scope: [".ts"],
+    counterClaim: "the other way",
+    counterRatio: 0.2,
+    counterBound: 0.1,
+    counterPriorBound: 0.1,
+    counterBorrowed: false,
+    counterGate: "ratio",
+    counterAuthors: 1,
+    counterExceptions: [{ path: "a.ts", count: 1 }],
+    moreCounterExceptions: 1,
+    baseline: { candidates: 10, conforming: 9, exceptions: [] },
+  };
+  assert.deepEqual(SLOT_FIELDS.filter((f) => !(f in full)), [], "the fixture sets every field");
+  const changed = (v) =>
+    typeof v === "number" ? v + 7
+      : typeof v === "string" ? `${v}x`
+      : typeof v === "boolean" ? !v
+      : Array.isArray(v) ? [...v, "zz"]
+      : v === null ? "q"
+      : { ...v, candidates: 999 };
+  const stored = JSON.stringify(slotRecord(full));
+  const unread = SLOT_FIELDS.filter((f) => JSON.stringify(slotRecord({ ...full, [f]: changed(full[f]) })) === stored);
+  assert.deepEqual(unread, []);
+});
+
+test("no field is both one the record keeps and one the scan keeps for itself", () => {
+  assert.deepEqual(SLOT_FIELDS.filter((f) => Object.hasOwn(SCAN_ONLY, f)), []);
+  for (const [field, why] of Object.entries(SCAN_ONLY)) assert.ok(why.length > 20, `${field} says why it stays out`);
 });

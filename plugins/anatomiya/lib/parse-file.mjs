@@ -13,10 +13,10 @@ import { EXTRA_DIMENSIONS } from "./dimensions-extra.mjs";
 import { JSX_DIMENSIONS } from "./dimensions-jsx.mjs";
 import { NAMING_AST } from "./dimensions-naming.mjs";
 import { CAPABILITY_DIMENSIONS } from "./dimensions-capability.mjs";
-import { collectHits, dimensionsFor } from "./walk.mjs";
+import { asks, collectHits, dimensionsFor } from "./walk.mjs";
 import { jsFacets } from "./facets.mjs";
 import { rawTransferAllowed } from "./limits.mjs";
-import { ENGINES, embeddedIn, grammarFor, holdsTypeSyntax, mayHoldFlow, mayBeCommonJS, spokenIn } from "./langs.mjs";
+import { ENGINES, embeddedIn, grammarFor, mayHoldFlow, mayBeCommonJS, spokenIn } from "./langs.mjs";
 import { installedVersion } from "./version.mjs";
 
 let parseSync = null;
@@ -240,16 +240,7 @@ export async function parseFile(source, rel, lang, { withProgram = false, stripp
 
 /** The ok record for a tree and the facets read off it: the rows it is asked, and what crosses. */
 function record(tree, facets, { source, parsedSource, rel, lang, stripped, withProgram }) {
-  // A file that cannot carry the construct a row asks about leaves that row's
-  // denominator: a file nobody asked is not a file that declined. Same trade
-  // `blindWhenStripped` makes one line over. The extension answers it for the
-  // typed half of the family and the tree answers it for Flow, where a `.js`
-  // file carries the annotation the extension says it cannot. The JSX rows are
-  // chosen off the tree the same way, since a `.js` component holds JSX its
-  // extension says nothing about.
-  const dims = dimensionsFor(spokenIn(lang, facets), { rows: ROWS }).filter(
-    (d) => (!stripped || !d.blindWhenStripped) && (holdsTypeSyntax(rel, facets) || !d.needsTypeSyntax)
-  );
+  const dims = dimensionsFor(spokenIn(lang, facets), { rows: ROWS }).filter((d) => asks(d, { lang, facets, stripped, rel }));
 
   const payload = {
     rel,

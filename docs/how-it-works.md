@@ -384,8 +384,9 @@ every visitor row's sites for the file, and a row with its own `run` keeps its o
 walked for itself, a file on a measured React front end took 50.8 walks and 18,518 visitor calls,
 counting every walk of the file's tree or of a subtree in it, and `collectHits` was 87% of each
 parse worker's time; one shared walk took that to 9.2 walks and 2,047 calls. The check and the tests
-still ask one row at a time, through a `run` that `dimensions.mjs` builds from the same visitor on
-its engine's walk. A row that reads only `program.body` never walked, and keeps its `run`.
+ask one row at a time through `collectHits` too, on the row's engine's walk, so every reader takes
+the fields that crossed the worker boundary and nothing else; the check alone keeps each hit's node
+beside them, to place a site. A row that reads only `program.body` never walked, and keeps its `run`.
 
 A parse child loads its own engine's rows and no other engine's. The five base oxc rows sit in
 `dimensions-base.mjs`, and `dimensionsFor`, which selects from the rows its caller names, in
@@ -1592,7 +1593,9 @@ than taking its own, so it costs the roster nothing on an overview at its bound.
 Writes are atomic: temp file in the same directory, then rename, so a crash never leaves half a
 context file. One module holds how that is done, `store.mjs`, and the map, the record, the pin and
 the refresh state all write through it: the name a file is staged under, the write, the put-back of
-one file and the replace of a set (A115). `.claude/anatomiya/facts.json` holds every count, gated or not, `layout.json` beside
+one file and the replace of a set (A115). `.claude/anatomiya/facts.json` holds every count, gated or not, each slot as
+`slotRecord` keeps it: every field the scan hands a slot is one of `SLOT_FIELDS` or one `SCAN_ONLY`
+names with why the record leaves it out, and a test holds a real scan's slots to the two. `layout.json` beside
 it holds the record's layout on its own, and the record, its layout file and the rendered files are
 replaced as one: every one is written to its temp file before any rename, the facts are renamed
 first and stale area files removed last, and a rename or removal that fails puts back what it had
@@ -2151,10 +2154,12 @@ Python docstring from the body, and the Ruby child sends a method's parameters a
 end on the line above a definition with each node (B82). A blank line between a comment and its
 definition, a pragma (`eslint-disable`, `# frozen_string_literal`) and a tag block (`@param`,
 `Args:`) are not documentation. The importer count is the reuse line's own map of who reaches which
-name out of which file (H58, H59): a call written `Class.method` credits that class's method and the
+name out of which file (H58, H59), credited by the rule the line counts by too (`creditOf`, H61): a call written `Class.method` credits that class's method and the
 class, one qualified by a module or a package (`db.GetEngine`) the file's own function of that name.
 
-Nothing on a hook's path reads it. `anatomiya find '<words>'` does, from the repository, the words in
+The Stop hook reads it to know whether `find` can answer: one answer to that, `usableIndex`, serves the
+reuse check, `find` and the doctor, so an index `find` refuses (a link, an older schema, bytes that are
+not one) never has the reason send the subagent to `find` in place of its grep. `anatomiya find '<words>'` reads it, from the repository, the words in
 one single-quoted argument so a shell globs none of them (`local_url?` is a pattern to zsh): it splits the
 words as it splits a name, so `compareUrls` and `compare urls` ask the same, folds an ending
 (`urls`, `indentation`, `comparing`) and reads a name run together as one word too (`unindent` finds
@@ -2167,7 +2172,16 @@ It prints the best 6 on one line each:
 `name(params)  path:line  kind, N files import it  - doc`. A word only the path holds finds nothing,
 since every definition in that file would tie. `/anatomiya:find` runs it for a session, and the reuse
 check's reason names it with the absolute path of the bin that ran the hook, so the subagent's first
-search is one call (A124). The index is the last scan's: a function written since is not in it, and
+search is one call (A124). The weights are `RANKING` in `find.mjs`, the module the hook loads for the
+query side, and `scripts/find-replay.mjs` scores a set of them against the recorded queries (H60).
+
+The reason also names what the index already lists nearest the change (A126): the name each defining
+added line declares, read by one pattern per language (`def`, `function`, `fn`, `func`, a method's
+head; a name every class writes, `initialize`, `constructor`, `render`, is left out), is searched as `find` searches it among the code the added file can call, its own language, JavaScript and TypeScript with the components that embed them, or Java with Kotlin, the best three per name and five in all, in the order the
+names were added, the changed files' own rows left out, each quoted as repository text, and a search
+the stop's 500 ms overtakes gives up. An index file past 2 MiB is judged by its head and not searched
+there, and an index holding no definition names no `find`. Where the reason cannot name `find`, it names no candidate either. On the
+largest index measured, reading took about 20 ms and eight names about 240. The index is the last scan's: a function written since is not in it, and
 the first line of every answer says so.
 
 ## 7b. What lives where
@@ -2626,7 +2640,10 @@ subpath is runtime too and `next-auth` is not. "This React area imports React" i
 already has.
 
 The second counts, per name the area's files hand out, how many files outside the area import it,
-and prints the top five with 3 or more importers. A namespace import (`import * as U`) names no
+and prints the top five with 3 or more importers. A name the code index credits to a definition of
+the file counts every file that definition is credited with, so a class whose methods the rest of
+the repository calls as `Class.method` counts those callers as well, and the line and `find` agree
+about one helper (H61). A namespace import (`import * as U`) names no
 export and is not counted. A default import, or a `require` bound whole, is `default` on every
 module, so it is named for the module it comes from, `user (default)`, and an index file for its
 directory. A specifier is mapped to a file the way

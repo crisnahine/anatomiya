@@ -298,7 +298,8 @@ It is free and MIT licensed. What you pay is tokens:
   about every 30k tokens. A directory's own file, 0.5 to 2.3 KB at the median, loads when Claude opens
   a file there.
 - **On each turn that adds code**: one subagent searches for an existing function. That search is
-  what found `compareUrls`. Where the scan wrote a code index, the subagent starts from `find`.
+  what found `compareUrls`. Where the scan wrote a code index, the subagent starts from `find` and from
+  the definitions the index already lists nearest the names the turn added.
 - **Measured**: across the fourteen tasks on 0.19.0, the median session with anatomiya cost 2.0 to
   5.5 times as much as one without. On Opus 5.5 that was $0.29 to $0.50 against $0.067 to $0.18 per
   session. On Haiku 5.5 it was $0.010 to $0.029 against $0.003 to $0.009. On a turn that only pasted
@@ -415,7 +416,7 @@ baseline into each one:
 - [docs/usage.md](docs/usage.md): the full guide.
 - [docs/why.md](docs/why.md): why it is built this way, and the designs the measurements replaced.
 - [docs/how-it-works.md](docs/how-it-works.md): the mechanics, close enough to predict a scan's output.
-- [DECISIONS.md](DECISIONS.md): 367 numbered decisions, each with the measurement or review finding
+- [DECISIONS.md](DECISIONS.md): 370 numbered decisions, each with the measurement or review finding
   that forced it.
 - [docs/measurements/corpus.md](docs/measurements/corpus.md): every repository a measurement ran on,
   with its commit.

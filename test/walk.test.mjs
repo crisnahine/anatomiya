@@ -2,7 +2,7 @@ import { test } from "node:test";
 import assert from "node:assert/strict";
 import { parseSync } from "oxc-parser";
 
-import { walk, collectHits, fromVisitor, whereOf } from "../plugins/anatomiya/lib/walk.mjs";
+import { asks, walk, collectHits, fromVisitor, whereOf } from "../plugins/anatomiya/lib/walk.mjs";
 import { doublingRatio, LINEAR } from "./growth.mjs";
 
 const { program } = parseSync(
@@ -353,4 +353,30 @@ test("a static and an instance method of one name are one place, which is rare e
     if (n.type === "CatchClause") out.push(whereOf(ctx.enclosing, ctx));
   });
   assert.deepEqual(out, ["A.run", "A.run"]);
+});
+
+test("a row is asked of a file in a language it speaks, unless the strip blinded it or the file cannot carry a type", () => {
+  const plain = { langs: ["js", "vue"] };
+  const blind = { langs: ["js"], blindWhenStripped: true };
+  const typed = { langs: ["js"], needsTypeSyntax: true };
+  const jsx = { langs: ["jsx"] };
+  const cases = [
+    [plain, { lang: "js", rel: "a.js" }, true],
+    [plain, { lang: "vue", rel: "a.vue" }, true],
+    [plain, { lang: "ruby", rel: "a.rb" }, false],
+    [jsx, { lang: "js", rel: "a.js", facets: { jsx: true } }, true],
+    [jsx, { lang: "js", rel: "a.js", facets: { jsx: false } }, false],
+    [blind, { lang: "js", rel: "a.js", stripped: true }, false],
+    [blind, { lang: "js", rel: "a.js", stripped: false }, true],
+    [typed, { lang: "js", rel: "a.js" }, false],
+    [typed, { lang: "js", rel: "a.ts" }, true],
+    [typed, { lang: "js", rel: "a.js", facets: { typed: true } }, true],
+  ];
+  for (const [row, file, want] of cases) assert.equal(asks(row, file), want, JSON.stringify([row, file]));
+});
+
+test("a field a row emits that the boundary does not carry reaches neither the fold nor the check", () => {
+  const row = { key: "probe", run: (tree, add) => add({ conforming: 1, novel: "x", node: tree }) };
+  assert.deepEqual(collectHits(program, [row]).probe, [{ conforming: true, where: null }]);
+  assert.deepEqual(collectHits(program, [row], {}, { keepNode: true }).probe, [{ conforming: true, where: null, node: program }]);
 });

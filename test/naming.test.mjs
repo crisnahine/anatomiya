@@ -8,6 +8,7 @@ import { join } from "node:path";
 import { collectHits } from "../plugins/anatomiya/lib/walk.mjs";
 import { learnClass, verdictFor } from "../plugins/anatomiya/lib/reduce.mjs";
 import { needsRuby } from "./ruby-available.mjs";
+import { hitsOf } from "./hits.mjs";
 
 /* --- hits carry a class only when the dimension gives one --- */
 
@@ -320,9 +321,7 @@ const astHits = async (key, src) => {
   const { parseSync } = await import("oxc-parser");
   const { NAMING_AST } = await import("../plugins/anatomiya/lib/dimensions-naming.mjs");
   const { program } = parseSync("f.tsx", src, { sourceType: "module" });
-  const out = [];
-  NAMING_AST.find((d) => d.key === key).run(program, (h) => out.push(h));
-  return out;
+  return hitsOf(NAMING_AST.find((d) => d.key === key), program);
 };
 
 test("function_naming_case votes with each module-level function's class", async () => {
@@ -766,9 +765,7 @@ async function rubyHits(key, src) {
   writeFileSync(abs, src);
   const file = (await parseRuby([{ rel: `${key}.rb`, abs }])).results[0];
   assert.ok(file && file.ok, `the fixture did not parse: ${file && file.error}`);
-  const hits = [];
-  RUBY_DIMENSIONS.find((d) => d.key === key).run(file.program, (h) => hits.push(h));
-  return hits;
+  return hitsOf(RUBY_DIMENSIONS.find((d) => d.key === key), file.program);
 }
 
 test("class_base votes with the superclass a Ruby class names, and a bare class votes for none", needsRuby, async () => {
@@ -1195,9 +1192,7 @@ test("a top-level interface in a declaration file with no import or export is gl
   const { NAMING_AST } = await import("../plugins/anatomiya/lib/dimensions-naming.mjs");
   const row = NAMING_AST.find((d) => d.key === "interface_prefix");
   const at = (rel, src) => {
-    const out = [];
-    row.run(parseSync(rel, src, { sourceType: "module" }).program, (h) => out.push(h), { rel });
-    return out.map((h) => h.where);
+    return hitsOf(row, parseSync(rel, src, { sourceType: "module" }).program, { rel }).map((h) => h.where);
   };
   const body = `
     interface Window { probeFlag: boolean }
@@ -1912,8 +1907,7 @@ test("two Rails routes of one verb in a file are told apart by their paths", nee
   const source = `Rails.application.routes.draw do\n  get "saved-searches" => "s#i"; get "audit-logs" => "a#i"\nend\n`;
   const { records } = await parseAll([{ rel: "config/routes.rb", source, lang: "ruby" }], { withProgram: true });
   const { rowByKey } = await import("../plugins/anatomiya/lib/registry.mjs");
-  const hits = [];
-  rowByKey("route_segment_case").run(records.get("config/routes.rb").program, (h) => hits.push(h), { rel: "config/routes.rb" });
+  const hits = hitsOf(rowByKey("route_segment_case"), records.get("config/routes.rb").program, { rel: "config/routes.rb" });
   assert.equal(hits.length, 2);
   assert.notEqual(siteIdentity("config/routes.rb", "route_segment_case", hits[0].node, ""), siteIdentity("config/routes.rb", "route_segment_case", hits[1].node, ""));
   assert.notEqual(hits[0].section, hits[1].section, "two calls on one line are two declarations");
@@ -1956,8 +1950,7 @@ test("a Rails route keeps its identity when a line above it moves", needsRuby, a
   const { rowByKey } = await import("../plugins/anatomiya/lib/registry.mjs");
   const identities = async (source) => {
     const { records } = await parseAll([{ rel: "config/routes.rb", source, lang: "ruby" }], { withProgram: true });
-    const hits = [];
-    rowByKey("route_segment_case").run(records.get("config/routes.rb").program, (h) => hits.push(h), { rel: "config/routes.rb" });
+    const hits = hitsOf(rowByKey("route_segment_case"), records.get("config/routes.rb").program, { rel: "config/routes.rb" });
     return hits.map((h) => siteIdentity("config/routes.rb", "route_segment_case", h.node, ""));
   };
   const before = await identities(`Rails.application.routes.draw do\n  get "raw_data/export" => "a#e"\nend\n`);

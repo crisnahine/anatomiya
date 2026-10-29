@@ -9,14 +9,13 @@ import { calleeName, JSX_DIMENSIONS, jsxName, attrName } from "../plugins/anatom
 import { ALL_DIMENSIONS } from "../plugins/anatomiya/lib/dimensions.mjs";
 import { dimensionsFor } from "../plugins/anatomiya/lib/walk.mjs";
 import { applyGates } from "../plugins/anatomiya/lib/reduce.mjs";
+import { hitsOf } from "./hits.mjs";
 
 const dim = (key) => JSX_DIMENSIONS.find((d) => d.key === key);
 
 function hits(key, src) {
   const { program } = parseSync("f.tsx", src, { sourceType: "module" });
-  const out = [];
-  dim(key).run(program, (h) => out.push(h));
-  return out;
+  return hitsOf(dim(key), program);
 }
 
 // B5: the same in-memory string the parser was handed, never a re-read buffer.
@@ -356,11 +355,9 @@ test("every JSX hit carries a typed node with offsets into the parsed source", (
   // with no text and an unstable identity.
   const { program } = parseSync("f.tsx", EVERY_DIMENSION, { sourceType: "module" });
   for (const d of JSX_DIMENSIONS) {
-    const out = [];
-    d.run(program, (h) => out.push(h));
+    const out = hitsOf(d, program);
     assert.ok(out.length > 0, `${d.key} matched nothing, so it proves nothing here`);
     for (const h of out) {
-      assert.equal(typeof h.conforming, "boolean", d.key);
       assert.ok(h.node && typeof h.node.type === "string", `${d.key} hit carries no node`);
       assert.equal(typeof h.node.start, "number", `${d.key} node has no start offset`);
       assert.equal(typeof h.node.end, "number", `${d.key} node has no end offset`);
@@ -370,8 +367,7 @@ test("every JSX hit carries a typed node with offsets into the parsed source", (
     // The identity is the slice, never the offset: the same file with one more
     // line ahead of it identifies every site the same way.
     const shifted = `\n${EVERY_DIMENSION}`;
-    const moved = [];
-    d.run(parseSync("f.tsx", shifted, { sourceType: "module" }).program, (h) => moved.push(h));
+    const moved = hitsOf(d, parseSync("f.tsx", shifted, { sourceType: "module" }).program);
     assert.equal(moved.length, out.length, d.key);
     for (const [i, h] of out.entries()) {
       assert.equal(siteIdentity("src/a.tsx", d.key, h.node, EVERY_DIMENSION), siteIdentity("src/a.tsx", d.key, moved[i].node, shifted), `${d.key} site ${i}`);
@@ -385,8 +381,7 @@ test("a program holding no JSX yields no candidates rather than throwing", () =>
   // drop its own key for the file and take its counts with it.
   const { program } = parseSync("f.tsx", `export const a = 1;`, { sourceType: "module" });
   for (const d of JSX_DIMENSIONS) {
-    let n = 0;
-    d.run(program, () => n++);
+    const n = hitsOf(d, program).length;
     assert.equal(n, 0, d.key);
   }
 });
@@ -394,8 +389,7 @@ test("a program holding no JSX yields no candidates rather than throwing", () =>
 test("an empty program yields no candidates rather than throwing", () => {
   const { program } = parseSync("f.tsx", "", { sourceType: "module" });
   for (const d of JSX_DIMENSIONS) {
-    let n = 0;
-    d.run(program, () => n++);
+    const n = hitsOf(d, program).length;
     assert.equal(n, 0, d.key);
   }
 });
@@ -635,9 +629,7 @@ test("both naming rows leave a component out of their vote, not just one", async
   const classesOf = (key, src) => {
     const row = NAMING_AST.find((d) => d.key === key);
     const { program } = parseSync("f.tsx", src, { sourceType: "module" });
-    const out = [];
-    row.run(program, (h) => out.push(h.class));
-    return out;
+    return hitsOf(row, program).map((h) => h.class);
   };
   const sources = [
     `export const UserCard = ({ n }) => (n ? <div>{n}</div> : null)`,
@@ -659,9 +651,7 @@ test("the naming row leaves a conditional component out of its vote", async () =
   const row = NAMING_AST.find((d) => d.key === "function_naming_case");
   const classesOf = (src) => {
     const { program } = parseSync("f.tsx", src, { sourceType: "module" });
-    const out = [];
-    row.run(program, (h) => out.push(h.class));
-    return out;
+    return hitsOf(row, program).map((h) => h.class);
   };
 
   assert.deepEqual(classesOf(`export function CardBox() { return <div /> }`), []);

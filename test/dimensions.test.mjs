@@ -28,14 +28,13 @@ import "../plugins/anatomiya/lib/registry.mjs";
 import { SEMANTIC_DIMENSIONS } from "../plugins/anatomiya/lib/dimensions-semantic.mjs";
 import { walk, collectHits } from "../plugins/anatomiya/lib/walk.mjs";
 import { doublingRatio, LINEAR } from "./growth.mjs";
+import { hitsOf } from "./hits.mjs";
 
 const dim = (key) => DIMENSIONS.find((d) => d.key === key);
 
 function hits(key, src) {
   const { program } = parseSync("f.ts", src, { sourceType: "module" });
-  const out = [];
-  dim(key).run(program, (h) => out.push(h));
-  return out;
+  return hitsOf(dim(key), program);
 }
 
 const counts = (key, src) => {
@@ -397,8 +396,7 @@ test("a Ruby area never selects a dimension that walks an oxc tree", () => {
 test("an empty program yields no candidates rather than throwing", () => {
   const { program } = parseSync("f.ts", "", { sourceType: "module" });
   for (const d of DIMENSIONS) {
-    let n = 0;
-    d.run(program, () => n++);
+    const n = hitsOf(d, program).length;
     assert.equal(n, 0, d.key);
   }
 });
@@ -1047,8 +1045,7 @@ function siteCount(key, src, rel = undefined) {
   // Always .tsx: the one extension oxc reads both the TypeScript and the JSX on
   // this list with, and no row here branches on the filename.
   const { program } = parseSync("f.tsx", src, { sourceType: "module" });
-  let n = 0;
-  row.run(program, () => n++, { rel });
+  const n = hitsOf(row, program, { rel }).length;
   return n;
 }
 

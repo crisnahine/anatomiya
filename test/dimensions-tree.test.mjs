@@ -9,6 +9,7 @@ import { withOneBranch } from "../plugins/anatomiya/lib/csharp-directives.mjs";
 import { parseTreeFile } from "../plugins/anatomiya/lib/tree-sitter-file.mjs";
 import { siteIdentity } from "../plugins/anatomiya/lib/introduced.mjs";
 import { TREE_DECLINED } from "./declined-fixtures.mjs";
+import { hitsOf } from "./hits.mjs";
 
 /**
  * Every source goes through `parseTreeFile` in counts mode, which is the body
@@ -429,8 +430,7 @@ async function childReads(lang, count, item, head = "", tail = "", row = docRow(
     for (const child of node.children) work.push(child);
     node.children = new Proxy(node.children, counted);
   }
-  let sites = 0;
-  row.run(program, () => sites++, { source, rel });
+  const sites = hitsOf(row, program, { source, rel }).length;
   return { reads, sites };
 }
 
@@ -634,9 +634,8 @@ test("endpoint_segment_case: a path longer than the tree keeps of a string loses
 test("endpoint_segment_case: a site's identity in the check is its path, so a route that moved down the file is no new site", async () => {
   const at = async (source) => {
     const { program } = await parseTreeFile(source, "src/a.py", "python", { withProgram: true });
-    const sites = [];
-    TREE_DIMENSIONS.find((d) => d.key === "endpoint_segment_case").run(program, (h) => sites.push(siteIdentity("src/a.py", "endpoint_segment_case", h.node, source)), { source, rel: "src/a.py" });
-    return sites;
+    const row = TREE_DIMENSIONS.find((d) => d.key === "endpoint_segment_case");
+    return hitsOf(row, program, { source, rel: "src/a.py" }).map((h) => siteIdentity("src/a.py", "endpoint_segment_case", h.node, source));
   };
   const route = '@router.get("/saved-items")\ndef a():\n    pass\n';
   assert.deepEqual(await at(route), await at(`import os\n\n\n@router.get("/other")\ndef b():\n    pass\n\n\n${route}`));
@@ -741,9 +740,7 @@ test("a row asked alone points at what it judged: a function by its name, so a l
   const source = "<?php\nclass A\n{\n    public function loadAll()\n    {\n        try {\n            a();\n        } catch (E $e) {\n        }\n    }\n}\n";
   const { program } = await parseTreeFile(source, "src/A.php", "php", { withProgram: true });
   const found = TREE_DIMENSIONS.filter((d) => d.langs.includes("php")).flatMap((d) => {
-    const sites = [];
-    d.run(program, (hit) => sites.push([d.key, source.slice(hit.node.start, hit.node.end), hit.node.line]), { source, rel: "src/A.php" });
-    return sites;
+    return hitsOf(d, program, { source, rel: "src/A.php" }).map((hit) => [d.key, source.slice(hit.node.start, hit.node.end), hit.node.line]);
   });
 
   assert.deepEqual(found, [
@@ -777,9 +774,7 @@ test("a row that names a Kotlin extension refuses to run with no source to read 
   const row = TREE_DIMENSIONS.find((d) => d.key === "public_doc_comment");
 
   assert.throws(() => row.run(program, () => {}, { rel: "src/a.kt" }), /a receiver is read off the source, and this row was handed none/);
-  const labels = [];
-  row.run(program, (hit) => labels.push(hit.where), { rel: "src/a.kt", source });
-  assert.deepEqual(labels, ["Invoice.toDto"]);
+  assert.deepEqual(hitsOf(row, program, { rel: "src/a.kt", source }).map((hit) => hit.where), ["Invoice.toDto"]);
 });
 
 for (const [key, { lang, declined, counted }] of Object.entries(TREE_DECLINED)) {

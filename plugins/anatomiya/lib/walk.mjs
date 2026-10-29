@@ -1,6 +1,6 @@
 import { createRequire } from "node:module";
 
-import { exportLetIsProp } from "./langs.mjs";
+import { exportLetIsProp, holdsTypeSyntax, spokenIn } from "./langs.mjs";
 
 /**
  * One walk over an oxc program that yields, for every node, the chain of
@@ -337,7 +337,7 @@ export const HIT_FIELDS = [
 ];
 
 /** The site a hit becomes on the far side of the worker boundary. */
-export function crossing(hit) {
+function crossing(hit) {
   const site = {};
   for (const [name, read] of HIT_FIELDS) {
     const value = read(hit);
@@ -364,18 +364,22 @@ export function crossing(hit) {
  * guarantee a throwing `run` has, and so does a throw from the walk itself: a
  * recursive walker overflows on a deep tree. `walker` is the bridge's own walk.
  *
+ * `keepNode` keeps each hit's node beside its crossing fields, for the check,
+ * which runs in the parent and places a site by its node.
+ *
  * `also` rides the same walk without being a row: a bridge's facets, which it
  * needs whether or not any row was asked for. Each is fed until it throws, or
  * the walk does, and is then left holding that error in `error`, which its own
  * `done` answers with, so it never costs a row its sites.
  */
-export function collectHits(program, dimensions, extra = {}, { walker = walk, also = [] } = {}) {
+export function collectHits(program, dimensions, extra = {}, { walker = walk, also = [], keepNode = false } = {}) {
   const found = new Array(dimensions.length);
   const visiting = [];
+  const site = keepNode ? (hit) => (hit.node === undefined ? crossing(hit) : { ...crossing(hit), node: hit.node }) : crossing;
   for (let i = 0; i < dimensions.length; i++) {
     const dim = dimensions[i];
     const sites = [];
-    const add = (hit) => sites.push(crossing(hit));
+    const add = (hit) => sites.push(site(hit));
     try {
       // The tree's own side channel: the comments the parser reported, the
       // exact string it parsed, and the path it was read from, for the rows
@@ -635,5 +639,20 @@ export function dimensionsFor(langs, { frameworks, tier = "syntactic", capabilit
       (tier === "all" || d.tier === tier) &&
       (!known || !d.framework || known.has(d.framework)) &&
       (!caps || !d.capability || caps.has(d.capability))
+  );
+}
+
+/**
+ * Whether `row` is asked of one file. A file outside the row's languages, one
+ * whose Flow annotations were blanked for a row that reads them, and a plain
+ * JavaScript file for a row about a type annotation are files nobody asked,
+ * not files that declined. The scan, the fold and the check all ask here, so
+ * the map and the check agree about the same file.
+ */
+export function asks(row, { lang, facets = null, stripped = false, rel }) {
+  return (
+    spokenIn(lang, facets).some((l) => row.langs.includes(l)) &&
+    !(stripped && row.blindWhenStripped) &&
+    !(row.needsTypeSyntax && !holdsTypeSyntax(rel, facets))
   );
 }

@@ -3,6 +3,7 @@ import assert from "node:assert/strict";
 
 import { RUNTIME_MODULES, commonImports, mostImported, specifierToFile } from "../plugins/anatomiya/lib/siblings.mjs";
 import { goModules, workspacePackages } from "../plugins/anatomiya/lib/own-packages.mjs";
+import { buildIndex } from "../plugins/anatomiya/lib/code-index.mjs";
 import { doublingRatio, LINEAR } from "./growth.mjs";
 
 const isRelative = (m) => m.startsWith("./") || m.startsWith("../") || m === "." || m === "..";
@@ -694,6 +695,32 @@ test("a Ruby constant reaches a concern, a gem's lib file and an acronym however
   assert.deepEqual(mostImported(new Set(["lib/rubocop/cop/util.rb"]), records, rels), [{ name: "RuboCop::Cop::Util.parse", file: "lib/rubocop/cop/util.rb", importers: 3 }]);
   assert.deepEqual(mostImported(new Set(["app/lib/http_client.rb"]), records, rels), [{ name: "HTTPClient.get", file: "app/lib/http_client.rb", importers: 3 }]);
   assert.deepEqual(mostImported(new Set(["app/lib/m/http_client.rb"]), records, rels), []);
+});
+
+test("the area line and the code index count one helper's importers by one rule, the area's own left out", () => {
+  // A call on the module, `RuboCop::Cop::Util.parse`, credits the method and the module around it; a
+  // plain read of the module credits the module; a file inside the area is no importer on its line.
+  const util = "lib/rubocop/cop/util.rb";
+  const sibling = "lib/rubocop/cop/other.rb";
+  const call = { const: "RuboCop::Cop::Util", nesting: [], name: "RuboCop::Cop::Util.parse" };
+  const read = { const: "RuboCop::Cop::Util", nesting: [], name: "RuboCop::Cop::Util" };
+  const records = new Map([
+    [util, { rel: util, ok: true, facets: { testRunner: null, testCalls: false, refs: [], defines: ["Util", "parse"], symbols: [["Util", "module", 1, null, null, null], ["parse", "method", 2, "Util", "(text)", null]] } }],
+    [sibling, rubyRecord(sibling, [call])],
+    ["app/w0.rb", rubyRecord("app/w0.rb", [call])],
+    ["app/w1.rb", rubyRecord("app/w1.rb", [call])],
+    ["app/w2.rb", rubyRecord("app/w2.rb", [call])],
+    ["app/w3.rb", rubyRecord("app/w3.rb", [read])],
+  ]);
+  const rels = new Set(records.keys());
+  const index = buildIndex([...rels].map((rel) => ({ rel, lang: "ruby" })), records, rels);
+  const counted = Object.fromEntries(index.files.find(([rel]) => rel === util)[2].map((s) => [s[0], s[6]]));
+  assert.deepEqual(counted, { Util: 5, parse: 4 });
+
+  assert.deepEqual(mostImported(new Set([util, sibling]), records, rels), [
+    { name: "RuboCop::Cop::Util", file: util, importers: 4 },
+    { name: "RuboCop::Cop::Util.parse", file: util, importers: 3 },
+  ]);
 });
 
 test("a Ruby constant two files are autoloaded as, or one no file is, reaches nothing", () => {

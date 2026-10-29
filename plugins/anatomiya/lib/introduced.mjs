@@ -10,14 +10,14 @@
  */
 import { createHash } from "node:crypto";
 
-import { ALL_DIMENSIONS } from "./dimensions.mjs";
+import { ALL_DIMENSIONS, walkFor } from "./dimensions.mjs";
 import { CLASSES, claimFor } from "./dimensions-naming.mjs";
 import { encode } from "./encode.mjs";
 import { statedSide } from "./slot.mjs";
-import { holdsTypeSyntax, spokenIn } from "./langs.mjs";
+import { spokenIn } from "./langs.mjs";
 import { groupKey, isLearnedItself, reachesThrough, sameConstant } from "./reduce.mjs";
 import { lineAt, lineStarts } from "./symbols.mjs";
-import { dimensionsFor, isFunctionLike, walk } from "./walk.mjs";
+import { asks, collectHits, dimensionsFor, isFunctionLike, walk } from "./walk.mjs";
 
 /**
  * The sites `head` holds that the branch introduced, judged against `base` or
@@ -89,12 +89,8 @@ export function declaredParents({ path, lang, frameworks, capabilities, rows, he
   for (const dim of dimensionsFor(spokenIn(lang, head.facets), { frameworks, capabilities, rows: rows ?? ALL_DIMENSIONS })) {
     if (!dim.learnedClasses || dim.groupedSites) continue;
     const parents = new Map();
-    try {
-      dim.run(head.program, (hit) => {
-        if (typeof hit.self === "string" && typeof hit.class === "string" && !parents.has(hit.self)) parents.set(hit.self, hit.class);
-      }, { comments: head.comments, source: head.source, rel: path, facets: head.facets });
-    } catch {
-      continue;
+    for (const hit of hitsOf(dim, head.program, { comments: head.comments, source: head.source, rel: path, facets: head.facets })) {
+      if (typeof hit.self === "string" && typeof hit.class === "string" && !parents.has(hit.self)) parents.set(hit.self, hit.class);
     }
     if (parents.size) out.set(dim.key, parents);
   }
@@ -307,6 +303,12 @@ function enforceableClass(dim, cls) {
  */
 const isOmission = (hit) => hit.class === undefined || hit.class === null;
 
+/** One row's hits on one tree as the scan collects them. */
+function hitsOf(dim, program, extra, { keepNode = false } = {}) {
+  // A row that threw and a row that found nothing both leave no key, and both leave this file without its findings.
+  return collectHits(program, [dim], extra, { walker: walkFor(dim), keepNode })[dim.key] ?? [];
+}
+
 function breakingSites(program, source, lang, keyPath, { polarity, copies = new Map(), frameworks, capabilities, rows, comments = [], stripped = false, rel = null, facets = null }) {
   const { sides, learned, kinds, qualified, stated, reaching = new Map(), parents = new Map() } = polarity;
   const out = [];
@@ -320,11 +322,7 @@ function breakingSites(program, source, lang, keyPath, { polarity, copies = new 
   // The rows are the ones the scan ran on this file, JSX rows included where
   // the head's tree holds JSX under a `.js` name.
   for (const dim of dimensionsFor(spokenIn(lang, facets), { frameworks, capabilities, rows: rows ?? ALL_DIMENSIONS })) {
-    if (stripped && dim.blindWhenStripped) continue;
-    // A plain JavaScript file cannot carry a type annotation, so the scan left
-    // it out of this row's population and the check has to leave it out of the
-    // findings.
-    if (dim.needsTypeSyntax && !holdsTypeSyntax(rel ?? keyPath, facets)) continue;
+    if (!asks(dim, { lang, facets, stripped, rel: rel ?? keyPath })) continue;
     // A learned row with no class the map may state has no sentence to
     // enforce: every hit is a vote, and a vote is not a finding.
     const cls = learned.get(dim.key);
@@ -371,39 +369,35 @@ function breakingSites(program, source, lang, keyPath, { polarity, copies = new 
     // A dimension that throws on this program loses its own findings for this
     // file. Both sides of the comparison run the same dimensions over the same
     // shapes, so a failure that is not symmetric can only lose a finding, never
-    // manufacture one.
-    try {
-      dim.run(program, (hit) => {
-        if (bodies) {
-          const key = groupKey(hit, bodies.size);
-          if (bodies.has(key)) bodies.get(key).push(hit);
-          else bodies.set(key, [hit]);
-          return;
-        }
-        // Every copy of a body-judging row is kept, conforming or not, in walk
-        // order per identity, declaration and opening line.
-        let copy = null;
-        if (dim.judgesBody && located(hit.node)) {
-          const fp = siteIdentity(keyPath, dim.key, hit.node, source, reader);
-          const at = `${fp}\0${hit.where ?? ""}\0${lines().around(hit.node.start, hit.node.start)}`;
-          copy = { fp, text: reader.slice(hit.node.start, hit.node.end), site: null };
-          if (copies.has(at)) copies.get(at).push(copy);
-          else copies.set(at, [copy]);
-        }
-        // On the counter side the conforming sites are the ones that break what
-        // the map said. Enforcing `!conforming` there charges an author for
-        // writing the sentence the area handed them.
-        if (counter ? !conformingOf(hit) : conformingOf(hit)) return;
-        if (dim.learnedClasses && isOmission(hit) && !stated.has(dim.key)) return;
-        const at = site(hit, copy?.fp);
-        if (copy) {
-          copy.site = at;
-          judged.add(at);
-        }
-        found.push(at);
-      }, { comments, source, rel, facets });
-    } catch {
-      continue;
+    // manufacture one. The hits are the scan's own, so the check reads what the map was counted from.
+    for (const hit of hitsOf(dim, program, { comments, source, rel, facets }, { keepNode: true })) {
+      if (bodies) {
+        const key = groupKey(hit, bodies.size);
+        if (bodies.has(key)) bodies.get(key).push(hit);
+        else bodies.set(key, [hit]);
+        continue;
+      }
+      // Every copy of a body-judging row is kept, conforming or not, in walk
+      // order per identity, declaration and opening line.
+      let copy = null;
+      if (dim.judgesBody && located(hit.node)) {
+        const fp = siteIdentity(keyPath, dim.key, hit.node, source, reader);
+        const at = `${fp}\0${hit.where ?? ""}\0${lines().around(hit.node.start, hit.node.start)}`;
+        copy = { fp, text: reader.slice(hit.node.start, hit.node.end), site: null };
+        if (copies.has(at)) copies.get(at).push(copy);
+        else copies.set(at, [copy]);
+      }
+      // On the counter side the conforming sites are the ones that break what
+      // the map said. Enforcing `!conforming` there charges an author for
+      // writing the sentence the area handed them.
+      if (counter ? !conformingOf(hit) : conformingOf(hit)) continue;
+      if (dim.learnedClasses && isOmission(hit) && !stated.has(dim.key)) continue;
+      const at = site(hit, copy?.fp);
+      if (copy) {
+        copy.site = at;
+        judged.add(at);
+      }
+      found.push(at);
     }
     for (const hits of bodies ? bodies.values() : []) {
       const conforming = hits.some(conformingOf);

@@ -7,14 +7,13 @@ import { stemWords } from "../plugins/anatomiya/lib/stems.mjs";
 import { ALL_DIMENSIONS } from "../plugins/anatomiya/lib/dimensions.mjs";
 import { dimensionsFor } from "../plugins/anatomiya/lib/walk.mjs";
 import { capabilitiesIn } from "../plugins/anatomiya/lib/corpus.mjs";
+import { hitsOf } from "./hits.mjs";
 
 const dim = (key) => CAPABILITY_DIMENSIONS.find((d) => d.key === key);
 
 function hits(key, src, extra) {
   const { program } = parseSync("f.tsx", src, { sourceType: "module" });
-  const out = [];
-  dim(key).run(program, (h) => out.push(h), extra);
-  return out;
+  return hitsOf(dim(key), program, extra);
 }
 
 const counts = (key, src, extra) => {

@@ -15,7 +15,7 @@
 import { loadTypeScript } from "./semantic.mjs";
 import { readConfig, confinedCompilerHost } from "./tsconfig.mjs";
 import { SEMANTIC_DIMENSIONS, siteStubs } from "./dimensions-semantic.mjs";
-import { crossing } from "./walk.mjs";
+import { collectHits } from "./walk.mjs";
 
 /**
  * Run one job and report through `send`: `{ error }` and nothing after it,
@@ -70,19 +70,8 @@ export async function runJob(job, send, { load = loadTypeScript } = {}) {
     if (!refused) {
       send({ sited: true });
       for (const { file, source, resolution } of answered) {
-        const hits = {};
-        for (const dim of SEMANTIC_DIMENSIONS) {
-          const out = [];
-          try {
-            dim.run({ ts, checker, source }, (h) => out.push(crossing(h)));
-          } catch {
-            // A dimension that threw drops its own key for this file and leaves
-            // the rest standing, the same rule the syntactic worker follows.
-            continue;
-          }
-          if (out.length) hits[dim.key] = out;
-        }
-        send({ rel: file.rel, hits, resolution });
+        // A dimension that threw drops its own key for this file and leaves the rest standing, as in the syntactic worker.
+        send({ rel: file.rel, hits: collectHits({ ts, checker, source }, SEMANTIC_DIMENSIONS), resolution });
       }
     }
 

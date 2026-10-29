@@ -19,10 +19,10 @@ import { corpusDrop, isCorpusPath } from "./corpus.mjs";
 import { encodePath } from "./encode.mjs";
 import { ask, operationUnfinished, unaskedAs, Unasked } from "./git.mjs";
 import { isPathTaken } from "./hook.mjs";
-import { indexHome } from "./index-home.mjs";
+import { findSymbols, formatHit, RANKING } from "./find.mjs";
 import { INERT_ENGINES, inertLinesOf, REUSE_PARSE_MS } from "./inert.mjs";
-import { embeddedIn, engineOf, language } from "./langs.mjs";
-import { MAX_FILE_BYTES } from "./limits.mjs";
+import { assertKeyed, embeddedIn, engineOf, hostedBy, language } from "./langs.mjs";
+import { LINE_READ, MAX_FILE_BYTES } from "./limits.mjs";
 import { byCode } from "./paths.mjs";
 import { readHead, readTail, realpathOf } from "./rules.mjs";
 import { blankOutside, scriptBlocks } from "./script-blocks.mjs";
@@ -119,6 +119,10 @@ function clipped(hunks, spans) {
 // line break or a quote into the reason the model reads.
 const PLAIN_PATH = /^[\w./@+-]+$/;
 
+// Repository text inside the reason, held in a quote it cannot close.
+const quoted = (text) => `\`${text.replaceAll("`", "")}\``;
+const listed = (hit) => quoted(formatHit({ ...hit, rel: PLAIN_PATH.test(hit.rel) ? hit.rel : encodePath(hit.rel) }));
+
 const tag = (files) => `(${REUSE_MARK} ${files.slice(0, MARKED_MOST).map((f) => f.mark).join(" ")})`;
 
 // The bin this hook runs from, which is the copy whose `find` reads the index this scan's build wrote.
@@ -130,20 +134,23 @@ const QUOTABLE = /^(?!\\\\)[\w ./@+:\\-]+$/;
 export const quotable = (path) => QUOTABLE.test(path);
 
 /**
- * The command that asks this checkout's code index, or null where no scan wrote
- * one or the path to the bin could not be quoted safely.
+ * The command that asks this checkout's code index, or null where there is no
+ * index `find` can read and answer from (`usable` is `usableIndex`'s answer) or
+ * the path to the bin could not be quoted safely.
  */
-export function finderFor(root) {
-  if (!quotable(BIN) || indexHome(root) === null) return null;
+export function finderFor(usable) {
+  // An index of no definitions, a repository in no language it lists, would answer every search with nothing.
+  if (!quotable(BIN) || usable === null || usable.count === 0) return null;
   // One single-quoted argument, so a shell globs none of the words: `local_url?` is a pattern to zsh.
   return `node "${BIN}" find '<words>'`;
 }
 
 /**
  * The measured wording, with the lines these files added and the tag that covers them.
- * `finder` is the command that asks the code index, which takes the grep's place where there is one.
+ * `finder` is the command that asks the code index, which takes the grep's place where there is one,
+ * and `closest` what the index already lists nearest the names the change declared (`closestTo`).
  */
-export function reuseReason(files, { finder = null } = {}) {
+export function reuseReason(files, { finder = null, closest = null } = {}) {
   const lines = files.flatMap((f) => {
     const shown = PLAIN_PATH.test(f.path) ? f.path : encodePath(f.path);
     return f.hunks.map((h) => `${shown}:${h.from}-${h.to}${h.created ? " (new file)" : ""}`);
@@ -158,6 +165,7 @@ export function reuseReason(files, { finder = null } = {}) {
       ? "Have it grep shared and utility modules, files near the change, and code making the same calls, "
       : `Have it run \`${finder}\` in the repository, two or three words with no quote mark for what each added function does, at most three calls, which lists the closest functions by name, doc and path with how many files import each; have it grep only for code making the same calls, `) +
     "then name every existing function that does the same job or part of it. " +
+    (closest === null ? "" : `As of the last scan, the code index lists these closest to the added ${closest.names.map(quoted).join(", ")}: ${closest.hits.map(listed).join("; ")}. `) +
     "For each added function, call the closest one it names, the repository's own before a package's, and delete the copy it replaces. Where one does part of the job, call it for that part. " +
     // A session that named the helper kept a copy where it fell short on one case (A123).
     "Where one falls short on a case this change needs, make the new code fit it, or extend it without changing what it returns to its current callers, and call it. " +
@@ -166,6 +174,133 @@ export function reuseReason(files, { finder = null } = {}) {
     "If this session has no subagent tool, run that search yourself.\n" +
     tag(files)
   );
+}
+
+// What an added line names when it defines something callable, by engine for the two line rules and by
+// language for the tree-sitter ones: the words a search for an existing helper is asked with, never a
+// judgement. A line ending in `;` is a statement, and a parenthesis holding another is a call's arguments.
+const STATEMENT = /^(?!.*;\s*$)/.source;
+// A C# member whose body is one expression, `int Sum(int a, int b) => a + b;`, is a definition though it ends in `;`.
+const STATEMENT_OR_ARROW = /^(?!(?!.*=>).*;\s*$)/.source;
+// A type as a signature writes it: generic arguments one level deep, `Map<String, List<Integer>>`, and arrays.
+const TYPE = String.raw`[\w.?]+(?:<(?:[^<>]|<[^<>]*>)*>)?(?:\[\])*`;
+const TYPE_PARAMS = String.raw`(?:<(?:[^<>]|<[^<>]*>)*>\s*)?`;
+const ANNOTATED = String.raw`(?:@\w+(?:\([^)]*\))?\s+)*`;
+const ATTRIBUTED = String.raw`(?:\[[^\]]*\]\s*)*`;
+const KEYWORD = String.raw`(?!(?:if|for|while|switch|catch|with|function|return|new|throw|else|case|await|yield)\b)`;
+const LINE_DECLARES = {
+  oxc: [
+    /^\s*(?:export\s+)?(?:default\s+)?(?:async\s+)?function\s*\*?\s*([A-Za-z_$][\w$]*)\s*[<(]/,
+    /^\s*(?:export\s+)?(?:const|let|var)\s+([A-Za-z_$][\w$]*)\s*(?::[^=]*)?=\s*(?:async\s+)?(?:function\b|\([^()]*\)\s*(?::[^=]*)?=>|[A-Za-z_$][\w$]*\s*=>)/,
+    /^\s*(?:export\s+)?(?:default\s+)?(?:abstract\s+)?class\s+([A-Za-z_$][\w$]*)/,
+    // An accessor is a property, which nobody reuses as a helper, so `get` and `set` head no definition here.
+    new RegExp(String.raw`^\s*(?:(?:public|private|protected|static|async|override)\s+)*\*?\s*${KEYWORD}([A-Za-z_$][\w$]*)\s*${TYPE_PARAMS}\([^()]*\)\s*(?::\s*[^{=]+)?\{\s*$`),
+    // A class field bound to an arrow: `handleClick = () => {`.
+    new RegExp(String.raw`^\s*(?:(?:public|private|protected|static|readonly)\s+)*([A-Za-z_$][\w$]*)\s*(?::[^=]*)?=\s*(?:async\s+)?\([^()]*\)\s*(?::[^=]*)?=>`),
+  ],
+  prism: [/^\s*def\s+(?:self\.)?([A-Za-z_]\w*[?!=]?)/, /^\s*(?:class|module)\s+([A-Z]\w*(?:::[A-Z]\w*)*)/],
+};
+const TREE_DECLARES = {
+  python: [/^\s*(?:async\s+)?def\s+([A-Za-z_]\w*)/, /^\s*class\s+([A-Za-z_]\w*)/],
+  php: [
+    /^\s*(?:(?:public|private|protected|static|final|abstract)\s+)*function\s+&?\s*([A-Za-z_]\w*)\s*\(/,
+    /^\s*(?:(?:abstract|final|readonly)\s+)*(?:class|interface|trait|enum)\s+([A-Za-z_]\w*)/,
+  ],
+  go: [/^\s*func\s+(?:\([^)]*\)\s*)?([A-Za-z_]\w*)/, /^\s*type\s+([A-Za-z_]\w*)\s+(?:struct|interface)\b/],
+  java: [
+    new RegExp(String.raw`${STATEMENT}^\s*${ANNOTATED}(?:(?:public|private|protected|static|final|abstract|synchronized|default)\s+)*${TYPE_PARAMS}${KEYWORD}${TYPE}\s+([A-Za-z_]\w*)\s*\(`),
+    new RegExp(String.raw`^\s*${ANNOTATED}(?:(?:public|private|protected|static|final|abstract|sealed|non-sealed)\s+)*(?:class|interface|record|enum)\s+([A-Za-z_]\w*)`),
+  ],
+  csharp: [
+    new RegExp(String.raw`${STATEMENT_OR_ARROW}^\s*${ATTRIBUTED}(?:(?:public|private|protected|internal|static|async|override|virtual|abstract|sealed|partial)\s+)+${KEYWORD}${TYPE}\s+([A-Za-z_]\w*)\s*[<(]`),
+    new RegExp(String.raw`^\s*${ATTRIBUTED}(?:(?:public|private|protected|internal|static|abstract|sealed|partial|readonly)\s+)*(?:class|interface|record|struct|enum)\s+([A-Za-z_]\w*)`),
+  ],
+  rust: [
+    /^\s*(?:pub(?:\([^)]*\))?\s+)?(?:(?:const|async|unsafe|extern(?:\s+"[^"]*")?)\s+)*fn\s+([A-Za-z_]\w*)/,
+    /^\s*(?:pub(?:\([^)]*\))?\s+)?(?:struct|enum|trait)\s+([A-Za-z_]\w*)/,
+  ],
+  kotlin: [
+    new RegExp(String.raw`^\s*${ANNOTATED}(?:(?:public|private|protected|internal|override|open|abstract|final|suspend|inline|operator|infix|tailrec|external|actual|expect)\s+)*fun\s+(?:<[^>]*>\s*)?(?:[\w<>?,. ]+\.)?([A-Za-z_]\w*)\s*\(`),
+    new RegExp(String.raw`^\s*${ANNOTATED}(?:(?:public|private|protected|internal|abstract|open|data|sealed|enum|inner|value|annotation)\s+)*(?:class|interface|object)\s+([A-Za-z_]\w*)`),
+  ],
+};
+
+assertKeyed("TREE_DECLARES", TREE_DECLARES, hostedBy("tree-sitter"));
+
+// Names every class or framework writes, which would search for every other class's copy of themselves.
+// Held lower-case, as each language capitalises them its own way: `toString`, `ToString`.
+const ANY_CLASS = new Set(["constructor", "initialize", "__init__", "init", "new", "call", "run", "main", "render", "tostring", "to_s", "equals", "hashcode", "gethashcode", "dispose", "__str__", "__repr__", "__eq__", "__hash__", "meta", "setup", "teardown", "up", "down", "change", "perform", "execute", "handle"]);
+
+// A turn that added more than this is asked by its first names, which bounds the searches.
+const NAMED_MOST = 8;
+
+/**
+ * The names the defining lines of `hunks` declare, in the order they appear: `family` is the engine for
+ * JavaScript and Ruby, whose rules read lines, and the language for the tree-sitter ones.
+ */
+export function declaredIn(family, source, hunks, inert) {
+  const rules = LINE_DECLARES[family] ?? TREE_DECLARES[family];
+  if (!rules) return [];
+  const lines = source.split("\n");
+  const names = new Set();
+  for (const h of hunks) {
+    for (let n = h.from; n <= Math.min(h.to, lines.length) && names.size < NAMED_MOST; n++) {
+      if (inert[n - 1] === true || lines[n - 1].length > LINE_READ) continue;
+      for (const rule of rules) {
+        const m = rule.exec(lines[n - 1]);
+        if (m && !ANY_CLASS.has(m[1].toLowerCase())) names.add(m[1]);
+      }
+    }
+  }
+  return [...names];
+}
+
+/** How long one stop may search the code index, all of a change's names together. */
+const REUSE_FIND_MS = 500;
+// Per name, and over the whole change: enough to point at a helper, short enough to read in the reason.
+const CLOSEST_EACH = 3;
+const CLOSEST_MOST = 5;
+// django's 39,257 definitions zip to 634 KB and read in about 15 ms; a larger index is left to `find`, which no hook clock bounds.
+export const REUSE_INDEX_BYTES = 2 * 1024 * 1024;
+
+/**
+ * The definitions the code index already lists nearest the names a change
+ * declared, and the names that found them, or null where it lists none: the
+ * best few for each name among the code the file declaring it can call, its
+ * own language or one its runtime shares, the rows of the changed files left out, since they
+ * are the last scan's copy of what the turn rewrote. Past `deadline` no further
+ * name is asked, and a search it overtakes gives up.
+ */
+export function closestTo(index, files, { deadline = performance.now() + REUSE_FIND_MS } = {}) {
+  const changed = new Set(files.map((f) => f.path));
+  const asked = new Set();
+  const found = [];
+  const hits = new Map();
+  for (const file of files) {
+    const callable = runtimeOf(file.path);
+    const where = (rel) => !changed.has(rel) && runtimeOf(rel) === callable;
+    for (const name of file.names ?? []) {
+      if (hits.size >= CLOSEST_MOST || performance.now() > deadline) break;
+      // A name two runtimes declare is asked of each, since each can call only its own.
+      if (asked.has(`${callable}\0${name}`)) continue;
+      asked.add(`${callable}\0${name}`);
+      const before = hits.size;
+      for (const hit of findSymbols(index, [name], { ...RANKING, shown: CLOSEST_EACH }, { deadline, where })) {
+        const at = `${hit.rel}:${hit.line}`;
+        if (!hits.has(at) && hits.size < CLOSEST_MOST) hits.set(at, hit);
+      }
+      if (hits.size > before && !found.includes(name)) found.push(name);
+    }
+  }
+  return hits.size ? { names: found, hits: [...hits.values()] } : null;
+}
+
+// Code a file can call: JavaScript, TypeScript and the components that embed them are one, Java and Kotlin share a runtime, and each other language is its own.
+const SHARED_RUNTIME = { java: "jvm", kotlin: "jvm" };
+function runtimeOf(rel) {
+  const lang = language(rel);
+  const engine = engineOf(lang);
+  return engine === "tree-sitter" ? (SHARED_RUNTIME[lang] ?? lang) : engine;
 }
 
 /** What the stop after a check says, which is also what keeps those files from being asked about again. */
@@ -268,7 +403,8 @@ export async function pendingChange(root, { since = null, turnStart = null, call
     if (defining.length === 0) continue;
     // Over the checkout too: a sibling repository's copy of a file is another file.
     const mark = createHash("sha256").update(`${home}\0${path}\0`).update(entry.head).digest("hex").slice(0, 12);
-    files.push({ path, mark, hunks: defining });
+    const names = template === null ? declaredIn(engine === "tree-sitter" ? lang : engine, entry.head, defining, inert) : [];
+    files.push({ path, mark, hunks: defining, ...(names.length ? { names } : {}) });
   }
   return files.length > 0 ? files : null;
 }

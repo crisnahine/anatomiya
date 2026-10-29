@@ -12,6 +12,7 @@ import { collectHits } from "../plugins/anatomiya/lib/walk.mjs";
 import { walkRuby } from "../plugins/anatomiya/lib/ruby-walk.mjs";
 import { RUBY_DECLINED } from "./declined-fixtures.mjs";
 import { siteIdentity } from "../plugins/anatomiya/lib/introduced.mjs";
+import { hitsOf } from "./hits.mjs";
 
 const dir = mkdtempSync(join(tmpdir(), "anatomiya-rails-"));
 process.on("exit", () => rmSync(dir, { recursive: true, force: true }));
@@ -1859,9 +1860,7 @@ function dim(key) {
 function hits(key, name) {
   const file = programs.get(name);
   assert.ok(file && file.ok, `${name} did not parse: ${file && file.error}`);
-  const out = [];
-  dim(key).run(file.program, (h) => out.push(h));
-  return out;
+  return hitsOf(dim(key), file.program);
 }
 
 function counts(key, ...names) {
@@ -2439,10 +2438,9 @@ test("a rails dimension only ever calls add with what the reducer reads", needsR
   for (const d of RAILS_DIMENSIONS) {
     let fired = 0;
     for (const name of programs.keys()) {
-      d.run(programs.get(name).program, (h) => {
+      for (const h of hitsOf(d, programs.get(name).program)) {
         fired++;
         const at = `${d.key} on ${name}`;
-        assert.equal(typeof h.conforming, "boolean", at);
         assert.ok(h.where === null || typeof h.where === "string", at);
         // introduced.mjs destructures hit.node on every hit and reads type, name
         // and line off it. A hit without one throws there, not here.
@@ -2459,7 +2457,7 @@ test("a rails dimension only ever calls add with what the reducer reads", needsR
         if (typeof h.node.name === "string") {
           assert.notEqual(siteIdentity("app/w.rb", d.key, h.node, ""), siteIdentity("app/w.rb", d.key, { ...h.node, name: `${h.node.name}X` }, ""), at);
         }
-      });
+      }
     }
     assert.ok(fired > 0, `${d.key} never fired, so no fixture holds it to this shape`);
   }
@@ -2674,8 +2672,7 @@ const declinedPrograms = new Map(declinedParsed.results.map((r) => [r.rel.replac
 function declinedSites(key, name) {
   const file = declinedPrograms.get(name);
   assert.ok(file && file.ok, `${name} did not parse: ${file && file.error}`);
-  let n = 0;
-  dim(key).run(file.program, () => n++);
+  const n = hitsOf(dim(key), file.program).length;
   return n;
 }
 

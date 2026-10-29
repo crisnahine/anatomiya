@@ -558,8 +558,11 @@ _Avoid_: history cache, commit cache, log cache, store (alone, before the passag
 **Code index**:
 Every function, method, class and type that no function holds, a module, a namespace or a class around it included, and Go's and Rust's constants, as the last scan read it, in every language, with its line, its
 container, its parameters, its doc sentence and how many other files import it, kept in the
-**store** and read only by `find`. It is a lookup for a session about to write a helper, never a
-count anything is judged against.
+**store** and read by `find` and by the reuse check. It is **usable** where `find` can read it: inside the
+checkout, not a link, the schema this build writes and no larger than a scan writes, the checkout's own or, for
+a linked worktree whose own is not, its main checkout's. The reuse check names `find` only for a usable one that
+holds a definition, and names the definitions it lists nearest what the turn added.
+It is a lookup for a session about to write a helper, never a count anything is judged against.
 _Avoid_: symbol table
 
 **Facts**:
