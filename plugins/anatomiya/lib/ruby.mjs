@@ -391,8 +391,12 @@ end
 `;
 
 // Each child is handed at least this many files: for fewer, an interpreter's
-// startup costs more than it saves.
-const MIN_SHARD_FILES = 500;
+// startup costs more than it saves. Measured on 929 Ruby files: one child read
+// them in 8.0 to 9.8 s, two in 5.7 s and four in 3.1 to 4.3 s, so the floor of
+// 500 that kept every corpus under 1,000 files on one child was five times the
+// break-even. A hundred files is about a second of parsing against a start of
+// about a third of one.
+const MIN_SHARD_FILES = 100;
 // Four, because each shard thread holds a heap of its own. Six against four on
 // a measured Rails API: 4% to 16% less scan wall, and 15 to 29 MB more peak,
 // which put the scan 22% to 30% over 0.13.3's peak memory where four is 8% to

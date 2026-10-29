@@ -447,8 +447,9 @@ for minutes and what a hung parse looks like is silence; behind it sits a wall c
 number of files handed over, since a child that answers one file every fourteen seconds keeps the
 idle timer happy and never ends.
 
-A corpus of 1,000 Ruby files or more is split into batches, one child each: one per 500 files, up to
-four and never more than the machine's cores less one. Six cut a measured Rails API's scan by 4% to
+A corpus of 200 Ruby files or more is split into batches, one child each: one per 100 files, up to
+four and never more than the machine's cores less one. On a 929-file repository one child took 5.9 s
+and four took 2.0 s for the same map. Six cut a measured Rails API's scan by 4% to
 16% but put its peak memory 22% to 30% over 0.13.3's, since each batch's thread holds a heap of its
 own. The batches are balanced by bytes, the largest file first into the lightest batch, and a file
 over the size cap weighs nothing, since the child skips it unread. The answers are put back in the
