@@ -7,6 +7,8 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and
 
 ## [Unreleased]
 
+## [0.22.0] - 2026-10-29
+
 Every module the review named as doing two jobs does one: the check decides a finding's slot,
 severity and shape in one module, reads a change the way the co-change walk does, collects the
 corpus once and names its comparison stage; the hooks load only their own modules and read the Stop
@@ -5480,7 +5482,8 @@ which are partial; several listed there are not implemented yet.
 - No claim that this catches defects. Measured across ten repositories, 1 of 317 defect review
   comments was preventable by a conventions map.
 
-[Unreleased]: https://github.com/crisnahine/anatomiya/compare/v0.21.0...HEAD
+[Unreleased]: https://github.com/crisnahine/anatomiya/compare/v0.22.0...HEAD
+[0.22.0]: https://github.com/crisnahine/anatomiya/compare/v0.21.0...v0.22.0
 [0.21.0]: https://github.com/crisnahine/anatomiya/compare/v0.20.0...v0.21.0
 [0.20.0]: https://github.com/crisnahine/anatomiya/compare/v0.19.0...v0.20.0
 [0.19.0]: https://github.com/crisnahine/anatomiya/compare/v0.18.2...v0.19.0
