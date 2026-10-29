@@ -7,7 +7,7 @@ import { parseSync } from "oxc-parser";
 
 import { needsRuby } from "./ruby-available.mjs";
 import { doublingRatio, LINEAR } from "./growth.mjs";
-import { bodyIdentity, newlyIntroduced, siteIdentity } from "../plugins/anatomiya/lib/introduced.mjs";
+import { bodyIdentity, newlyIntroduced, rowFacets, siteIdentity } from "../plugins/anatomiya/lib/introduced.mjs";
 import { parseRuby } from "../plugins/anatomiya/lib/ruby.mjs";
 import { rowByKey } from "../plugins/anatomiya/lib/registry.mjs";
 import { removeTree } from "./platform.mjs";
@@ -682,4 +682,24 @@ test("a base spelled relative to the nesting it is written in is the learned one
   assert.deepEqual(ask("class_base", "Api::V1::BaseController", relative), []);
   assert.equal(ask("class_base", "Api::V1::BaseController", elsewhere).length, 1, "at the top level the bare name is ::BaseController");
   assert.deepEqual(ask("module_include", "Api::Concern", mixin), []);
+});
+
+test("a prism-parsed file is handed the facets the scan's walk had, which is none, since the Ruby walk reads them off the same pass", () => {
+  const facets = { testRunner: "rspec", testCalls: true };
+  assert.equal(rowFacets("ruby", facets), null, "the scan counted the routes file, so the check must too");
+  assert.deepEqual(rowFacets("js", facets), facets, "every other engine's rows read the facets on both sides");
+  assert.equal(rowFacets("js", null), null);
+});
+
+test("a Ruby routes file whose head facets say test is still judged by the route row, as the scan judged it", needsRuby, async (t) => {
+  // The scan's Ruby walk hands its rows no facets, so it counted this file; handed the head's facets,
+  // the check's one test-file gate read `testCalls` and passed the file over, and the two sides
+  // disagreed on the one row that gates on it (C73, B83).
+  const slot = area(stated("route_segment_case", { learned: "snake_case" }));
+  const parsed = await rubyRevision(t, 'Rails.application.routes.draw do\n  get "userList" => "users#index"\nend\n');
+  const head = { ...parsed, facets: { testRunner: null, testCalls: true, unread: false } };
+
+  const found = only("route_segment_case", newlyIntroduced({ area: slot, path: "config/routes.rb", lang: "ruby", frameworks: ["rails"], head, base: null }));
+
+  assert.deepEqual(found.map((f) => f.where), ["userList"]);
 });

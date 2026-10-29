@@ -5,10 +5,12 @@
  * Lives here rather than in `lib/`, because nothing the plugin ships needs it:
  * `plugins/anatomiya/bin/anatomiya.mjs` runs at module scope on purpose.
  */
-import { realpathSync, statSync } from "node:fs";
-import { resolve } from "node:path";
+import { existsSync, readdirSync, realpathSync, statSync } from "node:fs";
+import { join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 import { parseArgs } from "node:util";
+
+import { byCode } from "../plugins/anatomiya/lib/paths.mjs";
 
 /**
  * Whether a module is the file this process was told to run.
@@ -47,6 +49,31 @@ export function isFile(path) {
   } catch {
     return false;
   }
+}
+
+// The order both measurement documents record the corpus in.
+export const byName = (a, b) => byCode(a.name, b.name);
+
+/**
+ * Every child of the corpus directory that is a git repository, or why the path
+ * is not a corpus.
+ *
+ * A mistyped corpus threw ENOENT out of the driver as a stack trace, and by
+ * then the scratch directory had been made for a run that never started.
+ */
+export function corpusRepos(corpusDir) {
+  let entries;
+  try {
+    entries = readdirSync(corpusDir, { withFileTypes: true });
+  } catch (err) {
+    return { error: `the corpus directory ${corpusDir} cannot be listed: ${err.code ?? err.message}` };
+  }
+  return {
+    repos: entries
+      .filter((e) => e.isDirectory() && existsSync(join(corpusDir, e.name, ".git")))
+      .map((e) => ({ name: e.name, source: join(corpusDir, e.name) }))
+      .sort(byName),
+  };
 }
 
 /**

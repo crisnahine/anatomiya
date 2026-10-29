@@ -84,6 +84,8 @@ const js = {
   directives: null,
   placeTests: null,
   rootPackage: false,
+  reaches: null,
+  declaresPackage: false,
   capabilities: { semantic: true, importGraph: true },
   positions: { offsets: "utf16", lines: false },
 };
@@ -107,6 +109,8 @@ const jsx = {
   directives: null,
   placeTests: null,
   rootPackage: false,
+  reaches: null,
+  declaresPackage: false,
   capabilities: { semantic: true, importGraph: true },
   positions: { offsets: "utf16", lines: false },
 };
@@ -135,6 +139,8 @@ const component = (id, markup) => ({
   directives: null,
   placeTests: null,
   rootPackage: false,
+  reaches: null,
+  declaresPackage: false,
   capabilities: { semantic: false, importGraph: true },
   positions: { offsets: "utf16", lines: false },
 });
@@ -163,12 +169,18 @@ const ruby = {
   directives: null,
   placeTests: null,
   rootPackage: false,
+  reaches: null,
+  declaresPackage: false,
   capabilities: { semantic: false, importGraph: false },
   positions: { offsets: null, lines: true },
 };
 
 // A language tree-sitter reads whole, through the one grammar file named after
 // its id. The family is its own: a Go test is no test of a Python file.
+// `reaches` is which families' files a reference in this language may name,
+// its own where null (Kotlin and Java call each other's classes by import), and
+// `declaresPackage` whether a file declares the package an import names whole,
+// so a file matched by its path is checked against what it declares (H58).
 const grammar = (id, exts) => ({
   id,
   fallback: false,
@@ -186,6 +198,8 @@ const grammar = (id, exts) => ({
   directives: null,
   placeTests: null,
   rootPackage: false,
+  reaches: null,
+  declaresPackage: false,
   capabilities: { semantic: false, importGraph: false },
   positions: { offsets: "utf16", lines: false },
 });
@@ -193,18 +207,18 @@ const grammar = (id, exts) => ({
 // `.pyi` is deliberately absent, as `.rbi` is: a stub describes types rather
 // than anything anyone wrote.
 const python = grammar("python", ["py"]);
-const php = grammar("php", ["php"]);
+const php = { ...grammar("php", ["php"]), declaresPackage: true };
 // The go tool builds every directory as one package and the module root as one like any other:
 // gin holds 40 of its 98 files there and caddy 39.
 const go = { ...grammar("go", ["go"]), rootPackage: true };
-const java = grammar("java", ["java"]);
+const java = { ...grammar("java", ["java"]), reaches: ["java", "kotlin"], declaresPackage: true };
 // The grammar reads `#if` around whole statements and members only, so a file
 // it rejects is read again with one branch of each conditional (`csharp-directives.mjs`).
 const csharp = { ...grammar("csharp", ["cs"]), directives: { exts: ["cs"] } };
 // cargo builds every file directly under a crate's `tests` as a test, whatever it holds, so the place alone names the runner.
 // A crate is the directory holding the manifest or the source directory.
 const rust = { ...grammar("rust", ["rs"]), placeTests: { dir: "tests", runner: "cargo test", manifest: "Cargo.toml", sources: "src" } };
-const kotlin = grammar("kotlin", ["kt", "kts"]);
+const kotlin = { ...grammar("kotlin", ["kt", "kts"]), reaches: ["kotlin", "java"], declaresPackage: true };
 
 const freeze = (decl) => {
   Object.freeze(decl.exts);
@@ -228,6 +242,7 @@ const freeze = (decl) => {
     Object.freeze(decl.directives);
   }
   if (decl.placeTests) Object.freeze(decl.placeTests);
+  if (decl.reaches) Object.freeze(decl.reaches);
   Object.freeze(decl.capabilities);
   Object.freeze(decl.positions);
   return Object.freeze(decl);
@@ -261,6 +276,15 @@ export const familyOf = (id) => declOf(id).family;
 
 /** Whose rules find a language's script blocks, or null where the file is the script. */
 export const embeddedIn = (id) => declOf(id).embedded;
+
+/** Whether a language is a component, markup holding script blocks, which no runner collects and no row reads whole. */
+export const isComponent = (id) => Boolean(id) && embeddedIn(id) !== null;
+
+/** The families a reference in this language may reach: its own, or the ones its declaration names (H58). */
+export const reachesOf = (id) => declOf(id).reaches ?? [declOf(id).family];
+
+/** Whether a file of this language declares the package an import names whole, so a path match is held to it (H58). */
+export const declaresPackage = (id) => declOf(id).declaresPackage;
 
 /**
  * The directory a language's tool collects every file of as a test, what that tool is called, and the manifest and source
@@ -499,6 +523,13 @@ export function assertRegistry(langs) {
     }
     // Anything but `true` reads as no, so `"yes"` would leave a root package in no area and say nothing.
     if (typeof decl.rootPackage !== "boolean") throw new Error(`${decl.id} does not say whether the repository root is a package of its own`);
+    if (typeof decl.declaresPackage !== "boolean") throw new Error(`${decl.id} does not say whether its files declare the package an import names`);
+    if (decl.reaches !== null) {
+      const families = new Set(langs.map((l) => l.family));
+      if (!Array.isArray(decl.reaches) || decl.reaches.length === 0 || decl.reaches.some((f) => !families.has(f))) {
+        throw new Error(`${decl.id} reaches ${JSON.stringify(decl.reaches)}, which names a family no declaration has`);
+      }
+    }
     if (decl.positions.offsets !== "utf16" && decl.positions.offsets !== null) {
       throw new Error(`${decl.id} declares offsets ${JSON.stringify(decl.positions.offsets)}, which no reader understands`);
     }

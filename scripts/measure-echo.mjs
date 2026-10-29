@@ -16,7 +16,7 @@
  */
 import { existsSync, readFileSync, statSync } from "node:fs";
 
-import { invokedAs } from "./entry.mjs";
+import { invokedAs, readArgv } from "./entry.mjs";
 import { transcripts } from "./measure-delivery.mjs";
 import { ECHO_READ_MOST, ECHO_WINDOW_BYTES, heldIn } from "../plugins/anatomiya/lib/echo.mjs";
 import { echoEvent, windowBytes } from "../plugins/anatomiya/lib/transcript.mjs";
@@ -99,9 +99,10 @@ export function bytesPerToken(lines, span = RATIO_SPAN_TOKENS) {
 const quantile = (sorted, q) => sorted[Math.floor(q * (sorted.length - 1))];
 
 function main() {
-  const dir = process.argv[2];
-  if (!dir) {
-    console.error("usage: node scripts/measure-echo.mjs <transcriptDir>");
+  const read = readArgv(process.argv.slice(2), {}, { positionals: true });
+  const dir = read.positionals?.[0];
+  if (read.error || read.positionals.length !== 1) {
+    console.error(`${read.error ? `${read.error}\n` : ""}usage: node scripts/measure-echo.mjs <transcriptDir>`);
     process.exit(2);
   }
   if (!existsSync(dir)) {

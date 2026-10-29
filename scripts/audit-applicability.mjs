@@ -15,11 +15,10 @@
  * every site there is, which makes a narrow one worth reading. Measured across
  * four repositories, every flagged row named a construct that is simply rare.
  */
-import { readFileSync } from "node:fs";
 
 import { invokedAs } from "./entry.mjs";
 import { REGISTRY } from "../plugins/anatomiya/lib/registry.mjs";
-import { schemaProblem } from "../plugins/anatomiya/lib/facts.mjs";
+import { factsAt } from "../plugins/anatomiya/lib/facts.mjs";
 import { byCode } from "../plugins/anatomiya/lib/paths.mjs";
 
 export const NARROW_AND_PRECISE = "narrow and precise: check the predicate";
@@ -105,16 +104,9 @@ export function readRecords(paths) {
   const problems = [];
 
   for (const path of paths) {
-    let parsed;
-    try {
-      parsed = JSON.parse(readFileSync(path, "utf8"));
-    } catch (err) {
-      problems.push(`${path} could not be read: ${err && err.message ? err.message : err}`);
-      continue;
-    }
-    const problem = schemaProblem(parsed);
+    const { facts, problem } = factsAt(path);
     if (problem) problems.push(`${path} was not measured: ${problem.why}`);
-    else records.push(parsed);
+    else records.push(facts);
   }
 
   return { records, problems };

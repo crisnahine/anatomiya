@@ -9,6 +9,7 @@ import { createHash, randomBytes } from "node:crypto";
 import { gunzipSync, gzipSync } from "node:zlib";
 
 import { needsFoldingFilesystem, needsPathControl, needsPosixPaths, needsPosixSpecialFiles, needsShebang, needsSymlinks, removeTree } from "./platform.mjs";
+import { repository } from "./repository.mjs";
 
 import { authorsByFile } from "../plugins/anatomiya/lib/authors.mjs";
 import { walkCochange } from "../plugins/anatomiya/lib/cochange-walk.mjs";
@@ -19,11 +20,8 @@ import { READ_MOST } from "../plugins/anatomiya/lib/store.mjs";
 
 /** A repository with the store's directory in place and excluded, as a scan leaves one. */
 function repo(t, build) {
-  const dir = mkdtempSync(join(tmpdir(), "anatomiya-history-"));
-  t.after(() => removeTree(dir));
+  const { dir } = repository(t, { prefix: "anatomiya-history-", email: "first@t.test", name: "first" });
   const make = tools(dir);
-  make.git("init", "-q", "-b", "main");
-  make.author("first@t.test");
   mkdirSync(join(dir, STORE_DIR), { recursive: true });
   appendFileSync(join(dir, ".git", "info", "exclude"), `${EXCLUDE_LINES.join("\n")}\n`);
   build(make);

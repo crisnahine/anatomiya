@@ -6,7 +6,7 @@ import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { execFileSync } from "node:child_process";
 
-import { PROSE_NAMES, READS, avoidedWords, checkDocs, citesRows, counted, doneFilesGone, pathsThatMoved, proseNamed, readGlossary, recordProblems, rowsCitedInCode, rowsCitedMissing, sitesOwed, tableSplits } from "../scripts/check-docs.mjs";
+import { PROSE_NAMES, READS, RULES, avoidedWords, checkDocs, claims, context, documents, documentsFrom, citesRows, counted, doneFilesGone, pathsThatMoved, proseNamed, readGlossary, recordProblems, rowsCitedInCode, rowsCitedMissing, sitesOwed, tableSplits } from "../scripts/check-docs.mjs";
 import { DECISIONS_DIR, indexRows, readRowFile } from "../scripts/decisions.mjs";
 import { hostedBy } from "../plugins/anatomiya/lib/langs.mjs";
 import { PARSE_OUTCOMES } from "../plugins/anatomiya/lib/parse.mjs";
@@ -186,7 +186,7 @@ test("an untouched copy of this repository passes", (t) => {
 
 test("a reworded severity reason the table still quotes the old way fails", (t) => {
   const dir = repoCopy(t);
-  edit(join(dir, REL.anatomiya, "lib", "check.mjs"), (text) => text.replaceAll("no baseline population recorded", "no baseline recorded"));
+  edit(join(dir, REL.anatomiya, "lib", "verdict.mjs"), (text) => text.replaceAll("no baseline population recorded", "no baseline recorded"));
 
   const { status, output } = check(dir);
 
@@ -196,7 +196,8 @@ test("a reworded severity reason the table still quotes the old way fails", (t) 
 
 test("a check whose reasons the gate cannot find fails rather than passing every one unread", (t) => {
   const dir = repoCopy(t);
-  edit(join(dir, REL.anatomiya, "lib", "check.mjs"), (text) => text.replace(/severity: "(NIT|FIX|MUST-FIX)",(\s*)reason: /g, 'severity: "$1",$2reason: String('));
+  // Every reason is a literal in verdict.mjs now; the gate reads check.mjs too, in case one returns there.
+  edit(join(dir, REL.anatomiya, "lib", "verdict.mjs"), (text) => text.replace(/severity: "(NIT|FIX|MUST-FIX)",(\s*)reason: /g, 'severity: "$1",$2reason: String('));
 
   const { status, output } = check(dir);
 
@@ -206,7 +207,7 @@ test("a check whose reasons the gate cannot find fails rather than passing every
 
 test("a severity reason moved into a constant fails rather than going unread", (t) => {
   const dir = repoCopy(t);
-  edit(join(dir, REL.anatomiya, "lib", "check.mjs"), (text) =>
+  edit(join(dir, REL.anatomiya, "lib", "verdict.mjs"), (text) =>
     `const NO_BASELINE = "no baseline recorded";\n${text.replace('reason: "no baseline population recorded"', "reason: NO_BASELINE")}`,
   );
 
@@ -1657,4 +1658,67 @@ test("the usage guide's runtime dependency count is read against the manifest", 
 
   assert.equal(status, 1);
   assert.ok(output.includes('docs/usage.md: says "four runtime dependencies"'), output);
+});
+
+// --- a rule over documents held as strings ------------------------------------
+
+// Every case above copies the repository and runs the gate whole. A rule is a
+// function of the context, and the context reads through `documentsFrom`, so
+// a rule's own cases hand it the two documents it reads and nothing else.
+const ruleOver = (rule, files) => {
+  const { problems, claim } = claims();
+  RULES[rule](context(documentsFrom(files), claim));
+  return problems;
+};
+
+test("a dimension count a document states is read against the registry, over strings", () => {
+  const problems = ruleOver("dimensionCounts", { "README.md": "It counts 3 dimensions.\n", "docs/usage.md": "", "docs/how-it-works.md": "", "CHANGELOG.md": "" });
+  assert.equal(problems.length, 1, problems.join("\n"));
+  assert.match(problems[0], /^README\.md: says "3 dimensions", the registry holds \d+$/);
+});
+
+test("the runtime dependency set is held to the plugin's manifest, over strings", () => {
+  const files = {
+    [`${REL.anatomiya}/package.json`]: JSON.stringify({ dependencies: { "oxc-parser": "1.0.0" } }),
+    "SECURITY.md": "oxc-parser is the only runtime dependency.\n",
+    "README.md": "nothing named\n",
+  };
+  assert.deepEqual(ruleOver("runtimeDependencies", files), [
+    'SECURITY.md: says "only runtime dependency" with 1 of them',
+    "README.md: does not name the runtime dependency oxc-parser",
+  ]);
+});
+
+test("a measurement carrying a local path is named, over strings", () => {
+  const problems = ruleOver("measurementPaths", { "docs/measurements/2026-01-01-run.md": "| repo | /Users/someone/code/app |\n", "docs/measurements/notes.txt": "/Users/someone\n" });
+  assert.deepEqual(problems, ["docs/measurements/2026-01-01-run.md: carries the local path /Users/someone"]);
+});
+
+test("the 0.90 bar has to be stated somewhere, over strings", () => {
+  assert.deepEqual(ruleOver("gateTable", { "README.md": "", "docs/usage.md": "", "docs/how-it-works.md": "" }), ["docs: no document states the 0.90 bar, which is the one number that never moves"]);
+  assert.deepEqual(ruleOver("gateTable", { "README.md": "the 0.90 bar", "docs/usage.md": "", "docs/how-it-works.md": "" }), []);
+});
+
+test("a rule that runs the binary says nothing over strings, rather than throwing", () => {
+  assert.deepEqual(ruleOver("commandSurface", { "README.md": "" }), []);
+});
+
+test("one reading serves every rule: a document asked for twice is read once", (t) => {
+  const dir = mkdtempSync(join(tmpdir(), "anatomiya-documents-"));
+  t.after(() => removeTree(dir));
+  writeFileSync(join(dir, "a.md"), "one");
+  const docs = documents(dir);
+  assert.equal(docs.read("a.md"), "one");
+  writeFileSync(join(dir, "a.md"), "two");
+  assert.equal(docs.read("a.md"), "one", "the second ask is the first reading");
+  assert.equal(docs.readOr("gone.md", null), null);
+  assert.match(docs.readJson("gone.md").problem, /is missing/);
+});
+
+test("every rule is in the table once, and the table is what the gate runs", () => {
+  assert.deepEqual(Object.keys(RULES), [
+    "dimensionCounts", "buildContract", "gateTable", "caveatCodes", "severityReasons", "workingTree", "commandSurface",
+    "glossaryShape", "intakeTable", "runtimeDependencies", "enginesAndGrammars", "measurementPaths", "trackedDocuments", "versions",
+  ]);
+  for (const [name, rule] of Object.entries(RULES)) assert.equal(typeof rule, "function", name);
 });

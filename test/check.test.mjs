@@ -1,6 +1,7 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import { needsBatchZ, needsPathControl, needsPosixPaths, needsPosixPermissions, needsPosixSpecialFiles, needsShebang, needsSymlinks, needsUnreadableDirs, removeTree } from "./platform.mjs";
+import { repository } from "./repository.mjs";
 import fs, { chmodSync, mkdtempSync, mkdirSync, readdirSync, writeFileSync, readFileSync, realpathSync, symlinkSync, rmSync, existsSync } from "node:fs";
 import { syncBuiltinESMExports } from "node:module";
 import { tmpdir } from "node:os";
@@ -12,7 +13,8 @@ import { addWorktree, git, scratch } from "./git-worktrees.mjs";
 import { scriptGit } from "./git-script.mjs";
 
 import { needsRuby } from "./ruby-available.mjs";
-import { check, severityFor, unreadReason, unreadCode } from "../plugins/anatomiya/lib/check.mjs";
+import { cappedBy, check, comparison, unreadReason, unreadCode } from "../plugins/anatomiya/lib/check.mjs";
+import { severityFor } from "../plugins/anatomiya/lib/verdict.mjs";
 import { Unasked } from "../plugins/anatomiya/lib/git.mjs";
 import { formatReport, formatReportGithub, formatReportJson, CAVEATS } from "../plugins/anatomiya/lib/check-report.mjs";
 import { scan } from "../plugins/anatomiya/lib/scan.mjs";
@@ -37,28 +39,9 @@ const glob = (dir) => ({ negated: false, dir, tail: "**/*.ts" });
  * temporary repository behind.
  */
 function repo(t, build) {
-  const dir = mkdtempSync(join(tmpdir(), "anatomiya-check-"));
-  t.after(() => removeTree(dir));
-
-  const git = (...a) => execFileSync("git", a, { cwd: dir, stdio: "pipe" });
-  git("init", "-q");
-  git("config", "user.email", "t@t.test");
-  git("config", "user.name", "T");
-  git("checkout", "-q", "-b", "main");
-
-  const write = (rel, body) => {
-    const abs = join(dir, rel);
-    mkdirSync(dirname(abs), { recursive: true });
-    writeFileSync(abs, body);
-  };
-  const commit = (msg) => {
-    git("add", "-A");
-    git("commit", "-qm", msg);
-  };
-  const read = (rel) => readFileSync(join(dir, rel), "utf8");
-
-  build({ dir, git, write, commit, read });
-  return dir;
+  const made = repository(t, { prefix: "anatomiya-check-" });
+  build(made);
+  return made.dir;
 }
 
 const swallow = (n) =>
@@ -86,7 +69,7 @@ const dim = (o = {}) => ({
  * because the pin stores no counts, so there is nothing to fall back to when
  * its sha goes unreachable.
  */
-function facts(dir, { sha, dimensions = [dim()], path = "src", fileCount = 8, pinned = null, areas = null, capabilities = [] } = {}) {
+function facts(dir, { sha, dimensions = [dim()], path = "src", fileCount = 8, pinned = null, areas = null, capabilities = [], frameworks = [] } = {}) {
   const store = join(dir, ".claude/anatomiya");
   mkdirSync(store, { recursive: true });
   const mapped = areas
@@ -97,7 +80,7 @@ function facts(dir, { sha, dimensions = [dim()], path = "src", fileCount = 8, pi
   writeFacts(dir, {
     root: dir,
     scannedAt: "2026-01-01T00:00:00.000Z",
-    corpus: { files: fileCount, frameworks: [], capabilities },
+    corpus: { files: fileCount, frameworks, capabilities },
     parse: { parsed: fileCount },
     suppressAll: false,
     areas: mapped,
@@ -6855,4 +6838,70 @@ test("a route a Python branch adds against the area's learned URL spelling is a 
 
   const found = forKey(await check(dir), "endpoint_segment_case");
   assert.deepEqual(found.map((f) => [f.path, f.line, f.where, f.claim]), [["src/views.py", 14, "support_tickets", "URL path segments here are kebab-case"]]);
+});
+
+test("the comparison stage names the base, the commit the change is read from and the mode, on each of its three paths", async (t) => {
+  // compare: a branch off main, read from their merge base.
+  const branched = repo(t, ({ write, commit, git }) => {
+    write("a.ts", "export const a = 1\n");
+    commit("init");
+    git("checkout", "-q", "-b", "feat");
+    write("b.ts", "export const b = 1\n");
+    commit("feat");
+  });
+  const said = [];
+  const compared = await comparison(branched, "main", said);
+  assert.equal(compared.mode, "compare");
+  assert.equal(compared.base.ref, "main");
+  assert.equal(compared.from, compared.base.mergeBase);
+  assert.deepEqual(said, []);
+
+  // added-lines: a trunk under a name no candidate spells, so there is no base and the oldest commit stands in.
+  const unnamed = repository(t, { prefix: "anatomiya-check-", branch: "trunk" });
+  unnamed.write("a.ts", "export const a = 1\n");
+  const oldest = unnamed.commit("init");
+  unnamed.write("b.ts", "export const b = 1\n");
+  unnamed.commit("more");
+  const degraded = [];
+  const limited = await comparison(unnamed.dir, null, degraded);
+  assert.equal(limited.mode, "added-lines");
+  assert.equal(limited.from, oldest);
+  assert.deepEqual(degraded.map((c) => c.code), [CAVEATS.NO_BASE_REF, CAVEATS.NO_MERGE_BASE]);
+
+  // none: no commit at all.
+  const empty = repo(t, () => {});
+  const nothing = [];
+  const none = await comparison(empty, null, nothing);
+  assert.equal(none.mode, "none");
+  assert.equal(none.from, null);
+  assert.ok(nothing.some((c) => c.code === CAVEATS.NOTHING_EXAMINED), nothing.map((c) => c.code).join(","));
+
+  // The cap names each cause, and only a fresh comparison with a fresh map carries none.
+  assert.equal(cappedBy("compare", { reason: null }), null);
+  assert.equal(cappedBy("added-lines", { reason: null }), "no merge base");
+  assert.equal(cappedBy("added-lines", { reason: "no baseline pinned" }), "no baseline pinned; no merge base");
+});
+
+test("a parameter filter in another spelling than the one the map learned is a finding, where the row was passed over as unenforceable before", needsRuby, async (t) => {
+  // The row names its three classes now (C74), so a site voting `require` against a learned `expect`
+  // is judged like a naming site against its class; before, `enforceableClass` knew only the naming
+  // vocabulary and the check passed over every site of this row (C60).
+  const dir = repo(t, ({ git, write, commit }) => {
+    write("app/controllers/posts_controller.rb", "class PostsController < ApplicationController\n  def create\n    params.expect(post: [:title])\n  end\nend\n");
+    commit("init");
+    git("checkout", "-q", "-b", "work");
+    write("app/controllers/comments_controller.rb", "class CommentsController < ApplicationController\n  def create\n    params.require(:comment).permit(:body)\n  end\nend\n");
+    commit("add");
+  });
+  // A Rails row is asked only where the record shows Rails, and the area's globs have to reach the Ruby files.
+  facts(dir, {
+    sha: sha(dir, "main"),
+    frameworks: ["rails"],
+    areas: [{ id: "aaaaaaaa", path: "app", globs: [{ negated: false, dir: "app", tail: "**/*.rb" }], fileCount: 8, dimensions: [dim({ key: "strong_params_style", precision: "partial", learned: "expect" })] }],
+  });
+
+  const found = forKey(await check(dir), "strong_params_style");
+
+  assert.deepEqual(found.map((f) => f.path), ["app/controllers/comments_controller.rb"], JSON.stringify(found));
+  assert.match(found[0].claim, /params\.expect/);
 });

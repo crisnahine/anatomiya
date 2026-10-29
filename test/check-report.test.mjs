@@ -17,6 +17,7 @@ import {
 import { writeFacts } from "../plugins/anatomiya/lib/facts.mjs";
 import { ANATOMIYA } from "../scripts/plugins.mjs";
 import { removeTree } from "./platform.mjs";
+import { repository } from "./repository.mjs";
 
 /**
  * The report as something other than a rendering: a machine reader gets a
@@ -24,27 +25,9 @@ import { removeTree } from "./platform.mjs";
  * in it has been through the encoder before any writer sees it.
  */
 function repo(t, build) {
-  const dir = mkdtempSync(join(tmpdir(), "anatomiya-report-"));
-  t.after(() => removeTree(dir));
-
-  const git = (...a) => execFileSync("git", a, { cwd: dir, stdio: "pipe" });
-  git("init", "-q");
-  git("config", "user.email", "t@t.test");
-  git("config", "user.name", "T");
-  git("checkout", "-q", "-b", "main");
-
-  const write = (rel, body) => {
-    const abs = join(dir, rel);
-    mkdirSync(dirname(abs), { recursive: true });
-    writeFileSync(abs, body);
-  };
-  const commit = (msg) => {
-    git("add", "-A");
-    git("commit", "-qm", msg);
-  };
-
-  build({ dir, git, write, commit });
-  return dir;
+  const made = repository(t, { prefix: "anatomiya-report-" });
+  build(made);
+  return made.dir;
 }
 
 const clean = (n) =>

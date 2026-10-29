@@ -31,7 +31,8 @@ import { locator } from "./encode.mjs";
 import { readRecord } from "./facts.mjs";
 import { baseIn, childLayouts, isPathTaken, ownLayout } from "./hook.mjs";
 import { pluginRoot } from "./readiness.mjs";
-import { REFRESH_STATE, resolveInside } from "./rules.mjs";
+import { REFRESH_STATE } from "./rules.mjs";
+import { resolveInside } from "./contained.mjs";
 import { commonDirOf, gitDirOf } from "./worktree.mjs";
 
 /** The longest a worker may run before it gives up (F5: nothing here runs without a clock). */

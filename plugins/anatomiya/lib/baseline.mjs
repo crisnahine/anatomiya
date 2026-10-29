@@ -14,7 +14,7 @@ import { applyPairings } from "./pairing.mjs";
 import { readRecord } from "./facts.mjs";
 import { atomic } from "./store.mjs";
 import { byCode } from "./paths.mjs";
-import { blockedOnTheWay, leafReplaceable, outsideClaude, readHead, resolveInside } from "./rules.mjs";
+import { blockedOnTheWay, leafReplaceable, outsideClaude, readHead, resolveInside } from "./contained.mjs";
 import { mainCheckoutOf } from "./worktree.mjs";
 
 export const PIN_PATH = ".claude/anatomiya/baseline.json";

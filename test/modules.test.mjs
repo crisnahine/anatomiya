@@ -150,7 +150,9 @@ const UNASKED_HANDLED = {
   "changeset.mjs addedRanges": ["SAYS SO", "null, which the check words as ranges that could not be read and the stop hook reads as nothing to ask"],
   "changeset.mjs changedFiles": ["SAYS SO", "not readable, and the check says the diff could not be read"],
   "changeset.mjs pendingPaths": ["SAYS SO", "null, which the check words as pending edits it could not list and the stop hook reads as nothing to ask"],
+  "cochange-walk.mjs startCochange": ["SAYS SO", "a null tree beside the walk, which the record states as a tree that could not be read"],
   "check.mjs absentAt": ["SAYS SO", "null, and the placement finding is declined with a caveat"],
+  "check.mjs addPairingFindings": ["SAYS SO", "null, and the caveat says the file list at HEAD could not be read, so no obligation was checked"],
   "check.mjs remoteSha": ["SAYS SO", "no commit to fetch, then the caveat that the base could not be fetched"],
   "check.mjs resolveBase": ["SAYS SO", "the shallow fetch: not fetched is the next candidate, then the same caveat"],
   "check.mjs trackedFiles": ["STOP", "passes the could-not-ask on; a listing git refused is read as a test being there and declines the placement"],
@@ -196,6 +198,22 @@ test("outside git.mjs git is asked by the kind of question, and what carries on 
   assert.deepEqual(Object.keys(UNASKED_HANDLED).filter((site) => UNASKED_HANDLED[site][0] === "OPEN"), [], "no place joins the list unruled");
 });
 
+// `.catch(() => null)` on a git reader took a `TypeError` along with `Unasked`
+// and worded it as a listing git could not make, and the guard above could not
+// see it: nothing on the line said `unaskedAs`. A rejection a git reader hands
+// on is caught by the kind of error, never whole.
+test("a git reader's rejection is caught by its kind, never whole", () => {
+  const readers = [...readFileSync(join(LIB, "git.mjs"), "utf8").matchAll(/^export (?:async )?function (\w+)\(/gm)].map((m) => m[1]);
+  assert.ok(readers.length >= 10, `read ${readers.length} git readers`);
+  const call = new RegExp(`\\b(?:${readers.join("|")})\\([^;]*?\\)\\s*\\.catch\\(\\(\\)\\s*=>`, "g");
+  const whole = [];
+  for (const file of readdirSync(LIB).filter((name) => name.endsWith(".mjs") && name !== "git.mjs")) {
+    const src = scan(readFileSync(join(LIB, file), "utf8"));
+    for (const m of src.matchAll(call)) whole.push(`${file}:${src.slice(0, m.index).split("\n").length}`);
+  }
+  assert.deepEqual(whole, [], "catch with unaskedAs(value), which rethrows what is not an Unasked (F29)");
+});
+
 test("the writers do not reach the pipeline that produced the record", () => {
   // Three of the four readers of the old module wanted a writer or the caveat
   // table and paid a parser, a git runner and the whole registry for it. The
@@ -204,6 +222,7 @@ test("the writers do not reach the pipeline that produced the record", () => {
   // learn something the record already carries.
   assert.deepEqual([...reachedFrom("check-report.mjs")].sort(), [
     "check-report.mjs",
+    "contained.mjs",
     "encode.mjs",
     "paths.mjs",
     "rules.mjs",
@@ -288,6 +307,44 @@ test("every field a reader takes off a site crossed the worker boundary, or is t
 
 // The check and the row tests took raw hits while the scan took what crossed, so a field the
 // boundary dropped worked in both and was missing from the map.
+// The oxc bridge handed a row three fields, the prism bridge one, the tree bridge four and the check four, so a
+// row reading `facets` counted in the check and saw `undefined` in the scan, with no error either side. Every
+// caller builds the context through the one table now, and this reads each call's third argument.
+test("every bridge and the check hand a row its file context through fileContext", () => {
+  const thirdArgOf = (src, call) => {
+    const args = [];
+    let depth = 0;
+    let at = src.indexOf("(", call) + 1;
+    let start = at;
+    for (; at < src.length; at++) {
+      const c = src[at];
+      if (c === "(" || c === "[" || c === "{") depth++;
+      else if (c === ")" || c === "]" || c === "}") {
+        if (depth === 0) break;
+        depth--;
+      } else if (c === "," && depth === 0) {
+        args.push(src.slice(start, at).trim());
+        start = at + 1;
+      }
+    }
+    args.push(src.slice(start, at).trim());
+    return args[2] ?? null;
+  };
+  const wrong = [];
+  let calls = 0;
+  for (const file of readdirSync(LIB).filter((f) => f.endsWith(".mjs") && f !== "walk.mjs")) {
+    const src = scan(readFileSync(join(LIB, file), "utf8"));
+    for (const m of src.matchAll(/\b(?:collectHits|hitsOf)\(/g)) {
+      calls++;
+      const extra = thirdArgOf(src, m.index);
+      // `introduced.mjs`'s own `hitsOf` hands its `extra` on; the semantic job's rows read no file context.
+      if (extra !== null && extra !== "extra" && !extra.startsWith("fileContext(")) wrong.push(`${file}: ${extra.slice(0, 60)}`);
+    }
+  }
+  assert.ok(calls >= 6, `read ${calls} calls`);
+  assert.deepEqual(wrong, []);
+});
+
 test("a row is run through hit collection alone, by the scan, the check and the tests", () => {
   const lib = readdirSync(LIB).filter((f) => f.endsWith(".mjs") && /\.run\(/.test(scan(readFileSync(join(LIB, f), "utf8"))));
   assert.deepEqual(lib, ["walk.mjs"]);
@@ -680,7 +737,7 @@ test("a name this repository's own module offers is imported where it is used, n
 // tests reach some names through a namespace or a dynamic import; a name two
 // files both export passes on the other's use, which only makes this lenient.
 test("every export is read somewhere outside its own file", () => {
-  assert.ok(exportedBy(`${REL.anatomiya}/lib/hook.mjs`).has("SETTINGS_PATH"), "the list form of export is read");
+  assert.ok(exportedBy(`${REL.anatomiya}/lib/settings.mjs`).has("SETTINGS_PATH"), "the list form of export is read");
   const files = sourceFiles();
   assert.ok(files.length >= 100, `read ${files.length} files`);
   const texts = files.map((rel) => [rel, scan(readFileSync(join(ROOT, rel), "utf8"), { strings: true })]);
@@ -729,7 +786,7 @@ test("every verb the binary declares carries its own arm in the one table", () =
   const loads = [...scan(src).matchAll(/\bimport\(\s*"([^"]+)"/g)];
   assert.ok(loads.length >= verbs.length, `read ${loads.length} arm imports`);
   const outside = loads.filter((m) => m.index < table.init.start || m.index >= table.init.end).map((m) => m[1]);
-  assert.deepEqual(outside.sort(), ["../lib/encode.mjs", "../lib/hook.mjs", "../lib/targets.mjs"]);
+  assert.deepEqual(outside.sort(), ["../lib/encode.mjs", "../lib/payload.mjs", "../lib/targets.mjs"]);
 });
 
 /**
@@ -758,20 +815,19 @@ function armReach(verb, { lazy = false } = {}) {
 
 // Written out rather than counted, so a module joining the echo's load shows by name.
 const ECHO_LOADS = [
-  "echo.mjs",
+  "contained.mjs",
   "encode.mjs",
   "facts.mjs",
   "gates.mjs",
   "hook-verbs.mjs",
   "hook.mjs",
-  "lock.mjs",
   "node-floor.mjs",
   "paths.mjs",
+  "payload.mjs",
   "rules.mjs",
   "slot.mjs",
   "store.mjs",
   "targets.mjs",
-  "transcript.mjs",
   "worktree.mjs",
 ];
 
@@ -782,7 +838,7 @@ test("a hook verb loads none of the scan, the check or the parser", () => {
   // oxc's native binding among them.
   for (const verb of ["echo", "notice", "reuse", "refresh"]) {
     const reached = armReach(verb, { lazy: true });
-    assert.ok(reached.has("hook.mjs"), `${verb}: the binary's own imports were not read`);
+    assert.ok(reached.has("payload.mjs"), `${verb}: the binary's own imports were not read`);
     for (const heavy of ["scan.mjs", "parse.mjs", "walk.mjs", "dimensions.mjs", "reduce.mjs", "check.mjs"]) {
       assert.equal(reached.has(heavy), false, `${verb} reaches ${heavy}`);
     }
@@ -792,10 +848,17 @@ test("a hook verb loads none of the scan, the check or the parser", () => {
   assert.deepEqual([...armReach("echo")].sort(), ECHO_LOADS);
   // The other arms by count, before any lazy import and with each followed (A100).
   const sizes = (opts) => Object.fromEntries(["echo", "notice", "reuse", "refresh"].map((verb) => [verb, armReach(verb, opts).size]));
-  assert.deepEqual(sizes(), { echo: 15, notice: 15, reuse: 15, refresh: 33 });
-  assert.deepEqual(sizes({ lazy: true }), { echo: 41, notice: 41, reuse: 41, refresh: 33 });
+  assert.deepEqual(sizes(), { echo: 14, notice: 14, reuse: 14, refresh: 32 });
+  assert.deepEqual(sizes({ lazy: true }), { echo: 45, notice: 45, reuse: 45, refresh: 32 });
   assert.ok(armReach("notice", { lazy: true }).has("precedent.mjs"), "the notice's lazy import was not followed");
   assert.ok(armReach("reuse", { lazy: true }).has("reuse.mjs"), "the reuse check's lazy import was not followed");
+  // The find arm: the index reader and the query side, and none of the scan behind the other commands,
+  // since the reuse check's reason sends the subagent to it up to three times per ask (A124).
+  const find = armReach("find", { lazy: true });
+  for (const heavy of ["scan.mjs", "parse.mjs", "walk.mjs", "dimensions.mjs", "reduce.mjs", "check.mjs", "write.mjs", "commands.mjs"]) {
+    assert.equal(find.has(heavy), false, `find reaches ${heavy}`);
+  }
+  assert.ok(find.has("find-command.mjs") && find.has("find.mjs"), "the find arm was not followed");
 });
 
 const FUNCTIONS = new Set(["FunctionDeclaration", "FunctionExpression", "ArrowFunctionExpression"]);

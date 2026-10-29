@@ -10,7 +10,8 @@
 import { existsSync, mkdirSync, renameSync, statSync, unlinkSync } from "node:fs";
 import { basename, dirname, join } from "node:path";
 
-import { outsideClaude, readHead, resolveInside } from "./rules.mjs";
+import { REFRESH_STATE } from "./rules.mjs";
+import { outsideClaude, readHead, resolveInside } from "./contained.mjs";
 import { encodePath } from "./encode.mjs";
 import { READ_MOST, putBack, recordBytes, writeTemp } from "./store.mjs";
 import { slotRecord } from "./slot.mjs";
@@ -206,30 +207,43 @@ export function readFacts(root) {
     const which = dir === null ? dirname(FACTS_PATH) : FACTS_PATH;
     return { facts: null, unreadable: `${outsideClaude(which)}, so no map was read from it` };
   }
-  const { record: parsed, oversize } = readRecord(path);
-  if (oversize) {
-    return { facts: null, unreadable: `the map on disk is past the ${RECORD_MOST / 2 ** 20} MiB this reads, so nothing was enforced from it` };
-  }
-  if (parsed === null) {
-    const kind = readHead(path, 0).kind;
-    if (kind === "unreadable" && existsSync(path)) {
+  const { facts, problem } = factsAt(path);
+  if (problem === null) return { facts, unreadable: null };
+  switch (problem.kind) {
+    case "oversize":
+      return { facts: null, unreadable: `the map on disk is past the ${RECORD_MOST / 2 ** 20} MiB this reads, so nothing was enforced from it` };
+    case "unopenable":
       return { facts: null, unreadable: "the map on disk could not be opened, so nothing was enforced from it" };
-    }
-    if (kind !== "file") return { facts: null, unreadable: null };
-    return { facts: null, unreadable: "the map on disk does not parse as JSON, so nothing was enforced from it: scan again" };
+    case "unparsed":
+      return { facts: null, unreadable: "the map on disk does not parse as JSON, so nothing was enforced from it: scan again" };
+    // A shape that is not a record at all, like no file, is the ordinary case of
+    // a repository nobody has scanned; a version this build has not heard of is
+    // not, and says so.
+    case "no-file":
+    case "not-a-record":
+      return { facts: null, unreadable: null };
+    default:
+      return { facts: null, unreadable: `the map on disk could not be read because ${problem.why}, so nothing was enforced from it: scan again with this build` };
   }
-  // A shape that is not a record at all is the ordinary case of a repository
-  // nobody has scanned; a version this build has not heard of is not, and says
-  // so. Both decided by the one rule every reader shares.
-  const problem = schemaProblem(parsed);
-  if (problem?.kind === "not-a-record") return { facts: null, unreadable: null };
-  if (problem) {
-    return {
-      facts: null,
-      unreadable: `the map on disk could not be read because ${problem.why}, so nothing was enforced from it: scan again with this build`,
-    };
+}
+
+/**
+ * The record at `path` as this build reads one, or why not: `{ facts, problem }`,
+ * `problem` null or `{ kind, why }`, through the size cap and the one schema rule.
+ * `readFacts` is this behind the repository's containment with the check's
+ * sentences; the scripts read a path they already hold and say `why` themselves.
+ */
+export function factsAt(path) {
+  const { record, oversize } = readRecord(path);
+  if (oversize) return { facts: null, problem: { kind: "oversize", why: `it is past the ${RECORD_MOST / 2 ** 20} MiB this reads` } };
+  if (record === null) {
+    const kind = readHead(path, 0).kind;
+    if (kind === "unreadable" && existsSync(path)) return { facts: null, problem: { kind: "unopenable", why: "it could not be opened" } };
+    if (kind !== "file") return { facts: null, problem: { kind: "no-file", why: "there is no file at the path" } };
+    return { facts: null, problem: { kind: "unparsed", why: "it does not parse as JSON" } };
   }
-  return { facts: withOlderFields(parsed), unreadable: null };
+  const problem = schemaProblem(record);
+  return problem ? { facts: null, problem } : { facts: withOlderFields(record), problem: null };
 }
 
 /**
@@ -429,4 +443,10 @@ function factsRecord(result, targets = {}, removing = {}) {
     ...(named.length ? { targets: Object.fromEntries(named) } : {}),
     ...(going.length ? { removing: Object.fromEntries(going) } : {}),
   };
+}
+
+/** The refresh worker's last record in this checkout, read through F2's containment like every other store read, or null. */
+export function refreshRecord(root) {
+  const path = resolveInside(root, REFRESH_STATE);
+  return path === null ? null : readRecord(path).record;
 }

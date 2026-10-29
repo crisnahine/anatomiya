@@ -476,7 +476,7 @@ function rubyRefs() {
   const symbols = [];
   const node = (n, ctx) => {
     if (n.t === "def" && typeof n.name === "string") defines.add(n.name);
-    if (ctx.def === null && (n.t === "def" || n.t === "class" || n.t === "module")) {
+    if (ctx.fn === null && (n.t === "def" || n.t === "class" || n.t === "module")) {
       const lastOf = (path) => constName(path)?.split("::").at(-1) ?? null;
       const name = n.t === "def" ? n.name : lastOf(n.constant_path);
       const container = ctx.cls ? lastOf(ctx.cls.constant_path) : null;
@@ -523,7 +523,7 @@ export function rubyFacets(program, rel = "") {
     // Inside a `def` the call runs when that method does and declares no case:
     // errbit writes its spec macros as plain methods holding `context ... do`.
     // A class or module body is where RSpec's own describes sit and stays a site.
-    if (n.t === "call" && n.block && n.arguments && ctx.def === null && RUBY_TEST_CALLS.has(n.name)) {
+    if (n.t === "call" && n.block && n.arguments && ctx.fn === null && RUBY_TEST_CALLS.has(n.name)) {
       // The block is what separates the DSL from a method sharing its name (an
       // Interactor reads `context.amount`), and the argument is what separates
       // it from a bare block (a FactoryBot attribute reads `context { "tags" }`,

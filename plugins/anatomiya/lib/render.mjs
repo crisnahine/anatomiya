@@ -2,7 +2,7 @@ import { encode, encodePath, nameText, sanitisePath } from "./encode.mjs";
 import { embeddedIn, MISSING_STRIPPER } from "./langs.mjs";
 import { unreadReasons } from "./readiness.mjs";
 import { kindsLine, plural, renderLayout } from "./render-layout.mjs";
-import { scopeOf, statedSide } from "./slot.mjs";
+import { rendersAsDirective, scopeOf, statedSide } from "./slot.mjs";
 import { areaLabel, globText } from "./areas.mjs";
 import { listSome, LISTED, PREFIX } from "./rules.mjs";
 import { REGISTRY } from "./registry.mjs";
@@ -476,8 +476,8 @@ function areaBlocks(area, cochange = []) {
   // A stated side the model writes unprompted is real and enforced, and it is
   // exactly what the model would do here anyway, so it rides with the counts:
   // the directive lines are for what this repository does differently.
-  const directives = sides.filter(([d, side]) => side.states !== null && d.matchesDefault !== true);
-  const counts = sides.filter(([d, side]) => side.states === null || d.matchesDefault === true);
+  const directives = sides.filter(([d]) => rendersAsDirective(d));
+  const counts = sides.filter(([d]) => !rendersAsDirective(d));
 
   // Each block's lines, and with them:
   // `key`, the dimension it states, or null for a block that states nothing. A
@@ -897,6 +897,11 @@ function overviewHead(result, target) {
     // scope guard is measured to move the out-of-scope rate by double digits
     // (docs/research/one-line-that-finishes-in-house-style.md).
     "When a change is asked for, follow what this repository already does and carry it through instead of stopping at a suggestion.",
+    // What the counts cannot see: a site moved to get past a row, or a check
+    // reported and never run. One line, beside the permission to say unverified,
+    // with the one place a defect in this tool can go; a second line here is a
+    // line the areas lose at the bound (A127).
+    "Report your work as it happened: never a test, a read or a check you did not run, and never a site changed to get past a rule, which you fix or say why you left; where this map or the plugin that wrote it is wrong about the code, tell the user and ask whether to file it at github.com/crisnahine/anatomiya/issues.",
     "",
   ];
 
@@ -954,7 +959,7 @@ function areaListing(areas, unfiled, budget, target, cochange) {
   // The same partition the area file makes: a slot the model writes by default
   // is a counts line there, so it must not earn the area a name here.
   const stated = (a) =>
-    a.dimensions.filter((d) => statedSide(d).states !== null && d.matchesDefault !== true).length + claimsIn(cochange, a.path).length;
+    a.dimensions.filter(rendersAsDirective).length + claimsIn(cochange, a.path).length;
   const eligible = areas.filter((a) => stated(a) > 0);
 
   // A trailing count is owed unless every area is named, and an area the budget

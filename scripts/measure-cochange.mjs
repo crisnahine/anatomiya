@@ -9,7 +9,7 @@
  */
 import { basename, resolve } from "node:path";
 
-import { invokedAs } from "./entry.mjs";
+import { invokedAs, readArgv } from "./entry.mjs";
 import { mineCochange, startCochange } from "../plugins/anatomiya/lib/cochange-walk.mjs";
 import { classesOf } from "../plugins/anatomiya/lib/cochange.mjs";
 
@@ -50,11 +50,12 @@ export function tally(rows) {
 }
 
 if (invokedAs(import.meta.url)) {
-  const roots = process.argv.slice(2);
-  if (roots.length === 0) {
-    console.error("usage: node scripts/measure-cochange.mjs <repository> [<repository> ...]");
+  const read = readArgv(process.argv.slice(2), {}, { positionals: true });
+  if (read.error || read.positionals.length === 0) {
+    console.error(`${read.error ? `${read.error}\n` : ""}usage: node scripts/measure-cochange.mjs <repository> [<repository> ...]`);
     process.exit(2);
   }
+  const roots = read.positionals;
   const rows = [];
   for (const root of roots) {
     rows.push(await measure(resolve(root)));

@@ -7,15 +7,18 @@
  * one where a convention was most likely broken. This asks the prior question
  * instead, and answers it from counts the scan already took (H38).
  */
+import { dirname } from "node:path/posix";
+
 import { byCode, dirOf, extOf } from "./paths.mjs";
 import { FAMILY_TEST_NAMES, TEST_DIRS, TEST_ROOTS, namesATestFile, pairedWith, sitsWhereItsToolReads, withoutTree } from "./test-shape.mjs";
 import { isCorpusPath } from "./corpus.mjs";
 import { familyOf, language } from "./langs.mjs";
-import { LEVEL_ONLY_LABEL } from "./layout.mjs";
+import { LEVEL_ONLY_LABEL, isProducer } from "./layout.mjs";
 import { namesakeClause, pathText, testsParts } from "./render-layout.mjs";
 import { encode, locator } from "./encode.mjs";
 import { PRECEDENT_FLOOR } from "./principles.mjs";
 import { claimsFor, noticeLine } from "./cochange.mjs";
+import { findingOf } from "./verdict.mjs";
 
 /** Whether a root pairs enough of its files with tests to call that its habit. */
 function pairsTests(r) {
@@ -251,28 +254,103 @@ export function precedentFindings(arrived, roots, { fresh = true, holdsTest = ()
     // namesakes, where "no precedent" would be the false half of a true count.
     if (testFilesHeld(covered) >= PRECEDENT_FLOOR) continue;
     const counts = countsLine(dirOf(rel), covered);
-    found.push({
-      severity: fresh ? "FIX" : "NIT",
-      reason: fresh ? counts : `${counts}; this run could not establish which files the change added`,
-      companion: null,
-      path: rel,
-      oldPath: typeof file === "string" ? null : (file.oldPath ?? null),
-      // The site is the path, so there is no line to point at.
-      line: 1,
-      // The source root, which is a layout directory rather than one of the
-      // areas the counted rows name: nothing else answers for a file whose own
-      // directory the change invented, and the roster path is the one a reader
-      // can go and look at.
-      area: covered.path,
-      dimension: PRECEDENT_KEY,
-      claim: PRECEDENT_CLAIM,
-      precision: "precise",
-      where: null,
-      snippet: null,
-      turnsOn,
-    });
+    found.push(
+      findingOf({
+        severity: fresh ? "FIX" : "NIT",
+        reason: fresh ? counts : `${counts}; this run could not establish which files the change added`,
+        path: rel,
+        oldPath: typeof file === "string" ? null : (file.oldPath ?? null),
+        // The site is the path, so there is no line to point at.
+        line: 1,
+        // The source root, which is a layout directory rather than one of the
+        // areas the counted rows name: nothing else answers for a file whose own
+        // directory the change invented, and the roster path is the one a reader
+        // can go and look at.
+        area: covered.path,
+        dimension: PRECEDENT_KEY,
+        claim: PRECEDENT_CLAIM,
+        precision: "precise",
+        turnsOn,
+      })
+    );
   }
   return found;
+}
+
+/**
+ * The check's half of the placement rule (H38), over the files a change
+ * examined: which of them arrived, which directories already held a test the
+ * change did not bring, and which directories each finding the rule states
+ * turns on where the change put source under them. Answers `{ stated, asks }`:
+ * the findings with the directories each turns on, and the directories to ask
+ * the merge base about. `placementDecided` reads that answer. Nothing here
+ * reads a repository, so the seventeen cases of the rule run on paths alone.
+ *
+ * What "already" means here is not what it means for the hook: a change that
+ * invents a directory and fills it with four specs must not have three of them
+ * excused by the first, so everything it brought is subtracted. A relocation is
+ * an arrival too: moving a test into a directory whose siblings have none is
+ * the same deviation as writing it there. Read off `from` rather than the
+ * status letter, which spells the same move two ways: `R` from the diff, and
+ * `M` with an `orig` from a working tree where it is staged and not yet
+ * committed. A rename within its own directory arrives nowhere: the file was
+ * already there under another name. Counted as an arrival, it was also
+ * subtracted as one, and a directory whose only test had been renamed read as
+ * holding none.
+ *
+ * `tracked` is what git tracks as tests, rather than what sits on the disk,
+ * which is the population every other reader counts: one ignored
+ * `scratch_spec.rb` sitting in a directory read as a test habit and silenced
+ * the rule for every file in it. The hook cannot ask this, since a `git
+ * ls-files` per write is a subprocess per write, so it reads the directory and
+ * is quieter where a stray file sits there; the check catches what it let past.
+ * Null where git refused the listing, which leaves the rule where it was.
+ */
+export function placementFindings(examined, { roots, tracked, headFacets, placed, fresh }) {
+  const arrived = examined
+    .filter((c) => c.status === "A" || (c.from && c.from !== c.path && dirname(c.from) !== dirname(c.path)))
+    .map((c) => ({ path: c.path, oldPath: c.from === c.path ? null : c.from }));
+  const brought = new Set(arrived.map((c) => c.path));
+  const testDirs = tracked && new Set(tracked.filter((rel) => !brought.has(rel)).map(dirname));
+  const holdsTest = (dir) => tracked === null || testDirs.has(dir || ".");
+  // A directory holding only the tests the change wrote is not one it made
+  // for source, and is the directory this rule asks about. Neither is one
+  // holding a test and a file no test could be written for, which is the
+  // layout's own question: an empty index, a declaration file, a story, the
+  // file a runner loads. Read by its path where the run parsed no head of it.
+  // Every directory above each such file, with its family: asked once for each finding and each directory it turns on.
+  const sourced = new Set();
+  for (const { path } of arrived) {
+    const lang = language(path);
+    if (!isProducer({ rel: path, lang, facets: headFacets.get(path) ?? null }, placed)) continue;
+    for (let dir = dirname(path); dir !== "."; dir = dirname(dir)) sourced.add(`${familyOf(lang)}\0${dir}`);
+  }
+  const broughtSource = (dir, family) => sourced.has(`${family}\0${dir}`);
+  // A finding does not stand where the change made a directory its test is
+  // under and put source there, which the merge base says: one listing, and
+  // none where no finding was about to be stated or the change put no source
+  // under any of them.
+  const stated = precedentFindings(arrived, roots, { fresh, holdsTest }).map(({ turnsOn, ...finding }) => ({
+    finding,
+    under: turnsOn.filter(({ dir, family }) => broughtSource(dir, family)).map(({ dir }) => dir),
+  }));
+  return { stated, asks: [...new Set(stated.flatMap(({ under }) => under))] };
+}
+
+/**
+ * The placement findings that stand, given which of the asked directories the
+ * merge base did not hold, and how many were declined. A listing that failed
+ * (`absent` null) says nothing of any directory, so a finding that turns on one
+ * is declined rather than stated, and the check says so (C33).
+ */
+export function placementDecided(stated, absent) {
+  const findings = [];
+  let declined = 0;
+  for (const { finding, under } of stated) {
+    if (absent === null && under.length > 0) declined += 1;
+    else if (!under.some((dir) => absent.has(dir))) findings.push(finding);
+  }
+  return { findings, declined };
 }
 
 /**

@@ -32,6 +32,9 @@ export const fileStem = (rel) => {
   return dot > 0 ? base.slice(0, dot) : base;
 };
 
+/** The four naming classes a word may spell, which is every class `classifyWord` answers; a row that learns one declares this list. */
+export const CLASSES = ["camelCase", "PascalCase", "kebab-case", "snake_case"];
+
 /**
  * One word's class, or null where the classes cannot disagree about it.
  *

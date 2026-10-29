@@ -13,7 +13,7 @@
  */
 import { LEARNED_SUFFIX_FLOOR, LEARNED_SUFFIX_SHARE, startsAtSeparator } from "./test-shape.mjs";
 import { byCode } from "./paths.mjs";
-import { isTestFile } from "./layout.mjs";
+import { isTestFile } from "./test-shape.mjs";
 import { language } from "./langs.mjs";
 
 const rails = (key, claim, from, to, { companionSuffix = "_spec.rb", ext = ".rb" } = {}) => ({

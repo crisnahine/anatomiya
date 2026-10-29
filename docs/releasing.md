@@ -9,8 +9,9 @@ and a change that puts a body under `## [Unreleased]` is a release.
 
 The table lives in `scripts/release.mjs` and a test holds this copy of it to that one. The workflow
 fires on the tag shape and refuses a tag whose manifests disagree with it or whose changelog has no
-section of its own, naming which. What it cannot tell you is what to do about it, which is what the
-rest of this page is for.
+section of its own, naming which. Its test job runs `check:docs` and `npm run validate` before the
+suite, so a tag on a commit whose documents or manifests fail is refused before anything is released.
+What it cannot tell you is what to do about it, which is what the rest of this page is for.
 
 `v0.1.9` was released by hand four seconds before its own workflow run started, so the run went red
 on a release that already existed. Push the tag and let the workflow make the release.
@@ -47,8 +48,9 @@ on a release that already existed. Push the tag and let the workflow make the re
   one file inside it, whichever scope it is drawn around. A library file no test loads has no row in
   that record, so the gate lists `plugins/anatomiya/lib` and names such a file as under every floor;
   the three worker shells, which run only in forked children, are named as such.
-- [ ] The line-ending pass is green: `node scripts/line-endings.mjs`. It runs the suite as a
-      Windows runner checks it out:
+- [ ] The line-ending pass is green: `node scripts/line-endings.mjs`. CI's two Windows legs are this
+      pass, since a Windows runner checks out with `core.autocrlf=true`; the script is how to run it
+      before pushing. It runs the suite as a Windows runner checks it out:
       clone the checkout with `git -c core.autocrlf=true clone`, copy `node_modules` into the clone,
       write a file holding `[core]` and `autocrlf = true`, and run every test file in the clone one
       at a time with `GIT_CONFIG_SYSTEM` pointing at that file, so every `git init` a test makes
@@ -66,9 +68,13 @@ on a release that already existed. Push the tag and let the workflow make the re
       lives beside the corpus and never in this repository: the script refuses one inside it (G16). It
       reads the working tree and refuses a shallow clone, so run it in a full clone whose working tree
       holds what will be committed.
-- [ ] The corpus run reports no findings, for a change that touches counting. Leave the checkout
-      alone while it runs: it shells out to the binary in the working tree per repository, so a file
-      edited mid-run puts two builds in one report and the failures it invents cannot be reproduced.
+- [ ] The corpus run reports no findings, for a change that touches counting. Give it
+      `--frozen <sha>` and it runs the binary built at that commit (`scripts/frozen-build.mjs`), so the
+      checkout may change while it runs and a rerun names the build by its commit. Without the flag it
+      shells out to the binary in the working tree per repository, so a file edited mid-run puts two
+      builds in one report and the failures it invents cannot be reproduced: leave the checkout alone.
+      `scripts/ab.mjs` and `scripts/ab-scenario.mjs` take the same flag, and the scenario result records
+      the frozen version in place of the working tree's.
 - [ ] For a change to the co-change walk or its gates, `node scripts/measure-cochange.mjs` over the
       44 repositories `docs/measurements/2026-10-11-cochange.md` names gives the numbers the documents
       cite, and they still match.

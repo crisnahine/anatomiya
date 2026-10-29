@@ -13,13 +13,11 @@ import {
   COLUMNS,
   areaProblems,
   baseOf,
-  byName,
   checkDirs,
   cochangeCell,
   cochangePlan,
   copyDependencies,
   dependencyProblems,
-  corpusRepos,
   factsProblems,
   findingPaths,
   overviewProblems,
@@ -32,13 +30,13 @@ import {
   rootsProblems,
   rootsPrinted,
   rosterCounts,
-  semanticCell,
   summaryProblems,
   tableOf,
   timeless,
   writtenProblems,
   wroteProblems,
 } from "../scripts/e2e-corpus.mjs";
+import { semanticCell } from "../scripts/cells.mjs";
 
 /** What a scan of a pinned Rails repository prints, line for line. */
 const SCAN = [
@@ -359,7 +357,8 @@ test("the table prints one row per repository, in the order they ran", () => {
 });
 
 test("the arguments name a corpus and a scratch directory, and refuse anything else", () => {
-  assert.deepEqual(parseArgs(["/corpus", "/scratch"]), { corpus: "/corpus", scratch: "/scratch", only: null, targets: null });
+  assert.deepEqual(parseArgs(["/corpus", "/scratch"]), { corpus: "/corpus", scratch: "/scratch", only: null, targets: null, frozen: null });
+  assert.equal(parseArgs(["/corpus", "/scratch", "--frozen", "abc123"]).frozen, "abc123");
   assert.deepEqual(parseArgs(["/corpus", "/scratch", "--only", "a,b"]).only, "a,b");
   assert.match(parseArgs(["/corpus"]).error, /scratch directory/);
   assert.match(parseArgs([]).error, /corpus directory/);
@@ -412,27 +411,6 @@ test("a scratch directory that reaches the corpus through a symlink is refused",
 
   assert.match(checkDirs(corpus, scratch, []), /inside the corpus/);
   assert.match(checkDirs(scratch, corpus, []), /removes/);
-});
-
-test("a corpus path that cannot be listed is a refusal, not a stack trace", (t) => {
-  // It threw ENOENT out of the driver, after the scratch directory had already
-  // been made for a run that was never going to happen.
-  const home = mkdtempSync(join(tmpdir(), "e2e-corpus-"));
-  t.after(() => removeTree(home));
-  mkdirSync(join(home, "errbit", ".git"), { recursive: true });
-  mkdirSync(join(home, "notes"));
-
-  assert.deepEqual(corpusRepos(home).repos, [{ name: "errbit", source: join(home, "errbit") }]);
-  assert.match(corpusRepos(join(home, "nope")).error, /nope/);
-});
-
-test("the repositories run in code-unit order, so the recorded table does not follow the locale", () => {
-  // Both measurement documents list the corpus in this order, and
-  // `localeCompare` orders case by whatever ICU tables the host was built with.
-  assert.deepEqual(
-    [{ name: "foo" }, { name: "Foo" }].sort(byName).map((r) => r.name),
-    ["Foo", "foo"]
-  );
 });
 
 test("the roots column is one string, whether or not the record was read", () => {

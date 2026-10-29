@@ -615,12 +615,25 @@ async function runOnClock(args, options, timeout) {
   }
 }
 
+/**
+ * The child for a call `prepared` settled, the one start the streamed reader
+ * and the batch blob reader share: a scripted git answers as a child that
+ * prints its outcome, and the real one is spawned at `root` with the call's
+ * environment. Throws what `spawn` throws, an option Node refuses among them.
+ */
+function spawnGit(root, call, stdio) {
+  const scripted = scriptedFor(call.args, root);
+  return scripted !== null ? scriptedChild(scripted) : spawn("git", call.args, { cwd: root, stdio, env: call.env });
+}
+
 // Git for Windows starts the real git as a launcher's child and a signal ends the launcher alone, so
 // the pipes are shut with it: `close` would otherwise wait on all the git behind it still sends.
+// Shared by every reader that ends one, so the next launcher fix lands once. True where the signal
+// reached a process, as `signalChild` says.
 function endChild(child, signal) {
-  child.stdout?.destroy();
-  child.stderr?.destroy();
-  signalChild(child, signal);
+  child?.stdout?.destroy();
+  child?.stderr?.destroy();
+  return signalChild(child, signal);
 }
 
 /** A question git could not be asked. What a caller catches as "no" lets this one through. */
@@ -755,12 +768,7 @@ export function gitStreamed(
 
     let child;
     try {
-      const scripted = scriptedFor(call.args, root);
-      child = scripted !== null ? scriptedChild(scripted) : spawn("git", call.args, {
-        cwd: root,
-        stdio: [input === null ? "ignore" : "pipe", "pipe", "pipe"],
-        env: call.env,
-      });
+      child = spawnGit(root, call, [input === null ? "ignore" : "pipe", "pipe", "pipe"]);
     } catch (err) {
       // An option Node refuses is thrown from the start itself.
       return reject(new Unasked(`git ${sub} failed: ${err.message}`));
@@ -1184,10 +1192,7 @@ export function blobReader(
   const kill = () => {
     const proc = child;
     child = null;
-    // Git for Windows starts the real git as a launcher's child, and the signal ends the launcher alone:
-    // with its output shut, the one behind it stops at its next write.
-    proc?.stdout?.destroy();
-    if (!signalChild(proc)) return;
+    if (!endChild(proc)) return;
     killed.add(proc);
     proc.once("exit", () => killed.delete(proc));
   };
@@ -1252,9 +1257,11 @@ export function blobReader(
 
   const start = async () => {
     const call = await prepared(root, BATCH, env, { lazyFetch: false, timeout });
-    // Closed while the repository's config was being read, or it could not be read.
-    if (fallen || call.unread) return fall();
-    const mine = spawn("git", call.args, { cwd: root, stdio: ["pipe", "pipe", "ignore"], env: call.env });
+    // Closed while the repository's config was being read, or it could not be read. A scripted git
+    // answers one call, never a batch, so a stand-in that arrived since the reader was made falls here
+    // too, by the count alone: asking the script would record a call it never answers.
+    if (fallen || call.unread || standIns.length > 0) return fall();
+    const mine = spawnGit(root, call, ["pipe", "pipe", "ignore"]);
     child = mine;
     const live = (then) => (...args) => (child === mine ? then(...args) : undefined);
     mine.on("error", live(fall));

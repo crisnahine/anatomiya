@@ -7,7 +7,8 @@ import { placedTests } from "./layout.mjs";
 import { CAPABILITY_WORDS, fileStem, stemWords } from "./stems.mjs";
 import { FRAMEWORKS } from "./frameworks.mjs";
 import { escapeRe, folded } from "./paths.mjs";
-import { isLink, isMapName, readHead, STORE_DIR, trackedRulesDir } from "./rules.mjs";
+import { isMapName, STORE_DIR, trackedRulesDir } from "./rules.mjs";
+import { isLink, readHead } from "./contained.mjs";
 import { TARGETS, isClaude } from "./targets.mjs";
 
 // Tracked files only. A working tree holds .env, master.key, an .npmrc with a

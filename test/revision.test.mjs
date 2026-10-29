@@ -6,32 +6,16 @@ import { join } from "node:path";
 import { execFileSync } from "node:child_process";
 
 import { needsBatchZ, needsShebang, removeTree } from "./platform.mjs";
+import { repository } from "./repository.mjs";
 import { readAtRevision } from "../plugins/anatomiya/lib/revision.mjs";
 import { MAX_FILE_BYTES } from "../plugins/anatomiya/lib/limits.mjs";
 
 // Torn down through `t.after` rather than a call at the end of the body: a
 // failing assertion throws, and a cleanup line below it never runs.
 function repo(t, build) {
-  const dir = mkdtempSync(join(tmpdir(), "anatomiya-revision-test-"));
-  t.after(() => removeTree(dir));
-  const git = (...a) => execFileSync("git", a, { cwd: dir, stdio: "pipe" }).toString();
-  git("init", "-q", "-b", "main");
-  git("config", "user.email", "t@t.test");
-  git("config", "user.name", "T");
-  git("config", "commit.gpgsign", "false");
-  build(dir, { git, write, commit });
-  return dir;
-
-  function write(rel, body) {
-    const abs = join(dir, rel);
-    mkdirSync(join(abs, ".."), { recursive: true });
-    writeFileSync(abs, body);
-  }
-  function commit(msg) {
-    git("add", "-A");
-    git("commit", "-qm", msg);
-    return git("rev-parse", "HEAD").trim();
-  }
+  const made = repository(t, { prefix: "anatomiya-revision-test-" });
+  build(made.dir, made);
+  return made.dir;
 }
 
 const FIRST = "export const n = 1\n";

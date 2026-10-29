@@ -8,7 +8,7 @@ import { parseAll } from "./parse.mjs";
 import { defaultPoolSize } from "./pool.mjs";
 import { buildVersion } from "./readiness.mjs";
 import { checkerBlocked, checkerTurn, runSemantic, semanticOver, verdictStamp } from "./semantic.mjs";
-import { askedScope, authorsRequired, blockOf, reduceArea, verdictFor } from "./reduce.mjs";
+import { askedScope, authorsRequired, gateAreas, reduceArea } from "./reduce.mjs";
 import { cochangeRecord, startCochange } from "./cochange-walk.mjs";
 import { applyPairings } from "./pairing.mjs";
 import { authorsByFile, isPerson, repoAuthorCount } from "./authors.mjs";
@@ -17,7 +17,7 @@ import { roster } from "./layout-scan.mjs";
 import { tally } from "./layout.mjs";
 import { extOf, extOrName } from "./paths.mjs";
 import { MANIFESTS, ownPackages } from "./own-packages.mjs";
-import { isLink, readHead } from "./rules.mjs";
+import { isLink, readHead } from "./contained.mjs";
 import { commonImports, mostImported } from "./siblings.mjs";
 import { buildIndex } from "./code-index.mjs";
 import { readIndex } from "./index-home.mjs";
@@ -37,19 +37,6 @@ function manifestsIn(root, others) {
   }
   return read;
 }
-
-/**
- * What a repository-wide pool counts under.
- *
- * The sentence and the population it was measured over, not the row. A learned
- * row's `conforming` means a different thing per class, so "interfaces are
- * named with an I prefix" and "interfaces carry no prefix" are two populations
- * under one key and pooling them would lend each the other's confidence. The
- * kind is part of it for the same reason: a directory of helpers that happens
- * to learn the same class as the components would otherwise borrow a prior
- * built almost entirely from component directories.
- */
-const poolKey = (d) => `${d.key}\u0000${d.learned ?? ""}\u0000${d.learnedKind ?? ""}`;
 
 /**
  * One whole-corpus pass, attributed to areas in the reducer.
@@ -172,11 +159,10 @@ async function scanning(cwd, { guards = null, runChecker = runSemantic, resolveS
     // Under a pin the ceiling is the one it settled on and nothing is given back:
     // the give-back reads file content, so an edit that adds no file would move
     // areas against the pin. A pin that names none folds at the plain ceiling.
-    const partitionSize = state.partitionSize ?? files.length;
     const pinned = state.status === "ok" || state.status === "unreachable";
-    areas = discover(files, {
-      minFiles: areaFloor(partitionSize),
-      maxAreas: state.ceiling ?? areaCeiling(partitionSize),
+    areas = partition(files, {
+      partitionSize: state.partitionSize ?? files.length,
+      ceiling: state.ceiling ?? null,
       uncounted,
       countsNothing: pinned ? null : countsNothingIn(files, head.records, frameworks),
     });
@@ -292,33 +278,29 @@ async function scanning(cwd, { guards = null, runChecker = runSemantic, resolveS
       ? folded.map((f) => ({ ...f, dims: f.dims.filter((d) => d.tier !== "semantic") })).filter((f) => f.dims.length > 0)
       : folded;
 
-  const pool = new Map();
-  for (const { dims, measuredArea } of described) {
-    for (const d of dims) {
-      const baselineDim = measuredArea.dims.find((b) => b.key === d.key) || null;
-      // Only slots nothing else has closed. A greenfield area's population is
-      // the agent's own output, so lending it to a prior would let the agent
-      // supply the confidence that states a claim about it (E4).
-      if (blockOf(d, { baselineDim, measured: measuredArea, truncated, semantic })) continue;
-      // The same object the gates read, so the leave-one-out subtraction in
-      // `applyGates` is exact rather than approximately right.
-      const source = baselineDim || d;
-      const at = pool.get(poolKey(d));
-      if (at) {
-        at.candidates += source.candidates ?? 0;
-        at.conforming += source.conforming ?? 0;
-      } else {
-        pool.set(poolKey(d), { candidates: source.candidates ?? 0, conforming: source.conforming ?? 0 });
-      }
-    }
-  }
+  // The pooled prior and every slot's verdict are the fold's (D8); the scan
+  // hands it the two facts only the scan holds, this pass's shape of an area
+  // and who wrote each side's files (D4).
+  const gatedOf = gateAreas(described, {
+    truncated,
+    semantic,
+    repoAuthors,
+    historyRead,
+    shallow,
+    shapeOf: ({ area }) => ({ fileCount: area.fileCount, dirCount: dirCount(area.files.map((f) => f.rel)) }),
+    authorsOf: (source, { measuredArea }, baselineDim) => {
+      const toCurrent = baselineDim ? measuredArea.pinned.toCurrent : null;
+      return { authors: authorCount(source.claimFiles, authors, toCurrent), counterAuthors: authorCount(source.counterFiles, authors, toCurrent) };
+    },
+  });
 
   // A held area is still folded into the pool above: the slots it could be
   // measured on are the languages that were read, which a run that read
   // everything counts the same way, so the priors every other area borrows do
   // not move with the machine the scan ran on.
   const out = [];
-  for (const { area, areaParsed, dims, measuredArea } of described) {
+  for (const entry of described) {
+    const { area, areaParsed, measuredArea } = entry;
     if (heldIds.has(area.id)) continue;
     // A language with no static import surface is not asked what its files
     // import: an empty roster there would read as a measured "imports
@@ -328,31 +310,8 @@ async function scanning(cwd, { guards = null, runChecker = runSemantic, resolveS
     // another file's code (`refs.mjs`).
     const hasImports = area.langs.some((l) => langHas(l, "importGraph"));
 
-    const current = { fileCount: area.fileCount, dirCount: dirCount(area.files.map((f) => f.rel)) };
-
     const languages = { extsByLang: extsByLang(area.files), filesByLang: Object.fromEntries(tally(area.files.map((f) => f.lang))) };
-    const gated = dims.map((d) => {
-      const baselineDim = measuredArea.dims.find((b) => b.key === d.key) || null;
-      const source = baselineDim || d;
-      const toCurrent = baselineDim ? measuredArea.pinned.toCurrent : null;
-      return verdictFor(d, {
-        baselineDim,
-        current,
-        // Counted per side over the files carrying that side's sites (D4).
-        authors: authorCount(source.claimFiles, authors, toCurrent),
-        counterAuthors: authorCount(source.counterFiles, authors, toCurrent),
-        repoAuthors,
-        historyRead,
-        shallow,
-        measured: measuredArea,
-        truncated,
-        // A tier that answered badly closes its own dimensions and nothing
-        // else. Without this the record said degraded and the map stated the
-        // claims anyway (B8).
-        semantic,
-        pooled: pool.get(poolKey(d)) ?? null,
-      });
-    });
+    const gated = gatedOf(entry);
 
     out.push({
       id: area.id,
@@ -522,12 +481,22 @@ export function countsNothingIn(files, records, frameworks) {
  * parse runs only where the fold folded anything.
  */
 export async function pinPartition(files, { parseFiles = parseAll } = {}) {
-  const areas = discover(files);
+  const areas = partition(files, {});
   if (!areas.folded) return areas;
   const frameworks = [...frameworksIn(files)];
   const { records } = await parseFiles(files, { frameworks });
   applyPairings(records, new Set(files.map((f) => f.rel)), langsIn(files));
-  return discover(files, { countsNothing: countsNothingIn(files, records, frameworks) });
+  return partition(files, { countsNothing: countsNothingIn(files, records, frameworks) });
+}
+
+/**
+ * The area partition over `files`, as a scan and a pin read it alike: the floor
+ * and the ceiling are step functions of `partitionSize`, the corpus the pin was
+ * built over where there is one, and a pin's recorded ceiling folds to itself
+ * and gives nothing back (A111, A112). Spelled once, so the two cannot drift.
+ */
+function partition(files, { partitionSize = files.length, ceiling = null, uncounted = [], countsNothing = null }) {
+  return discover(files, { minFiles: areaFloor(partitionSize), maxAreas: ceiling ?? areaCeiling(partitionSize), uncounted, countsNothing });
 }
 
 /** Each language's extensions among these files, and the whole name of a file that has none. */

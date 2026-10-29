@@ -35,6 +35,15 @@ jobs:
 
       - run: npm ci --ignore-scripts
 
+      # The two gates ci's plugin job runs, before the suite: a tag points at
+      # whatever commit it was put on, and until here nothing between the push
+      # and the release read the documents or the manifests of that commit.
+      - name: The documentation matches the code
+        run: node scripts/check-docs.mjs
+
+      - name: The manifests, the shipped set, the lockfile and the grammars
+        run: npm run validate
+
       # The runner image ships no prism, so without this the release would run
       # with every Ruby test skipped and ship a tier nothing verified.
       - uses: ruby/setup-ruby@824c0e29fdfc7d689c191c27acc969d2d04b7dd8 # v1.331.0

@@ -11,7 +11,7 @@
  */
 import { posix } from "node:path";
 
-import { familyOf, language } from "./langs.mjs";
+import { declaresPackage, familyOf, language, reachesOf } from "./langs.mjs";
 import { claim, dirOf, tailsOf, withoutExtension } from "./paths.mjs";
 
 /** A module's own name: its file's, or for the file a Python package or a Rust module is read from, its directory's. */
@@ -95,9 +95,6 @@ function rubyName(ref, target) {
   const method = ref.name.slice(constant.length + 1);
   return calledName(method === "" ? ref : { ...ref, member: method, bare: constant }, target);
 }
-
-// Which families' files a reference may reach: Kotlin and Java call each other's classes by import.
-const REACHABLE = { kotlin: ["kotlin", "java"], java: ["java", "kotlin"] };
 
 const TREE_INDEX = new WeakMap();
 
@@ -255,9 +252,6 @@ const phpGlobals = (records) =>
     return index;
   });
 
-// The languages whose file declares the package it is in, which an import names whole.
-const DECLARED = new Set(["java", "kotlin", "php"]);
-
 /**
  * Whether a file a reference was matched to by its path is in a package the reference names: a
  * Java wildcard's class may be in the importer's own package or the wildcard's. A path says where a
@@ -274,7 +268,7 @@ function inPackage(file, ref, records) {
 /** The file a tree-sitter reference names, or null. */
 function treeTarget(ref, from, rel, corpusRels, records, modules) {
   const file = matched(ref, from, rel, corpusRels, records, modules);
-  return file !== null && ref.stems?.length && DECLARED.has(language(rel)) && !inPackage(file, ref, records) ? null : file;
+  return file !== null && ref.stems?.length && declaresPackage(language(rel)) && !inPackage(file, ref, records) ? null : file;
 }
 
 /** The file a tree-sitter reference's path, name or type matches, or null. */
@@ -286,7 +280,7 @@ function matched(ref, from, rel, corpusRels, records, modules) {
   }
   const byFamily = treeIndex(corpusRels);
   const lang = language(rel);
-  const indexes = (REACHABLE[lang] ?? [familyOf(lang)]).map((family) => byFamily.get(family)).filter(Boolean);
+  const indexes = reachesOf(lang).map((family) => byFamily.get(family)).filter(Boolean);
   if (ref.type !== undefined) return byType(ref, from, indexes, records);
   for (const stem of ref.stems ?? []) {
     const file = byStem(stem, ref.exact === true, indexes, rel, corpusRels);
@@ -303,12 +297,13 @@ function matched(ref, from, rel, corpusRels, records, modules) {
 export function reachedFrom(rel, record, corpusRels, records, modules = null) {
   const refs = record.facets?.refs;
   if (!refs?.length) return [];
-  const ruby = familyOf(language(rel)) === "ruby";
   // A method the file calls on a value is its own where it defines one of that name.
   const own = new Set(record.facets?.defines ?? []);
   const reached = [];
   for (const ref of refs) {
     if (own.has(ref.extension)) continue;
+    // The ref says what kind it is: a Ruby constant carries `const`, and every other ref a path, a type or a global.
+    const ruby = ref.const !== undefined;
     const file = ruby ? rubyTarget(ref, corpusRels) : treeTarget(ref, record, rel, corpusRels, records, modules);
     if (file === null || file === rel) continue;
     const target = records.get(file);

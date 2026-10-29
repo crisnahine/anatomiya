@@ -11,23 +11,15 @@ import { parseForLines } from "../plugins/anatomiya/lib/tree-sitter-runtime.mjs"
 import { ANATOMIYA } from "../scripts/plugins.mjs";
 import * as SAMPLES from "./tree-samples.mjs";
 import { removeTree } from "./platform.mjs";
+import { repository } from "./repository.mjs";
 
 function repo(t) {
-  const dir = mkdtempSync(join(tmpdir(), "anatomiya-measure-inert-"));
-  t.after(() => removeTree(dir));
-  const git = (...a) => execFileSync("git", a, { cwd: dir, stdio: "pipe" });
-  git("init", "-q");
-  git("config", "user.email", "t@t.test");
-  git("config", "user.name", "T");
+  const made = repository(t, { prefix: "anatomiya-measure-inert-" });
   const commit = (files, message) => {
-    for (const [rel, body] of Object.entries(files)) {
-      mkdirSync(dirname(join(dir, rel)), { recursive: true });
-      writeFileSync(join(dir, rel), body);
-    }
-    git("add", "-A");
-    git("commit", "-qm", message);
+    for (const [rel, body] of Object.entries(files)) made.write(rel, body);
+    made.commit(message);
   };
-  return { dir, commit };
+  return { dir: made.dir, commit };
 }
 
 test("each tree-sitter file a commit changed is asked or left out by the rule, and nothing else is counted", async (t) => {

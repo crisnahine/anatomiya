@@ -4,7 +4,7 @@ Everyone taking part here keeps to the [code of conduct](CODE_OF_CONDUCT.md). A 
 reported privately, the way [SECURITY.md](SECURITY.md#reporting-a-vulnerability) says, and never in
 a public issue.
 
-Read `DECISIONS.md` first. It is 370 numbered rows, each one a measurement or a review finding
+Read `DECISIONS.md` first. It is 379 numbered rows, each one a measurement or a review finding
 reduced to the decision it forces on the code. It is the build contract, and most questions you will
 have about why something is shaped the way it is are answered there. The file is the index: one short
 line per row, with the decision, a one-word status and a link. The measurement behind a row and what
@@ -18,8 +18,9 @@ the runtime for the grammars under `plugins/anatomiya/grammars/`. Ruby
 dimensions need `prism` 1.x, a default gem on Ruby 3.4 and up, so a system Ruby is
 usually enough. If you do not have Ruby, the Ruby tests skip and the rest still run.
 The dev dependency `ignore` is the package Claude Code matches a rule's `paths` with, so the
-tests read a rendered `paths` list through it. The other seven dev dependencies are the grammar
-packages the vendored `.wasm` files are copied from.
+tests read a rendered `paths` list through it. `fast-check` drives the fuzz cases in `test/fuzz.js`
+(B78). The other seven dev dependencies are the grammar packages the vendored `.wasm` files are
+copied from.
 
 ```sh
 npm install --ignore-scripts
@@ -69,7 +70,8 @@ is run, so a new grammar release is something to look for by hand.
 
 No test framework, no mocks, no fixtures generated at runtime. `node:test` and `node:assert` only.
 Tests that need a repository build one in a temp directory with real `git init` and real commits,
-because half the behaviour under test is git behaviour. A failure no real repository or disk can
+because half the behaviour under test is git behaviour; most make it through `test/repository.mjs`, where
+the branch, the identity, signing and the temp path are decided, and a few keep a git setup of their own (G22). A failure no real repository or disk can
 produce, such as a git ended by a signal or refusing one question, is stood in for that one call, and
 every other call still reaches the real thing: `test/git-script.mjs` scripts git's answer inside the
 test's own process, `test/git-stub.mjs` puts a stub git ahead on `PATH` for a child process the test
@@ -275,7 +277,7 @@ Where the code goes:
 - `plugins/anatomiya/lib/dimensions-naming.mjs` the learned rows, and `NAMING_CORPUS`, the filename row the reducer
   composes off the corpus rather than off a tree
 
-Twelve modules hold no row and sit under the scan, the hooks or both. A change to how a file is written, how a
+Sixteen modules hold no row and sit under the scan, the hooks or both. A change to how a file is written, how a
 lock is taken, what a transcript record says, when the echo delivers, which added lines the reuse check asks
 about or how a history walk is fed goes in the one that owns it:
 
@@ -285,16 +287,31 @@ about or how a history walk is fed goes in the one that owns it:
   `isFileAt`, the one test of a regular file at a path. It imports
   only the path encoder, so the pin and the refresh state are written through it without importing
   the record's module to write (A115)
+- `plugins/anatomiya/lib/contained.mjs` a path held inside the repository and a file read bounded by
+  what this tool may hold: `resolveInside` (lexical containment, then realpath on both sides, failing
+  closed), `readHead` and `readTail` through a typed handle under `HEAD_BYTES`, `namesIn`, `isLink` and
+  `realpathOrNull`. It knows nothing of the map; `rules.mjs`, which does, reads it (F2, F17, F30)
 - `plugins/anatomiya/lib/lock.mjs` the one lock the echo and the refresh worker take: an exclusive
   create, and a dead lock broken through a lock token. What makes a lock dead is a judge the caller
-  passes, `mtimeAge` or `ownerAge`. An entry at a lock's name that is no lock is its to tell apart:
+  passes, `mtimeAge` or `ownerAge`, and the store's two named locks sit in one table with their
+  judges, `LOCKS`, read by `takeLock` and the sweep's `leftLockTokens` both (A118). An entry at a
+  lock's name that is no lock is its to tell apart:
   an empty directory is removed, and anything else that will not go is thrown with `blocked` (A117)
 - `plugins/anatomiya/lib/transcript.mjs` what Claude Code's transcript records say, by functions
   that take text, so a hook reads the transcript once for several answers, and the one table of
   what makes a record a compaction (A116)
 - `plugins/anatomiya/lib/echo.mjs` whether the echo delivers on a call: `echoDue` over a digest, a
-  transcript and the plugin's data directory, and `heldIn`, the walk of the window that
-  `scripts/measure-echo.mjs` replays through (A119, A92)
+  transcript and the plugin's data directory, `heldIn`, the walk of the window that
+  `scripts/measure-echo.mjs` replays through, and `echoContext`, the map under its stamp and its
+  digest, which only the echo verb loads (A119, A92, A100)
+- `plugins/anatomiya/lib/payload.mjs` the hook contract on the wire: the payload read off stdin,
+  bounded and timed out, the one object written back, and which transcript is a call's window. A
+  leaf, which is what lets the binary read a payload before it knows which verb's modules to load
+  (A24, A45, A100)
+- `plugins/anatomiya/lib/settings.mjs` the settings entry an older version arranged and its
+  removal, which only a scan runs (A24, A25)
+- `plugins/anatomiya/lib/find-command.mjs` the `find` command, apart from the other commands so
+  its arm loads the index reader and the query side and none of the scan (H60, A124)
 - `plugins/anatomiya/lib/inert.mjs` which of a file's lines define nothing callable, the one question
   the end-of-turn reuse check asks: `inertLinesOf`, the line rules of oxc and prism, and
   `REUSE_PARSE_MS`, the second every file of one stop shares: the line rules' reads, and the
@@ -350,6 +367,12 @@ The shape:
   },
 }
 ```
+
+A row that asks nothing of a test file declares `outsideTests: true`, and `outsideTestTrees: true` on
+top where a whole test tree stands in for the code under test, as a route row's does; the walk then
+hands it no node of such a file, by the one rule in `test-shape.mjs`, and the file stays eligible
+(C73). A row that learns its class from a closed vocabulary declares `classes`, the values its sites
+vote with, which the check enforces inside and a model default is held to (C74).
 
 A row is a visitor of the one walk its engine takes over each file (B49): `walk` for JavaScript,
 `walkRuby` for Ruby, `walkTree` for a tree-sitter tree. Its file declares `visitor` and nothing else: `dimensions.mjs` gives every

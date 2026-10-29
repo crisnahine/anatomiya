@@ -23,10 +23,13 @@ import { engineRan } from "./ab/engine.mjs";
 import { renderScenario } from "./ab/render.mjs";
 import { mapAndPin, probeFileIn, runTrials, verifyInjection } from "./ab.mjs";
 import { die, invokedAs } from "./entry.mjs";
-import { FACTS_PATH } from "../plugins/anatomiya/lib/facts.mjs";
+import { RESULTS_ROOT, runFrozen } from "./frozen-build.mjs";
+import { FACTS_PATH, factsAt } from "../plugins/anatomiya/lib/facts.mjs";
 import { ANATOMIYA } from "./plugins.mjs";
 
 const root = join(dirname(fileURLToPath(import.meta.url)), "..");
+// Where a result file goes and what a path in it is shown relative to: the checkout a frozen run was started from, else this one.
+const results = process.env[RESULTS_ROOT] ?? root;
 
 /** What a coding session holds, the subagent tool included, since the reuse check asks for one. */
 const SCENARIO_TOOLS = ["Read", "Write", "Edit", "Glob", "Grep", "Bash", "Agent"];
@@ -39,6 +42,12 @@ const PLUGIN_OFF = { b: { pluginDir: null } };
 async function main(argv) {
   const args = parseScenarioArgs(argv);
   if (args.error) die(`${args.error}\n\n${SCENARIO_USAGE}`);
+  // The run is the harness at that commit, binary and plugin both, and its `versionsAt` reads that checkout.
+  if (args.frozen !== undefined) {
+    const ran = runFrozen(args.frozen, "scripts/ab-scenario.mjs", argv);
+    if (ran.error) die(ran.error);
+    process.exit(ran.status);
+  }
   const scenarioText = readFileSync(args.scenario, "utf8");
   const parsed = parseScenario(scenarioText);
   if (parsed.error) die(`${args.scenario}: ${parsed.error}`);
@@ -59,9 +68,9 @@ async function main(argv) {
     b: await scoreScenario(run.trials.b, scenario, run.frameworks),
   };
 
-  const out = args.out ?? join(root, "docs/measurements", `${scenario.name}.md`);
-  const data = args.data ?? join(root, "docs/measurements/data", `${scenario.name}.json`);
-  const shown = (p) => relative(root, p).split("\\").join("/");
+  const out = args.out ?? join(results, "docs/measurements", `${scenario.name}.md`);
+  const data = args.data ?? join(results, "docs/measurements/data", `${scenario.name}.json`);
+  const shown = (p) => relative(results, p).split("\\").join("/");
   const record = { scenario: shown(args.scenario), scenarioSha256, label, sha: run.sha, engine: result.engine, versions: run.versions, said: result.said };
   const writeJson = (path, value) => {
     mkdirSync(dirname(path), { recursive: true });
@@ -83,7 +92,8 @@ async function runFresh(args, scenario) {
   // Before any trial: read after them, a build that changed mid-run is the one recorded.
   const versions = versionsAt(root);
   mapAndPin(args.repo);
-  const facts = JSON.parse(readFileSync(join(args.repo, FACTS_PATH), "utf8"));
+  const { facts, problem } = factsAt(join(args.repo, FACTS_PATH));
+  if (problem) die(`${FACTS_PATH} in ${args.repo} was not read: ${problem.why}`);
   if (!(facts.areas ?? []).some((a) => a.path === scenario.area)) die(`the map holds no area ${scenario.area}`);
 
   // The scenario's own name for the repository, never the path it sits at here.

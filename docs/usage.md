@@ -296,6 +296,7 @@ A claim states how many sites conform out of how many were eligible; "no convent
 Read a file before editing it: these notes load when you read, not when you grep.
 When unsure what this code does, read it, grep it, or run it instead of guessing, and say what you could not verify.
 When a change is asked for, follow what this repository already does and carry it through instead of stopping at a suggestion.
+Report your work as it happened: never a test, a read or a check you did not run, and never a site changed to get past a rule, which you fix or say why you left; where this map or the plugin that wrote it is wrong about the code, tell the user and ask whether to file it at github.com/crisnahine/anatomiya/issues.
 
 ## What lives where
 
@@ -692,6 +693,7 @@ writes a few fixed sentences in every repository it maps, each one listed here w
 | overview head | "Read a file before editing it: these notes load when you read, not when you grep." | always (Cursor and Copilot get their own wording) | how Claude Code attaches a `paths` rule, measured in `docs/research/when-a-hook-can-refresh-the-map.md` |
 | overview head | "When unsure what this code does, read it, grep it, or run it instead of guessing, and say what you could not verify." | always | vendor wording, measured on no repository here (`docs/research/one-line-that-stops-guessing.md`) |
 | overview head | "When a change is asked for, follow what this repository already does and carry it through instead of stopping at a suggestion." | always | Anthropic's `default_to_action` wording, measured on no repository here (`docs/research/one-line-that-finishes-in-house-style.md`). It asks the agent to act rather than suggest |
+| overview head | "Report your work as it happened: never a test, a read or a check you did not run, and never a site changed to get past a rule, which you fix or say why you left; where this map or the plugin that wrote it is wrong about the code, tell the user and ask whether to file it at github.com/crisnahine/anatomiya/issues." | always | this repository's own rule, measured on no repository; the tracker is where a defect the model reads first can go (A127) |
 | What lives where | "Match sibling test shape; skip tests where siblings have none." | where the overview prints a tests line | one review of one repository (H13) |
 | What lives where | "Match directory granularity; don't extract into a sibling module what the directory's files inline." | where a root counts helpers | the same review (H13) |
 | What lives where | "An instruction to always write a test does not override a directory with no test precedent. Put the test where the siblings put theirs, or leave it out and say which rule you followed." | where the repository pairs tests with sources somewhere and one printed directory has none | a session in which a testing skill's rule won over the counts (H39, H47). It can win over your own instruction |

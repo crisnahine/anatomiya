@@ -54,7 +54,12 @@ Run the check and report what it found.
    suppresses its automatic injection for the rest of the session, which turns the map off for the
    session that is using it. Use `cat` or `head` through Bash if you need to show one.
 
-5. If the map is stale, report the reason alongside the findings. Staleness caps severity, it does
+5. Report what the check found as it found it: do not leave a finding out, and do not change a site
+   to get past a rule; fix it or say why you left it. If a finding is wrong about the code, a predicate
+   that misread a construct or a claim the map should not have stated, say so and ask the user whether
+   to file it at github.com/crisnahine/anatomiya/issues with the finding's reason line and the site.
+
+6. If the map is stale, report the reason alongside the findings. Staleness caps severity, it does
    not stop the run, so the findings still stand as FIX. Do not suggest re-pinning the baseline: the
    moment a branch is under review is the moment a re-pin launders it, and that call is a human's to
    make unprompted.

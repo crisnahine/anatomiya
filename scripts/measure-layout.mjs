@@ -21,14 +21,13 @@
 import { existsSync, mkdirSync, writeFileSync } from "node:fs";
 import { join, resolve } from "node:path";
 
-import { checkOutput, invokedAs, readArgv, selectRepos } from "./entry.mjs";
-import { corpusRepos, semanticCell } from "./e2e-corpus.mjs";
+import { checkOutput, corpusRepos, invokedAs, readArgv, selectRepos } from "./entry.mjs";
+import { semanticCell } from "./cells.mjs";
 import { namesakeCompanions } from "../plugins/anatomiya/lib/companions.mjs";
 import { collect, frameworksIn } from "../plugins/anatomiya/lib/corpus.mjs";
 import {
   isProducer,
   isStoryFile,
-  isTestFile,
   layoutIndexes,
   majorityDir,
   mirroredTests,
@@ -37,6 +36,7 @@ import {
   runnerOf,
   tally,
 } from "../plugins/anatomiya/lib/layout.mjs";
+import { isTestFile } from "../plugins/anatomiya/lib/test-shape.mjs";
 import { parseAll } from "../plugins/anatomiya/lib/parse.mjs";
 import { SEMANTIC_DIMENSIONS } from "../plugins/anatomiya/lib/dimensions-semantic.mjs";
 import { baseOf, byCode, dirOf, extOf, stemOf } from "../plugins/anatomiya/lib/paths.mjs";
@@ -56,7 +56,7 @@ import {
   TRUNCATED_LAYOUT,
 } from "../plugins/anatomiya/lib/render-layout.mjs";
 import { writeFacts } from "../plugins/anatomiya/lib/facts.mjs";
-import { statedSide } from "../plugins/anatomiya/lib/slot.mjs";
+import { rendersAsDirective, statedSide } from "../plugins/anatomiya/lib/slot.mjs";
 import { OVERVIEW_FILE } from "../plugins/anatomiya/lib/rules.mjs";
 import { planMap } from "../plugins/anatomiya/lib/write.mjs";
 import { encodePath } from "../plugins/anatomiya/lib/encode.mjs";
@@ -509,7 +509,7 @@ const statedCount = (areas, key) =>
     (n, a) =>
       n +
       a.dimensions.filter(
-        (d) => d.key === key && statedSide(d).states !== null && d.matchesDefault !== true
+        (d) => d.key === key && rendersAsDirective(d)
       ).length,
     0
   );

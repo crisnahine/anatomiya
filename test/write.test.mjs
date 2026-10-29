@@ -8,12 +8,13 @@ import { fileURLToPath } from "node:url";
 import { execFileSync, spawnSync } from "node:child_process";
 
 import { commitMap, planMap, writeMap } from "../plugins/anatomiya/lib/write.mjs";
-import { areaFilename, isOwned, realpathOf, realpathOrNull, stagedBy, targetState, EXCLUDE_LINES, HEAD_BYTES, PREFIX, SETTINGS_PATH } from "../plugins/anatomiya/lib/rules.mjs";
+import { areaFilename, isOwned, stagedBy, targetState, EXCLUDE_LINES, PREFIX, SETTINGS_PATH } from "../plugins/anatomiya/lib/rules.mjs";
+import { realpathOf, realpathOrNull, HEAD_BYTES } from "../plugins/anatomiya/lib/contained.mjs";
 import { areaId } from "../plugins/anatomiya/lib/areas.mjs";
 import { TARGETS, areaName, isClaude, overviewName } from "../plugins/anatomiya/lib/targets.mjs";
 import { writeFacts, readFacts as readFactsFrom, readLayout, FACTS_SCHEMA } from "../plugins/anatomiya/lib/facts.mjs";
 import { stagedPath } from "../plugins/anatomiya/lib/store.mjs";
-import { severityFor } from "../plugins/anatomiya/lib/check.mjs";
+import { severityFor } from "../plugins/anatomiya/lib/verdict.mjs";
 import { runDoctor } from "../plugins/anatomiya/lib/commands.mjs";
 import { acquire } from "../plugins/anatomiya/lib/lock.mjs";
 
@@ -1836,6 +1837,7 @@ A claim states how many sites conform out of how many were eligible; "no convent
 Read a file before editing it: these notes load when you read, not when you grep.
 When unsure what this code does, read it, grep it, or run it instead of guessing, and say what you could not verify.
 When a change is asked for, follow what this repository already does and carry it through instead of stopping at a suggestion.
+Report your work as it happened: never a test, a read or a check you did not run, and never a site changed to get past a rule, which you fix or say why you left; where this map or the plugin that wrote it is wrong about the code, tell the user and ask whether to file it at github.com/crisnahine/anatomiya/issues.
 
 ## Areas (2)
 

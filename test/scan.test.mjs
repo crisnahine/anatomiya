@@ -1,6 +1,7 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import { needsPathControl, needsPosixPaths, needsShebang, needsSymlinks, removeTree } from "./platform.mjs";
+import { repository } from "./repository.mjs";
 import { existsSync, mkdtempSync, mkdirSync, readdirSync, readFileSync, writeFileSync, rmSync, symlinkSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join, dirname } from "node:path";
@@ -15,7 +16,8 @@ import { TARGETS } from "../plugins/anatomiya/lib/targets.mjs";
 import { factsJson } from "../plugins/anatomiya/lib/facts.mjs";
 import { scanLines, scanSummary } from "../plugins/anatomiya/lib/summary.mjs";
 import { areaId, discover, globsReach } from "../plugins/anatomiya/lib/areas.mjs";
-import { echoContext, holdsTestIn, ownLayout } from "../plugins/anatomiya/lib/hook.mjs";
+import { holdsTestIn, ownLayout } from "../plugins/anatomiya/lib/hook.mjs";
+import { echoContext } from "../plugins/anatomiya/lib/echo.mjs";
 import { isTestPath, noticeFor } from "../plugins/anatomiya/lib/precedent.mjs";
 import { runNotice } from "../plugins/anatomiya/lib/hook-verbs.mjs";
 import { claudeCodeReaches } from "./paths-reader.mjs";
@@ -33,26 +35,12 @@ const bodiesOf = (plan) => new Map(plan.targets.claude.write.map((w) => [w.name,
 // The directory is removed through the test context, so a failing assertion
 // still cleans up instead of leaving a repository in the temporary directory.
 function repo(t, build) {
-  const dir = mkdtempSync(join(tmpdir(), "anatomiya-scan-"));
-  // A scan that failed can leave a history read behind it, which holds the directory open on Windows.
-  t.after(() => removeTree(dir));
-
-  const git = (...a) => execFileSync("git", a, { cwd: dir, stdio: "pipe" }).toString();
-  git("init", "-q");
-  git("config", "user.email", "t@t.test");
-  git("config", "user.name", "T");
+  // A scan that failed can leave a history read behind it, which holds the directory open on Windows; the
+  // repository's own removal waits for it.
+  const { dir, git, write, author } = repository(t, { prefix: "anatomiya-scan-", body: () => "export const x = 1\n" });
   build(dir, { git, write, author, pin });
   return dir;
 
-  function write(rel, body = "export const x = 1\n") {
-    const abs = join(dir, rel);
-    mkdirSync(dirname(abs), { recursive: true });
-    writeFileSync(abs, body);
-  }
-  function author(email) {
-    git("config", "user.email", email);
-    git("config", "user.name", email.split("@")[0]);
-  }
   /** Accept a baseline: the pinned file list per area, at the given commit. */
   function pin(areas, sha = git("rev-parse", "HEAD").trim()) {
     const body = { schema: PIN_SCHEMA, sha, areas };

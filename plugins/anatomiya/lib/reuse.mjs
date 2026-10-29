@@ -24,10 +24,10 @@ import { INERT_ENGINES, inertLinesOf, REUSE_PARSE_MS } from "./inert.mjs";
 import { assertKeyed, embeddedIn, engineOf, hostedBy, language } from "./langs.mjs";
 import { LINE_READ, MAX_FILE_BYTES } from "./limits.mjs";
 import { byCode } from "./paths.mjs";
-import { readHead, readTail, realpathOf } from "./rules.mjs";
+import { readHead, readTail, realpathOf } from "./contained.mjs";
 import { blankOutside, scriptBlocks } from "./script-blocks.mjs";
 import { markupCodeLines, templateInertLines, templateOf } from "./templates.mjs";
-import { sessionStartIn, turnOpenersIn } from "./transcript.mjs";
+import { sessionStartIn, toolCallsIn, transcriptTail, turnOpenersIn, turnStartIn } from "./transcript.mjs";
 
 /** What an ask or a record carries, so a later stop can tell which files it covered. */
 export const REUSE_MARK = "anatomiya reuse check";
@@ -170,7 +170,10 @@ export function reuseReason(files, { finder = null, closest = null } = {}) {
     // A session that named the helper kept a copy where it fell short on one case (A123).
     "Where one falls short on a case this change needs, make the new code fit it, or extend it without changing what it returns to its current callers, and call it. " +
     "If it names none, finish without changing anything. " +
-    // Last, so the measured wording above is unchanged where the tool exists.
+    // After the measured wording, which is unchanged up to here (A123, A124); what a search reports is
+    // the one thing the hook cannot read back, and a check wrong about a file is the plugin's to fix (A127).
+    "Say what the search ran and found; do not report a search that did not run. If this check is wrong about a file, tell the user and ask whether to file it at github.com/crisnahine/anatomiya/issues. " +
+    // Last, so a session without the tool reads the ask whole first.
     "If this session has no subagent tool, run that search yourself.\n" +
     tag(files)
   );
@@ -261,7 +264,7 @@ const REUSE_FIND_MS = 500;
 const CLOSEST_EACH = 3;
 const CLOSEST_MOST = 5;
 // django's 39,257 definitions zip to 634 KB and read in about 15 ms; a larger index is left to `find`, which no hook clock bounds.
-export const REUSE_INDEX_BYTES = 2 * 1024 * 1024;
+const REUSE_INDEX_BYTES = 2 * 1024 * 1024;
 
 /**
  * The definitions the code index already lists nearest the names a change
@@ -304,7 +307,7 @@ function runtimeOf(rel) {
 }
 
 /** What the stop after a check says, which is also what keeps those files from being asked about again. */
-export function reuseRecord(files) {
+function reuseRecord(files) {
   return `anatomiya checked ${files.length} changed ${files.length === 1 ? "file" : "files"} for existing functions ${tag(files)}`;
 }
 
@@ -373,11 +376,9 @@ export async function pendingChange(root, { since = null, turnStart = null, call
   const files = [];
   for (const { path, status } of changed.sort((a, b) => byCode(a.path, b.path))) {
     if (ONE_OFF.test(path) || dropOf(path) !== null) continue;
-    const template = templateOf(path);
-    // An engine with no rule cannot tell a function from a comment, so its files ask nothing.
-    const lang = template === null ? language(path) : null;
-    const engine = lang === null ? null : engineOf(lang);
-    if (template === null && !INERT_ENGINES.includes(engine)) continue;
+    // Its kind before its bytes: a lockfile or an image is never read.
+    const kind = kindOf(path);
+    if (kind === null) continue;
     const entry = readHead(join(root, path), MAX_FILE_BYTES + 1);
     // Past the size the parser skips, or not a file: nothing this reads either.
     if (entry.kind !== "file" || entry.size > MAX_FILE_BYTES) continue;
@@ -387,26 +388,54 @@ export async function pendingChange(root, { since = null, turnStart = null, call
       status === "A"
         ? [{ from: 1, to: lineCount(entry.head), created: true }].filter((h) => h.to > 0)
         : (ranges.get(path) ?? []).map(([from, to]) => ({ from, to, created: false }));
-    const kind = lang === null ? null : embeddedIn(lang);
-    parsing.deadline ??= performance.now() + REUSE_PARSE_MS;
-    const script = kind === null ? null : await componentScript(engine, lang, entry.head, kind, parsing.deadline);
-    const hunks = script === null ? added : clipped(added, script.spans);
-    const inert =
-      template !== null
-        ? templateInertLines(template, entry.head, parsing.deadline)
-        : script === null
-          ? await inertLinesOf({ engine, lang, source: entry.head, deadline: parsing.deadline, path })
-          : script.inert;
-    // A line past the end of what was read is one nobody read, so its hunk asks.
-    const read = lineCount(entry.head);
-    const defining = hunks.filter((h) => h.to > read || !inert.slice(h.from - 1, h.to).every(Boolean));
-    if (defining.length === 0) continue;
+    const asking = await askingHunks(path, entry.head, added, parsing, kind);
+    if (asking === null) continue;
     // Over the checkout too: a sibling repository's copy of a file is another file.
     const mark = createHash("sha256").update(`${home}\0${path}\0`).update(entry.head).digest("hex").slice(0, 12);
-    const names = template === null ? declaredIn(engine === "tree-sitter" ? lang : engine, entry.head, defining, inert) : [];
-    files.push({ path, mark, hunks: defining, ...(names.length ? { names } : {}) });
+    files.push({ path, mark, hunks: asking.hunks, ...(asking.names.length ? { names: asking.names } : {}) });
   }
   return files.length > 0 ? files : null;
+}
+
+/**
+ * What a path's kind lets it ask: its template, or its language and the engine
+ * that reads it where that engine has an inert-line rule; null where its files
+ * ask nothing. An engine with no rule cannot tell a function from a comment.
+ */
+function kindOf(path) {
+  const template = templateOf(path);
+  const lang = template === null ? language(path) : null;
+  const engine = lang === null ? null : engineOf(lang);
+  if (template === null && !INERT_ENGINES.includes(engine)) return null;
+  return { template, lang, engine };
+}
+
+/**
+ * What one changed file asks, read off its text alone: the hunks among `added`
+ * that define something callable, with the names they declare (A126), or null
+ * where every added line provably defines nothing (B68, B73). A view template
+ * asks by its kind's rule and declares no name. `parsing` holds the deadline
+ * every file of one stop shares, set at the first.
+ */
+export async function askingHunks(path, source, added, parsing = { deadline: null }, kind = kindOf(path)) {
+  if (kind === null) return null;
+  const { template, lang, engine } = kind;
+  const embedded = lang === null ? null : embeddedIn(lang);
+  parsing.deadline ??= performance.now() + REUSE_PARSE_MS;
+  const script = embedded === null ? null : await componentScript(engine, lang, source, embedded, parsing.deadline);
+  const hunks = script === null ? added : clipped(added, script.spans);
+  const inert =
+    template !== null
+      ? templateInertLines(template, source, parsing.deadline)
+      : script === null
+        ? await inertLinesOf({ engine, lang, source, deadline: parsing.deadline, path })
+        : script.inert;
+  // A line past the end of what was read is one nobody read, so its hunk asks.
+  const read = lineCount(source);
+  const defining = hunks.filter((h) => h.to > read || !inert.slice(h.from - 1, h.to).every(Boolean));
+  if (defining.length === 0) return null;
+  const names = template === null ? declaredIn(engine === "tree-sitter" ? lang : engine, source, defining, inert) : [];
+  return { hunks: defining, names };
 }
 
 /**
@@ -569,4 +598,61 @@ export function resumedByReuseIn(tail) {
   const { opened, launched } = turnOpenersIn(after === -1 ? "" : tail.slice(after + 1));
   const last = opened.at(-1) ?? null;
   return last !== null && launched.has(last) && !opened.includes(null);
+}
+
+/**
+ * What the end of a turn is asked about the source it added, or nothing (A91):
+ * one block per change, naming each file as it stands, with what the code index
+ * already holds nearest the names it declares (A126).
+ *
+ * `checkouts` are the mapped checkouts the stop reads, each with the prefix its
+ * files are named under, and `own` the one the session sits in, whose index
+ * `find` run from the session's directory reads, or null.
+ *
+ * The transcript is read as a tail, twice: before the git reads, for the
+ * session's start and its tool calls, and after them, for what another stop
+ * asked or recorded meanwhile (A116). Under `TRANSCRIPT_MOST` the tail is the
+ * whole transcript, so the session's start is read off it and the head is not
+ * opened again; only a larger transcript reads its head apart.
+ */
+export async function reuseAnswer(checkouts, payload, { own = null } = {}) {
+  // Both halves of "once per change, and only this session's work" are read off
+  // the transcript: when the session began and which tool calls it made, and
+  // what it already asked. One that cannot be read says neither, so nothing is
+  // asked. Asking anyway blocked every turn, a question included, over a tree
+  // left dirty before the session, since no ask it made was ever recorded
+  // anywhere it could read back.
+  let before = transcriptTail(payload.transcript_path, TRANSCRIPT_MOST);
+  const turn = turnStartIn(before?.text ?? null);
+  const calls = toolCallsIn(before?.text ?? null);
+  // Under the bound the tail is the whole transcript and the start is read off it; past it the head
+  // is read apart, after the tail is let go, so two 64 MiB buffers are never held at once, and
+  // nothing holds the tail across the git reads below.
+  let since = before?.start === 0 ? sessionStartIn(before.text) : undefined;
+  before = null;
+  if (since === undefined) since = sessionStart(payload.transcript_path);
+  if (since === null) return {};
+  // One parse budget and one git deadline for the whole stop, however many checkouts it reads.
+  const parsing = { deadline: null };
+  const gitBy = performance.now() + REUSE_GIT_MS;
+  const changes = await Promise.all(checkouts.map((c) => pendingChange(c.root, { since, turnStart: turn, calls, parsing, gitBy })));
+  const change = checkouts.flatMap((c, i) => (changes[i] ?? []).map((file) => ({ ...file, path: c.prefix + file.path })));
+  if (change.length === 0) return {};
+  // Read again past the git reads, which take seconds: an ask or a record
+  // another stop wrote meanwhile covers this change.
+  const after = transcriptTail(payload.transcript_path, TRANSCRIPT_MOST)?.text ?? null;
+  const asked = askedMarksIn(after);
+  const fresh = change.filter((file) => !asked.has(file.mark));
+  if (fresh.length === 0) return {};
+  if (payload.stop_hook_active === true) {
+    return continuedByReuseIn(after) ? { systemMessage: reuseRecord(fresh) } : {};
+  }
+  if (resumedByReuseIn(after)) return { systemMessage: reuseRecord(fresh) };
+  // Only for the one checkout the session sits in, where `find` run from its directory reads that checkout's index.
+  const { usableIndex } = await import("./index-home.mjs");
+  const usable = own !== null ? usableIndex(own, { readMost: REUSE_INDEX_BYTES }) : null;
+  const finder = finderFor(usable);
+  // Where the reason cannot name `find`, it is A123's word for word (A124), so it names no candidate either.
+  const closest = finder === null || usable.index === null ? null : closestTo(usable.index, fresh);
+  return { decision: "block", reason: reuseReason(fresh, { finder, closest }) };
 }

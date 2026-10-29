@@ -5,7 +5,6 @@ import { namesakeCompanions, namesakeIndex } from "../plugins/anatomiya/lib/comp
 import {
   isProducer,
   isStoryFile,
-  isTestFile,
   layoutFacts,
   layoutIndexes,
   layoutRoots,
@@ -18,6 +17,7 @@ import {
   tally,
   testsLine,
 } from "../plugins/anatomiya/lib/layout.mjs";
+import { isTestFile } from "../plugins/anatomiya/lib/test-shape.mjs";
 import { underTestTree } from "../plugins/anatomiya/lib/test-shape.mjs";
 import { roster } from "../plugins/anatomiya/lib/layout-scan.mjs";
 import { isTestPath } from "../plugins/anatomiya/lib/precedent.mjs";

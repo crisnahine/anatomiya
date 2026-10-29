@@ -35,7 +35,7 @@ export const ownDef = (n) => n.t === "def" && (!n.receiver || n.receiver.t === "
  * `visit(node, ctx)` receives:
  *   ctx.stack     enclosing declarations, outermost first
  *   ctx.enclosing innermost enclosing declaration, or null at file level
- *   ctx.def       innermost enclosing method definition, or null
+ *   ctx.fn        innermost enclosing method definition, or null, named as the oxc and tree walks name it
  *   ctx.cls       innermost enclosing class or module, or null
  *   ctx.ancestors every node above this one, blocks included
  */
@@ -44,7 +44,7 @@ export function walkRuby(ast, visit) {
   const ancestors = [];
   // Kept as the walk descends, not searched for per node: this runs once per
   // node per dimension, and the search was most of a Ruby-heavy scan.
-  let def = null;
+  let fn = null;
   let cls = null;
 
   const step = (node) => {
@@ -57,14 +57,14 @@ export function walkRuby(ast, visit) {
     const t = node.t;
     if (typeof t !== "string") return;
 
-    visit(node, { stack, ancestors, enclosing: stack.length ? stack[stack.length - 1] : null, def, cls });
+    visit(node, { stack, ancestors, enclosing: stack.length ? stack[stack.length - 1] : null, fn, cls });
 
     const isDecl = DECL.has(t);
-    const outerDef = def;
+    const outerFn = fn;
     const outerCls = cls;
     if (isDecl) {
       stack.push(node);
-      if (t === "def") def = node;
+      if (t === "def") fn = node;
       else if (t === "class" || t === "module") cls = node;
     }
     ancestors.push(node);
@@ -75,7 +75,7 @@ export function walkRuby(ast, visit) {
     ancestors.pop();
     if (isDecl) {
       stack.pop();
-      def = outerDef;
+      fn = outerFn;
       cls = outerCls;
     }
   };

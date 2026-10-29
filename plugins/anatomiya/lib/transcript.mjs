@@ -5,16 +5,16 @@
  *
  * The readers take text, so a hook that needs several answers off one
  * transcript reads it once. `readTail`, `readTailOf` and `readHead` in
- * `rules.mjs` stay the bounded reads under them.
+ * `contained.mjs` stay the bounded reads under them.
  */
-import { readTailOf } from "./rules.mjs";
+import { readTailOf } from "./contained.mjs";
 
-/** The last `most` bytes of a transcript, the offset they end at, and their lines; null where it will not read. */
+/** The last `most` bytes of a transcript, the offsets they start and end at (a start of 0 is the whole transcript), and their lines; null where it will not read. */
 export function transcriptTail(path, most) {
   const tail = readTailOf(path, most);
   if (tail === null) return null;
   let lines = null;
-  return { text: tail.text, end: tail.end, lines: () => (lines ??= tail.text.split("\n")) };
+  return { text: tail.text, start: tail.start, end: tail.end, lines: () => (lines ??= tail.text.split("\n")) };
 }
 
 /** A JSON text as its value, a transcript line as its record, or null for text that is not JSON, a half-written last line among them. */

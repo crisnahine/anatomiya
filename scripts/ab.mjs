@@ -27,14 +27,23 @@ import { render } from "./ab/render.mjs";
 import { repoLabel } from "./ab/label.mjs";
 import { BINARY } from "./plugins.mjs";
 import { die, invokedAs } from "./entry.mjs";
+import { RESULTS_ROOT, runFrozen } from "./frozen-build.mjs";
 import { isCorpusPath } from "../plugins/anatomiya/lib/corpus.mjs";
-import { FACTS_PATH } from "../plugins/anatomiya/lib/facts.mjs";
+import { FACTS_PATH, factsAt } from "../plugins/anatomiya/lib/facts.mjs";
 
 const root = join(dirname(fileURLToPath(import.meta.url)), "..");
+// Where a result file goes: the checkout a frozen run was started from, else this one.
+const results = process.env[RESULTS_ROOT] ?? root;
 
 async function main(argv) {
   const args = parseArgs(argv);
   if (args.error) die(`${args.error}\n\n${USAGE}`);
+  // The run is the harness at that commit, binary and plugin both; this one only starts it.
+  if (args.frozen !== undefined) {
+    const ran = runFrozen(args.frozen, "scripts/ab.mjs", argv);
+    if (ran.error) die(ran.error);
+    process.exit(ran.status);
+  }
 
   // No settings gate: a trial loads only the project and local sources, which
   // `buildArms` has cleared, so the operator's own settings never reach one.
@@ -43,7 +52,8 @@ async function main(argv) {
   mapAndPin(args.repo);
 
   // 2. Where the arms could differ at all.
-  const facts = JSON.parse(readFileSync(join(args.repo, FACTS_PATH), "utf8"));
+  const { facts, problem } = factsAt(join(args.repo, FACTS_PATH));
+  if (problem) die(`${FACTS_PATH} in ${args.repo} was not read: ${problem.why}`);
   // A named target measures the claim the experiment is about; the ranking is
   // the default for when the question is only "where is there headroom".
   const ranked = rankAreas(facts).filter(
@@ -93,7 +103,7 @@ async function main(argv) {
   }
 
   // 7. The file a reader quotes.
-  const out = args.out ?? join(root, "docs/measurements", `${label.split("/").at(-1)}.md`);
+  const out = args.out ?? join(results, "docs/measurements", `${label.split("/").at(-1)}.md`);
   mkdirSync(dirname(out), { recursive: true });
   writeFileSync(out, render(result, args));
   console.log(`wrote ${out}`);

@@ -17,12 +17,13 @@
  * Read-only over the corpus. A repository is cloned with `--local`, which
  * hardlinks the object store, and nothing is ever written back into it.
  *
- * The tree this runs from has to hold still. Each repository shells out to
- * `bin/anatomiya.mjs` in the working tree, so a file edited while the run is in
- * flight puts two builds in one report: measured here, editing during a 35
- * repository run produced two stability failures on one repository that no
- * isolated run of it could reproduce, on this tree or on the commit before it,
- * and a frozen re-run passed all 36. Start it and leave the checkout alone.
+ * The tree this runs from has to hold still, or the run has to run a build of
+ * one commit. Each repository shells out to `bin/anatomiya.mjs`, in the working
+ * tree unless `--frozen <sha>` names the commit to build (`frozen-build.mjs`),
+ * so a file edited while a run was in flight put two builds in one report:
+ * measured here, editing during a 35 repository run produced two stability
+ * failures on one repository that no isolated run of it could reproduce, on
+ * this tree or on the commit before it, and a frozen re-run passed all 36.
  */
 import { spawnSync } from "node:child_process";
 import { cp } from "node:fs/promises";
@@ -30,20 +31,23 @@ import { appendFileSync, constants, existsSync, mkdirSync, readdirSync, readFile
 import { dirname, join, resolve, sep } from "node:path";
 import { fileURLToPath } from "node:url";
 
-import { invokedAs, readArgv, selectRepos } from "./entry.mjs";
+import { semanticCell } from "./cells.mjs";
+import { corpusRepos, invokedAs, readArgv, selectRepos } from "./entry.mjs";
+import { runFrozen } from "./frozen-build.mjs";
 import { BINARY, REL } from "./plugins.mjs";
 import { isSource } from "../plugins/anatomiya/lib/corpus.mjs";
 import { hasInstall } from "../plugins/anatomiya/lib/semantic.mjs";
 import { byCode } from "../plugins/anatomiya/lib/paths.mjs";
 import { underArea } from "../plugins/anatomiya/lib/areas.mjs";
 import { LANGUAGES, assertKeyed, familyOf, language } from "../plugins/anatomiya/lib/langs.mjs";
-import { CLASSES } from "../plugins/anatomiya/lib/dimensions-naming.mjs";
+import { CLASSES } from "../plugins/anatomiya/lib/stems.mjs";
 import { rowByKey } from "../plugins/anatomiya/lib/registry.mjs";
-import { FACTS_PATH, FACTS_SCHEMA, readRecord } from "../plugins/anatomiya/lib/facts.mjs";
-import { statedSide } from "../plugins/anatomiya/lib/slot.mjs";
+import { FACTS_PATH, FACTS_SCHEMA, factsAt, readRecord } from "../plugins/anatomiya/lib/facts.mjs";
+import { rendersAsDirective, statedSide } from "../plugins/anatomiya/lib/slot.mjs";
 import { PIN_PATH } from "../plugins/anatomiya/lib/baseline.mjs";
 import { MAX_LINES } from "../plugins/anatomiya/lib/render.mjs";
-import { isGeneratedName, nativeUpTo, OVERVIEW_FILE, RULES_DIR } from "../plugins/anatomiya/lib/rules.mjs";
+import { isGeneratedName, OVERVIEW_FILE, RULES_DIR } from "../plugins/anatomiya/lib/rules.mjs";
+import { nativeUpTo } from "../plugins/anatomiya/lib/contained.mjs";
 import { TARGETS, isClaude, overviewName, parseTargets } from "../plugins/anatomiya/lib/targets.mjs";
 import { scanLines } from "../plugins/anatomiya/lib/summary.mjs";
 import { TRUNCATED_LAYOUT } from "../plugins/anatomiya/lib/render-layout.mjs";
@@ -83,18 +87,6 @@ export function summaryProblems(s) {
   if (!s.baseline) problems.push("no baseline");
   if (typeof s.wrote !== "number") problems.push("no wrote count");
   return problems;
-}
-
-/**
- * The checker's answer for one repository, off its facts record: the status and
- * rate when it ran, and the reason when it did not, so a corpus that never ran
- * it says so in every row.
- */
-export function semanticCell(semantic) {
-  if (!semantic) return "-";
-  if (!semantic.ran) return `off ${semantic.reason}`;
-  const rate = semantic.typedResolutionRate;
-  return [semantic.status, semantic.reason, rate === null ? null : `${(rate * 100).toFixed(1)}%`].filter(Boolean).join(" ");
 }
 
 // The roots column is what the scan printed, so it is read off the layout line
@@ -364,7 +356,7 @@ export function probePlan(facts) {
   for (const area of facts.areas) {
     for (const key of PROBE_ROWS) {
       const d = (area.dimensions || []).find((x) => x.key === key);
-      if (!d || statedSide(d).states === null || d.matchesDefault === true) continue;
+      if (!d || !rendersAsDirective(d)) continue;
       if (typeof d.learned !== "string" || d.learned === "") continue;
       if (key === "file_naming_case" && !CLASSES.includes(d.learned)) continue;
       const ext = extFor(area, key);
@@ -406,7 +398,7 @@ function siteProbePlan(facts) {
 export function probeCell(plan, facts, named = false) {
   if (plan) return named ? `yes ${plan.dimension}` : "no";
   if (facts.areas.length === 0) return "n.a. (no area)";
-  const stated = facts.areas.some((area) => (area.dimensions || []).some((d) => statedSide(d).states !== null && d.matchesDefault !== true));
+  const stated = facts.areas.some((area) => (area.dimensions || []).some(rendersAsDirective));
   return stated ? "n.a. (no stated row one file breaks)" : "n.a. (no claim stated)";
 }
 
@@ -467,10 +459,12 @@ const USAGE = `usage: node scripts/e2e-corpus.mjs <corpusDir> <scratchDir> [opti
   <scratchDir>       where each clone goes; every clone is removed again
   --only <a,b>       run these repositories rather than every child
   --targets <list>   hand this to each repository's first scan, as cursor,copilot
+  --frozen <sha>     run this harness and the binary at that commit rather than the working tree's,
+                     so the checkout may change while the run is in flight
 `;
 
 export function parseArgs(argv) {
-  const read = readArgv(argv, { only: { type: "string" }, targets: { type: "string" } }, { positionals: true });
+  const read = readArgv(argv, { only: { type: "string" }, targets: { type: "string" }, frozen: { type: "string" } }, { positionals: true });
   if (read.error) return read;
   const [corpus, scratch, ...rest] = read.positionals;
   if (corpus === undefined) return { error: "the corpus directory is required" };
@@ -482,33 +476,9 @@ export function parseArgs(argv) {
   } catch (err) {
     return { error: err.message };
   }
-  return { corpus, scratch, only: read.values.only ?? null, targets };
+  return { corpus, scratch, only: read.values.only ?? null, targets, frozen: read.values.frozen ?? null };
 }
 
-// The order both measurement documents record the corpus in.
-export const byName = (a, b) => byCode(a.name, b.name);
-
-/**
- * Every child of the corpus directory that is a git repository, or why the path
- * is not a corpus.
- *
- * A mistyped corpus threw ENOENT out of the driver as a stack trace, and by
- * then the scratch directory had been made for a run that never started.
- */
-export function corpusRepos(corpusDir) {
-  let entries;
-  try {
-    entries = readdirSync(corpusDir, { withFileTypes: true });
-  } catch (err) {
-    return { error: `the corpus directory ${corpusDir} cannot be listed: ${err.code ?? err.message}` };
-  }
-  return {
-    repos: entries
-      .filter((e) => e.isDirectory() && existsSync(join(corpusDir, e.name, ".git")))
-      .map((e) => ({ name: e.name, source: join(corpusDir, e.name) }))
-      .sort(byName),
-  };
-}
 
 const inside = (path, dir) => path.startsWith(dir.endsWith(sep) ? dir : dir + sep);
 
@@ -820,7 +790,11 @@ async function runRepo(name, source, scratchDir, targets) {
     };
 
     /* 6: one file built to break a row the map stated. */
-    const mapped = JSON.parse(readFileSync(factsFile, "utf8"));
+    const { facts: mapped, problem: mapProblem } = factsAt(factsFile);
+    if (mapProblem) {
+      fail(`${FACTS_PATH} was not read back: ${mapProblem.why}`);
+      return { row, problems, head, summary };
+    }
     const plan = probePlan(mapped);
     const probePath = plan ? plan.path : "e2e-probe.md";
     const { report: probeReport, clash } = probeOn("e2e/probe", probePath, plan ? plan.body : "e2e probe\n", "probe");
@@ -859,6 +833,15 @@ async function main() {
   if (opts.error) {
     console.error(`${opts.error}\n\n${USAGE}`);
     process.exit(2);
+  }
+  // Handed over before the directories are checked: the run is the harness at that commit, and it checks them.
+  if (opts.frozen !== null) {
+    const ran = runFrozen(opts.frozen, "scripts/e2e-corpus.mjs", process.argv.slice(2));
+    if (ran.error) {
+      console.error(`${ran.error}\n\n${USAGE}`);
+      process.exit(2);
+    }
+    process.exit(ran.status);
   }
   const corpusDir = resolve(opts.corpus);
   const scratchDir = resolve(opts.scratch);

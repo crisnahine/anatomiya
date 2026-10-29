@@ -16,7 +16,7 @@ import { engineOf } from "../plugins/anatomiya/lib/langs.mjs";
 import { collectHits } from "../plugins/anatomiya/lib/walk.mjs";
 import { siteIdentity } from "../plugins/anatomiya/lib/introduced.mjs";
 import { readiness } from "../plugins/anatomiya/lib/readiness.mjs";
-import { isTestFile } from "../plugins/anatomiya/lib/layout.mjs";
+import { isTestFile } from "../plugins/anatomiya/lib/test-shape.mjs";
 import { hitsOf } from "./hits.mjs";
 
 const dir = mkdtempSync(join(tmpdir(), "anatomiya-ruby-"));
@@ -1164,7 +1164,7 @@ test("broken syntax is reported as unread, not counted from the recovery", needs
 test("scope attribution resolves to the innermost declaration, not the block", needsRuby, () => {
   let where = "unset";
   walkRuby(programs.get("scopes").program, (n, ctx) => {
-    if (n.t === "call" && n.name === "now") where = [ctx.def && ctx.def.name, ctx.cls && ctx.cls.name];
+    if (n.t === "call" && n.name === "now") where = [ctx.fn && ctx.fn.name, ctx.cls && ctx.cls.name];
   });
   assert.deepEqual(where, ["run", "Outer"], "a block does not shadow the method it sits in");
 });
@@ -1184,7 +1184,7 @@ test("leaving a declaration hands its context back to the one around it", () => 
     ],
   };
   walkRuby(tree, (n, ctx) => {
-    if (n.t === "call") seen[n.name] = [ctx.def?.name ?? null, ctx.cls?.name ?? null, ctx.enclosing?.t ?? null, ctx.stack.length];
+    if (n.t === "call") seen[n.name] = [ctx.fn?.name ?? null, ctx.cls?.name ?? null, ctx.enclosing?.t ?? null, ctx.stack.length];
   });
   assert.deepEqual(seen, {
     inDef: ["run", "Outer", "def", 2],
@@ -2432,13 +2432,12 @@ test("a shard whose thread dies while a forked writer fills the paused stdout le
   // parent's end stops it, and an open end kept the whole process alive.
   const home = mkdtempSync(join(dir, "forked-"));
   const writer = join(home, "writer");
-  const ruby = stubRuby("forked", [
-    "cat >/dev/null",
-    READY,
-    `printf '{"fatal":{"toString":1,"valueOf":1}}\\n'`,
-    `yes '{"rel":"zz.rb","ok":false,"error":"x"}' & echo $! > '${writer}'`,
-    "wait",
-  ]);
+  // The writer records its own pid before it prints the fatal and becomes the flood, so the file is
+  // on disk before the parent can react to the fatal and end the stub: written after, by the stub,
+  // it lost a race on a slow runner and the read below found no file.
+  const forked = join(home, "forked.sh");
+  writeFileSync(forked, `#!/bin/sh\necho $$ > '${writer}'\nprintf '{"fatal":{"toString":1,"valueOf":1}}\\n'\nexec yes '{"rel":"zz.rb","ok":false,"error":"x"}'\n`, { mode: 0o755 });
+  const ruby = stubRuby("forked", ["cat >/dev/null", READY, `'${forked}' &`, "wait"]);
   const lib = new URL("../plugins/anatomiya/lib/ruby.mjs", import.meta.url).href;
   const script = `const { parseRuby } = await import(${JSON.stringify(lib)});
 const out = await parseRuby(${JSON.stringify(pair)}, { ruby: ${JSON.stringify(ruby)} });

@@ -75,6 +75,14 @@ export function statedSide(d) {
 }
 
 /**
+ * Whether a slot renders as a directive: a side was stated, and it is not one
+ * the model writes unprompted, which rides with the counts instead (A15). The
+ * overview's "N stated", the area file's partition, the scan summary and the
+ * measurement scripts all read this one answer.
+ */
+export const rendersAsDirective = (d) => statedSide(d).states !== null && d.matchesDefault !== true;
+
+/**
  * The extensions and names a claim was counted over, where its area holds
  * files of others, or null where its sentence names none.
  *

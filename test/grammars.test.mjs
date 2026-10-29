@@ -281,7 +281,7 @@ test("the gate refuses an argument it does not know before it reads or writes an
   });
 });
 
-test("the plugin job runs each check `npm run validate` runs, as a step of its own", () => {
+test("the plugin job runs each check `npm run validate` runs, as a step of its own, and the release runs the list and the docs gate before its suite", () => {
   // A package script and a workflow cannot share a list, and a check only a person is told to run is one nobody runs.
   const checks = JSON.parse(readFileSync(join(ROOT, "package.json"), "utf8")).scripts.validate.split(" && ");
   const workflow = readFileSync(join(ROOT, ".github", "workflows", "ci.yml"), "utf8").replace(/\r\n/g, "\n");
@@ -291,6 +291,15 @@ test("the plugin job runs each check `npm run validate` runs, as a step of its o
   for (const command of checks) {
     assert.match(job, new RegExp(`\\n      - name: [^\\n]+\\n        run: ${command.replace(/[.]/g, "\\.")}\\n`), command);
   }
+  // A tag releases the commit it points at, and the release job runs after the test job alone: the
+  // gates have to run there too, or a commit whose documents or manifests fail releases.
+  const step = (command) => new RegExp(`\\n      - name: [^\\n]+\\n        run: ${command.replace(/[.]/g, "\\.")}\\n`);
+  assert.match(job, step("node scripts/check-docs.mjs"), "ci runs the docs gate");
+  const release = readFileSync(join(ROOT, ".github", "workflows", "release.yml"), "utf8").replace(/\r\n/g, "\n");
+  const testJob = release.slice(release.indexOf("\n  test:\n")).split(/\n  [a-z-]+:\n/)[1];
+  assert.match(testJob, step("node scripts/check-docs.mjs"), "the release runs the docs gate");
+  assert.match(testJob, step("npm run validate"), "the release runs the validate list");
+  assert.ok(testJob.indexOf("run: npm run validate") < testJob.indexOf("- name: Run the suite"), "the gates run before the suite");
 });
 
 test("no workflow installs with install scripts on", () => {

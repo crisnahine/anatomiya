@@ -11,13 +11,14 @@ import { loadPin } from "./baseline.mjs";
 import { runPin, runScan } from "./commands.mjs";
 import { gitRoot } from "./corpus.mjs";
 import { readFacts, readRecord } from "./facts.mjs";
-import { acquire, createdAlone, refreshBlockers, release } from "./lock.mjs";
+import { createdAlone, refreshBlockers, release, takeLock } from "./lock.mjs";
 import { atomic, quietUnlink } from "./store.mjs";
 import { ask, askWhether, BASE_REFS, Unasked, caseMagic, commitAt, gitStreamed, headSha, operationUnfinished, shaReachable, unaskedAs } from "./git.mjs";
 import { buildVersion } from "./readiness.mjs";
 import { movedByRemote } from "./refresh.mjs";
 import { carriedVerdict, checkerStamp, verdictStamp } from "./semantic.mjs";
-import { INDEX_FILE, OVERVIEW_FILE, realpathOf, REFRESH_LOCK, REFRESH_STATE, resolveInside, STORE_DIR, targetState, trackedRulesDir } from "./rules.mjs";
+import { INDEX_FILE, OVERVIEW_FILE, REFRESH_STATE, STORE_DIR, targetState, trackedRulesDir } from "./rules.mjs";
+import { realpathOf, resolveInside } from "./contained.mjs";
 import { isPathTaken } from "./hook.mjs";
 import { isClaude, overviewName, TARGETS } from "./targets.mjs";
 import { commonDirOf, gitDirOf } from "./worktree.mjs";
@@ -94,9 +95,8 @@ export async function refreshRepository(root, { scan = runScan, pin = runPin } =
   const [blocked] = refreshBlockers(store);
   if (blocked !== undefined) return { reason: blocked === basename(REFRESH_STATE) ? "state-blocked" : "lock-blocked", blocked: join(store, blocked), pinned: false };
 
-  const lockPath = join(store, basename(REFRESH_LOCK));
   const again = join(store, AGAIN_FILE);
-  let lock = acquire(lockPath);
+  let lock = takeLock(store, "refresh");
   if (!lock) {
     // The holder may be past its last look at HEAD. It reads this after letting
     // go and runs again, so the move that started this worker is not lost.
@@ -106,7 +106,7 @@ export async function refreshRepository(root, { scan = runScan, pin = runPin } =
     } catch {
       // Not left, and this worker still answers busy below; the next move of HEAD starts another.
     }
-    lock = acquire(lockPath);
+    lock = takeLock(store, "refresh");
     if (!lock) return { reason: "busy", pinned: false };
   }
   if (lock.blocked) return { reason: "lock-blocked", blocked: lock.blocked, pinned: false };
@@ -125,7 +125,7 @@ export async function refreshRepository(root, { scan = runScan, pin = runPin } =
     result = result !== null && round.reason === "current" ? { ...round, reason: result.reason } : round;
     pinned ||= round.pinned;
     if (!more) return { ...result, pinned };
-    lock = acquire(lockPath);
+    lock = takeLock(store, "refresh");
     if (!lock || lock.blocked) return { ...result, pinned };
   }
 }
@@ -178,6 +178,18 @@ async function passes(root, store, { scan, pin }) {
     writeState(store, { stamp, ok: true, error: null, pinned: accepted, held, stopped, indexed: wrote });
   }
   return { reason: "scanned", pinned, held };
+}
+
+/**
+ * A scan run by hand, which is the refresh's answer too: it clears a failed
+ * refresh the echo is reporting, and the next refresh has nothing to redo. A
+ * dry run writes nothing, so it records nothing either (A95).
+ */
+export async function scanByHand(cwd, { dryRun = false, targets = null } = {}) {
+  const before = dryRun ? null : await scanStamp(cwd);
+  const scanned = await runScan(cwd, { dryRun, targets });
+  if (!dryRun) await noteScan(scanned.result.root, before, scanned);
+  return scanned;
 }
 
 /**

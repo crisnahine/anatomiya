@@ -447,8 +447,9 @@ for minutes and what a hung parse looks like is silence; behind it sits a wall c
 number of files handed over, since a child that answers one file every fourteen seconds keeps the
 idle timer happy and never ends.
 
-A corpus of 1,000 Ruby files or more is split into batches, one child each: one per 500 files, up to
-four and never more than the machine's cores less one. Six cut a measured Rails API's scan by 4% to
+A corpus of 200 Ruby files or more is split into batches, one child each: one per 100 files, up to
+four and never more than the machine's cores less one. On a 929-file repository one child took 5.9 s
+and four took 2.0 s for the same map. Six cut a measured Rails API's scan by 4% to
 16% but put its peak memory 22% to 30% over 0.13.3's, since each batch's thread holds a heap of its
 own. The batches are balanced by bytes, the largest file first into the lightest batch, and a file
 over the size cap weighs nothing, since the child skips it unread. The answers are put back in the
@@ -1499,7 +1500,7 @@ A workflow stage's carries no `toolUseResult` copy of each tool result and runs 
 token, so there the window is about 46k tokens.
 Anything the hook cannot read answers with a delivery. The decision is one function, `echoDue` in
 `echo.mjs`, over the map's digest, the window's transcript and the plugin's data directory; the map,
-its digest and the stamp around it stay in `hook.mjs`. What a transcript record says, a delivery, a
+its digest and the stamp around it are `echoContext` beside it, loaded inside the echo verb alone. What a transcript record says, a delivery, a
 compaction or bytes the model reads, is read in `transcript.mjs`, which the end-of-turn check reads
 its own moments through too (A116, A119).
 
@@ -1571,7 +1572,7 @@ until a file under it is touched. A subagent that only greps and `cat`s never to
 the exploration phase issue #34 measured going dark, and it is the whole of the gap: a subagent that
 Reads is served like the main thread, overview included.
 
-The overview head carries three fixed sentences beside the counts. "Read a file before editing it:
+The overview head carries four fixed sentences beside the counts. "Read a file before editing it:
 these notes load when you read, not when you grep" is that ceiling said to the agent. "When unsure
 what this code does, read it, grep it, or run it instead of guessing, and say what you could not
 verify" names the tools the agent already has and permits the abstention, which is what keeps a
@@ -1582,7 +1583,11 @@ about what to do with a change instead of what to read first: the counts below i
 files they point at, say what the practice is, and this says to follow it and finish. It opens on a
 trigger clause because removing the equivalent scope guard is measured to move the out-of-scope rate
 by double digits; `docs/research/one-line-that-finishes-in-house-style.md` carries the sources
-(A42). All three are constant, so A5 holds, and to keep the overview inside its forty lines with
+(A42). The fourth, one line, is about what the counts cannot see, a construct moved to get past the
+row that counts it or a check reported and never run, and sends a defect in the map or the plugin to
+the user and the tracker, since the model reading a wrong claim is the first to see one; one line and
+not two, because every line of the head is a line the areas lose at the bound (A127). All four are
+constant, so A5 holds, and to keep the overview inside its forty lines with
 every optional line on, the string line of Not covered shares the line that says memory, GC and I/O
 are runtime only. The line above them that says what a claim is also carries the key to every counts
 line: `"no convention" means the gate in parentheses stopped it, and its sites may still all agree`.
@@ -2169,7 +2174,7 @@ times in the name, twice in its class, once in its doc sentence or path. The sum
 1.35 for 4 importers, 1.65 for 19, 2.2 for 252, and halved in a test file, since a test is named for
 what it tests and matched every word of django's `get_object_or_404` ahead of the function itself.
 It prints the best 6 on one line each:
-`name(params)  path:line  kind, N files import it  - doc`. A word only the path holds finds nothing,
+`name(params)  path:line  kind of container, N files import it, in a test file  - doc`, where `of container` prints only for a definition inside a class, module or namespace, the importers only above zero and as `1 file imports it` for one, and `in a test file` only for a test. A word only the path holds finds nothing,
 since every definition in that file would tie. `/anatomiya:find` runs it for a session, and the reuse
 check's reason names it with the absolute path of the bin that ran the hook, so the subagent's first
 search is one call (A124). The weights are `RANKING` in `find.mjs`, the module the hook loads for the

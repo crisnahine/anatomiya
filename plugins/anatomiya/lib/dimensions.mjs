@@ -371,6 +371,23 @@ export function assertDeclaredFields(rows) {
     if (d.needsTypeSyntax !== undefined && d.needsTypeSyntax !== true) {
       throw new Error(`dimension ${d.key} declares needsTypeSyntax as ${JSON.stringify(d.needsTypeSyntax)}`);
     }
+    // The walk hands such a row no node of a test file (`outsideTests` in `test-shape.mjs`); a row that
+    // also keeps off a test tree says so on top, since a tree holds support files a parse reads as source.
+    if (d.outsideTests !== undefined && d.outsideTests !== true) {
+      throw new Error(`dimension ${d.key} declares outsideTests as ${JSON.stringify(d.outsideTests)}`);
+    }
+    if (d.outsideTestTrees !== undefined && (d.outsideTestTrees !== true || d.outsideTests !== true)) {
+      throw new Error(`dimension ${d.key} declares outsideTestTrees without outsideTests`);
+    }
+    // A learned row votes inside a vocabulary it declares, which the check enforces against and a model
+    // default is held to; a row whose class is a name out of the source has none to declare.
+    const closed = d.learnedClasses === true && d.learnedFromSource !== true;
+    if (closed && (!Array.isArray(d.classes) || d.classes.length === 0 || d.classes.some((c) => typeof c !== "string" || c === ""))) {
+      throw new Error(`dimension ${d.key} learns a class and declares no classes it may learn`);
+    }
+    if (!closed && d.classes !== undefined) {
+      throw new Error(`dimension ${d.key} declares classes and learns none, or learns a name out of the source`);
+    }
     if (d.capability !== undefined && !(d.capability in CAPABILITY_WORDS)) {
       throw new Error(`dimension ${d.key} declares capability ${JSON.stringify(d.capability)}, which no vocabulary carries`);
     }

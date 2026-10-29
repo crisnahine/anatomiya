@@ -9,7 +9,7 @@
  */
 import { gzipSync } from "node:zlib";
 
-import { isTestFile } from "./layout.mjs";
+import { isTestFile } from "./test-shape.mjs";
 import { byCode } from "./paths.mjs";
 import { creditOf, reuseIndex } from "./siblings.mjs";
 import { INDEX_MOST, INDEX_SCHEMA, indexPath, UNZIPPED_MOST } from "./index-home.mjs";

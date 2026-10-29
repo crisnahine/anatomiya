@@ -187,7 +187,7 @@ is below, with every miss read.
 ### Look it up before writing it: the code index
 
 Every scan also writes an index of every function, method, class and type a file declares at its top
-level or in a class, and Go's and Rust's constants and package variables, in all nine languages (a view template is not
+level or in a class, and Go's constants and package variables and Rust's constants and statics, in all nine languages (a view template is not
 indexed): where it is, what it takes, the first sentence of its doc comment, and how many other
 files import it. `/anatomiya:find` asks it in plain words, and a name in any casing works:
 
@@ -416,7 +416,7 @@ baseline into each one:
 - [docs/usage.md](docs/usage.md): the full guide.
 - [docs/why.md](docs/why.md): why it is built this way, and the designs the measurements replaced.
 - [docs/how-it-works.md](docs/how-it-works.md): the mechanics, close enough to predict a scan's output.
-- [DECISIONS.md](DECISIONS.md): 370 numbered decisions, each with the measurement or review finding
+- [DECISIONS.md](DECISIONS.md): 379 numbered decisions, each with the measurement or review finding
   that forced it.
 - [docs/measurements/corpus.md](docs/measurements/corpus.md): every repository a measurement ran on,
   with its commit.

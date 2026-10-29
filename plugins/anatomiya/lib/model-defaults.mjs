@@ -14,14 +14,12 @@
  */
 import { createRequire } from "node:module";
 
-import { CLASSES } from "./dimensions-naming.mjs";
-import { REGISTRY_KEYS } from "./registry.mjs";
+import { REGISTRY_KEYS, rowByKey } from "./registry.mjs";
 
 const TABLE = createRequire(import.meta.url)("./model-defaults.json");
 
 const SIDES = ["claim", "counter", "none"];
 const METHODS = ["measured", "literature", "seed"];
-const DEFAULT_CLASSES = [...CLASSES, "none"];
 
 export function assertModelDefaults(table, registryKeys) {
   for (const [key, e] of table) {
@@ -32,15 +30,17 @@ export function assertModelDefaults(table, registryKeys) {
       throw new Error(`model-defaults ${key} declares default ${JSON.stringify(e.default)}, not one of ${SIDES.join(", ")}`);
     }
     // A learned-class dimension's default is a class, not a side, so its side
-    // stays `none` and the class rides beside it. Membership in the closed
+    // stays `none` and the class rides beside it. Membership in the row's own
     // vocabulary is the whole check: a typo'd class would match nothing, which
-    // is the filter silently off for that row. `none` is in it because a row
-    // can learn that its sites carry no marker at all, and that absence is what
-    // a model writes unprompted. The vocabulary is one global list rather than
-    // per row, so `none` is accepted on every learned row and not only on the
-    // two that can vote for it.
-    if ("class" in e && !DEFAULT_CLASSES.includes(e.class)) {
-      throw new Error(`model-defaults ${key} declares class ${JSON.stringify(e.class)}, not one of ${DEFAULT_CLASSES.join(", ")}`);
+    // is the filter silently off for that row. `none` is accepted on every
+    // learned row, since a row can learn that its sites carry no marker at all,
+    // and that absence is what a model writes unprompted. A row whose class is a
+    // name out of the source has no vocabulary to hold a default to.
+    if ("class" in e) {
+      const allowed = [...(rowByKey(key)?.classes ?? []), "none"];
+      if (!allowed.includes(e.class)) {
+        throw new Error(`model-defaults ${key} declares class ${JSON.stringify(e.class)}, not one of ${allowed.join(", ")}`);
+      }
     }
     const p = e.provenance;
     if (!p || !METHODS.includes(p.method)) {

@@ -16,8 +16,8 @@
  */
 import { GATES, wilsonLower } from "./gates.mjs";
 import { isPerson } from "./authors.mjs";
-import { CHANGE_MOST, CLAIMS_MOST, classesOf, classParts, companionKey, keyCompanion } from "./cochange.mjs";
-import { commitAt, filesAt, isSha, resolveBaseRef } from "./git.mjs";
+import { changeAccumulator, CLAIMS_MOST, classesOf, classParts, companionKey, keyCompanion } from "./cochange.mjs";
+import { commitAt, filesAt, isSha, resolveBaseRef, unaskedAs } from "./git.mjs";
 import { SEP, historyFields } from "./history.mjs";
 import { ownOutput } from "./corpus.mjs";
 import { familyOf, language } from "./langs.mjs";
@@ -85,32 +85,20 @@ export function changeReader(onChange, own = () => false) {
     if (change === null) return;
     const c = change;
     change = null;
-    if (c.bulk) return onChange({ bulk: true });
-    // With renames off a move is a deletion and an addition, and the moved file is no new one.
-    const added = c.added.filter((p) => !c.gone.has(p.slice(p.lastIndexOf("/") + 1)));
-    const touched = [...c.added, ...c.modified];
-    onChange({ bulk: false, author: c.author, added, touched });
+    const read = c.rows.close();
+    onChange(read.bulk ? read : { ...read, author: c.author });
   };
 
   const open = (piece) => {
     close();
     const nl = piece.indexOf("\n");
-    change = { author: (nl === -1 ? piece : piece.slice(0, nl)).trim().toLowerCase(), added: [], modified: [], gone: new Set(), bulk: false };
+    // The map a scan wrote is rewritten by the refresh, never by the change itself, so `own` leaves it out.
+    change = { author: (nl === -1 ? piece : piece.slice(0, nl)).trim().toLowerCase(), rows: changeAccumulator(own, { goneMost: COCHANGE.goneMost, keep: one }) };
     return nl === -1 ? "" : piece.slice(nl + 1);
   };
 
   const row = (letter, path) => {
-    // The map a scan wrote is rewritten by the refresh, never by the change itself.
-    if (change === null || change.bulk || !path || own(path)) return;
-    if (letter === "D") {
-      change.gone.add(path.slice(path.lastIndexOf("/") + 1));
-      if (change.gone.size > COCHANGE.goneMost) change.bulk = true;
-      return;
-    }
-    const list = letter === "A" ? change.added : letter === "M" || letter === "T" ? change.modified : null;
-    if (list === null) return;
-    list.push(one(path));
-    if (change.added.length + change.modified.length > CHANGE_MOST) change.bulk = true;
+    if (change !== null) change.rows.row(letter, path);
   };
 
   const read = (field) => {
@@ -191,7 +179,7 @@ export async function startCochange(root, state, { signal, history = null } = {}
   }
   if (at === null) return none(null);
   // A tree git could not be asked for is null like one it refused: the record then says the tree could not be read.
-  const [walk, tree] = await Promise.all([walkCochange(root, at.tip, { signal, history }), filesAt(root, at.tip, { signal }).catch(() => null)]);
+  const [walk, tree] = await Promise.all([walkCochange(root, at.tip, { signal, history }), filesAt(root, at.tip, { signal }).catch(unaskedAs(null))]);
   return { ...at, walk, tree };
 }
 

@@ -1194,3 +1194,10 @@ test("a plugin whose only behaviour is a workflows directory does not read as em
 
   assert.deepEqual(validate(dir), []);
 });
+
+test("a flag the manifest check does not know is refused before anything is read", () => {
+  const run = spawnSync(process.execPath, [join(ROOT, "scripts", "validate.mjs"), "--nope"], { encoding: "utf8" });
+  assert.equal(run.status, 2, run.stderr);
+  assert.match(run.stderr, /^[^\n]*--nope/);
+  assert.match(run.stderr, /\nusage: node scripts\/validate\.mjs \[marketplaceRoot\]\n$/);
+});

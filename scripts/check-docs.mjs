@@ -40,25 +40,72 @@ import { PROBE_IDS } from "../plugins/anatomiya/lib/readiness.mjs";
 import { PARSE_OUTCOMES } from "../plugins/anatomiya/lib/parse.mjs";
 import { ELIGIBLE, REFUSED } from "../test/fixtures/counter-pins.mjs";
 
-const root = join(dirname(fileURLToPath(import.meta.url)), "..");
+const ROOT = join(dirname(fileURLToPath(import.meta.url)), "..");
+
 /**
- * A file this repository is known to have.
- *
- * A read that throws here takes the whole gate down with a stack in place of
- * the sentence naming the file, and this module is imported by its own test, so
- * one missing document failed that file at load. Every path this reads is
- * checked once up front instead.
+ * The documents of one tree, each read once however many rules read it, behind
+ * the one interface every rule takes (G20). `read` throws for a file that is not
+ * there, as `readFileSync` does: every path a rule reads is checked against
+ * `READS` first, and the two guards that read past that list keep their meaning.
+ * `tracked` is git's list of the working tree, asked once; `list` names a
+ * directory's entries; `rows` is the decision record's files; `at` is the
+ * absolute path for the two rules that run a process in the tree. The same
+ * interface over strings is `documentsFrom`, so a rule's test hands it the two
+ * documents the rule reads and no copy of the repository.
  */
-const read = (rel) => readFileSync(join(root, rel), "utf8");
+export function documents(root) {
+  const texts = new Map();
+  const read = (rel) => {
+    let text = texts.get(rel);
+    if (text === undefined) {
+      text = readFileSync(join(root, rel), "utf8");
+      texts.set(rel, text);
+    }
+    return text;
+  };
+  let listed;
+  return {
+    root,
+    read,
+    readOr: (rel, absent) => readOrAbsent(read, rel, absent),
+    readJson: (rel) => jsonOf(read, rel),
+    has: (rel) => existsSync(join(root, rel)),
+    list: (dir) => readdirSync(join(root, dir)),
+    // Through `read`, so the sweep over every tracked file reads a row file the record already read.
+    rows: () => rowFiles(root, read),
+    tracked: () => (listed ??= repositoryFiles(root)),
+    at: (rel) => join(root, rel),
+  };
+}
+
+/** `documents` over `{ rel: text }`: no tree, so `root` is null and the rules that run a process there say nothing. */
+export function documentsFrom(files) {
+  const read = (rel) => {
+    if (!Object.hasOwn(files, rel)) throw Object.assign(new Error(`ENOENT: no such file or directory, open '${rel}'`), { code: "ENOENT" });
+    return files[rel];
+  };
+  const under = (dir) => [...new Set(Object.keys(files).filter((rel) => rel.startsWith(`${dir}/`)).map((rel) => rel.slice(dir.length + 1).split("/")[0]))];
+  return {
+    root: null,
+    read,
+    readOr: (rel, absent) => readOrAbsent(read, rel, absent),
+    readJson: (rel) => jsonOf(read, rel),
+    has: (rel) => Object.hasOwn(files, rel) || under(rel).length > 0,
+    list: under,
+    rows: () => new Map(under(DECISIONS_DIR).filter((f) => f.endsWith(".md")).map((f) => [f.slice(0, -3), files[`${DECISIONS_DIR}/${f}`]])),
+    tracked: () => Object.keys(files),
+    at: () => null,
+  };
+}
 
 /** The same read for a file whose absence is itself one of the claims. */
-const readOr = (rel, absent) => {
+function readOrAbsent(read, rel, absent) {
   try {
     return read(rel);
   } catch {
     return absent;
   }
-};
+}
 
 /**
  * A manifest as an object, or the reason it is not one.
@@ -67,14 +114,23 @@ const readOr = (rel, absent) => {
  * not parse are the same thing to a reader who has to fix it, and either one
  * thrown from here ends the run before it has said which file it was.
  */
-const readJson = (rel) => {
+function jsonOf(read, rel) {
   try {
     return { value: JSON.parse(read(rel)), problem: null };
   } catch (err) {
     const missing = err.code === "ENOENT";
     return { value: null, problem: missing ? "is missing, so nothing says what version this plugin is at" : `could not be read: ${err.message}` };
   }
-};
+}
+
+/** The problems a run collects, and the one way a rule adds to them. */
+export function claims() {
+  const problems = [];
+  const claim = (where, ok, detail) => {
+    if (!ok) problems.push(`${where}: ${detail}`);
+  };
+  return { problems, claim };
+}
 
 /**
  * The intake table, as rows.
@@ -365,7 +421,7 @@ export const counted = (word) => NUMERALS.get(word.toLowerCase().replace(/\s+/g,
  * still in the index but deleted from the tree: there is nothing there to read,
  * and reading it threw a stack in place of the gate's answer.
  */
-function repositoryFiles() {
+function repositoryFiles(root) {
   try {
     return execFileSync("git", ["ls-files", "--cached", "--others", "--exclude-standard"], { cwd: root, encoding: "utf8", stdio: ["ignore", "pipe", "pipe"] })
       .split("\n")
@@ -606,6 +662,9 @@ const BUILD_OFFSET = /\boffsets? \d{1,3}(?:,\d{3}){2,}\b|\boffsets? \d{6,}\b|@\d
 // a path, so the `users/` of a view or a route is none.
 const HOME_SHAPED = /(?<![\w.-])(?:\/Users|\/home|[A-Za-z]:[\\/]+[Uu]sers)[\\/]+(?!me[\\/])[^\s\\/`'"<>)]+[\\/]/;
 
+// The same shape in a generated document, which spells no placeholder and may end at the name.
+const HOME_PATH = /(?<![\w.-])(?:\/Users|\/home|[A-Za-z]:[\\/]+[Uu]sers)[\\/]+[^\s\\/]+/;
+
 // Text this repository ships and does not write, which no rule on house prose reads.
 const THIRD_PARTY = new Set([`${REL.anatomiya}/grammars/LICENSES.md`]);
 
@@ -672,61 +731,110 @@ export const READS = [
   `${REL.anatomiya}/bin/anatomiya.mjs`,
   `${REL.anatomiya}/commands`,
   `${REL.anatomiya}/lib/check.mjs`,
+  `${REL.anatomiya}/lib/verdict.mjs`,
   "docs/how-it-works.md",
   "docs/usage.md",
   "docs/why.md",
   "docs/dimension-intake.md",
   "docs/measurements",
 ];
-/**
- * Every claim, run once, and what it found.
- *
- * A function rather than the module's own top level: importing a reader here
- * used to run the whole gate, so the two tests that reach one spawned the
- * binary for `--help`, ran `git ls-files` and read every document before
- * their first assertion. `problems` and `claim` live inside it so a second
- * call answers for itself.
- */
-export function checkDocs() {
-  const problems = [];
-  const claim = (where, ok, detail) => {
-    if (!ok) problems.push(`${where}: ${detail}`);
+/** A value computed on its first read and kept, so a rule that never asks never pays and the ones that do share one. */
+const once = (fn) => {
+  let value;
+  let done = false;
+  return () => {
+    if (!done) {
+      value = fn();
+      done = true;
+    }
+    return value;
   };
+};
 
-  const absent = READS.filter((rel) => !existsSync(join(root, rel)));
-  if (absent.length > 0) {
-    for (const rel of absent) problems.push(`${rel}: is missing, and this gate is every claim it makes`);
-    return { problems, owed: new Map(), summary: null };
-  }
+// Obligations and filename rows count here too. A checker blind to a whole
+// dimension class would pass while the README undercounted by nine, which is
+// the drift this script exists to catch.
+const total = REGISTRY.length;
+const js = rowsForLangs(["js"]).length;
+const jsx = rowsForLangs(["jsx"]).length;
+const ruby = rowsForLangs(["ruby"]).length;
+const component = { Vue: rowsForLangs(["vue"]).length, Svelte: rowsForLangs(["svelte"]).length };
+const obligations = rowsOfKind("pairing").length;
+// Section 4 of the walkthrough counts the rows asked of a file, so the
+// obligations are counted apart from them there: they are one question about
+// two paths rather than a question asked of a site.
+const shipping = total - obligations;
+const rubyRows = ruby - pairingsFor(["ruby"]).length;
+const typeChecked = REGISTRY.filter((d) => d.tier === "semantic").length;
+const codes = new Set(Object.values(CAVEATS));
 
-  // --- the dimension registry -------------------------------------------------
+/**
+ * What the rules share of one tree, parsed once each on first use: the
+ * documents, the decision record, the glossary, the intake table, the plugin's
+ * dependencies, the two directories of documents, git's list of the tree and the
+ * verbs the binary prints. A rule reads these and makes its claims; nothing here
+ * claims, so a rule's test can hand `documentsFrom` the two files it reads.
+ */
+export function context(docs, claim) {
+  const indexed = once(() => indexRows(docs.read("DECISIONS.md")));
+  const rowsRead = once(() => new Map([...docs.rows()].map(([id, text]) => [id, readRowFile(text)])));
+  const listed = once(() => docs.tracked());
+  return {
+    docs,
+    claim,
+    indexed,
+    rowsRead,
+    record: once(() => [...rowsRead().values()].filter(Boolean)),
+    glossary: once(() => readGlossary(docs.read("CONTEXT.md"))),
+    intake: once(() => readIntake(docs.read("docs/dimension-intake.md"))),
+    deps: once(() => Object.keys(JSON.parse(docs.read(`${REL.anatomiya}/package.json`)).dependencies ?? {})),
+    commandDocs: once(() => docs.list(`${REL.anatomiya}/commands`).filter((f) => f.endsWith(".md")).map((f) => `${REL.anatomiya}/commands/${f}`)),
+    topDocs: once(() => docs.list("docs").filter((f) => f.endsWith(".md")).map((f) => `docs/${f}`)),
+    listed,
+    tracked: once(() => new Set(Array.isArray(listed()) ? listed() : [])),
+    // The verbs the binary's usage line names, in its order and once each.
+    commands: once(() => {
+      const usage = execFileSync(process.execPath, [docs.at(`${REL.anatomiya}/bin/anatomiya.mjs`), "--help"], { encoding: "utf8" });
+      return [...new Set([...usage.matchAll(/anatomiya\s+(\w+)/g)].map((m) => m[1]))];
+    }),
+  };
+}
 
-  // Obligations and filename rows count here too. A checker blind to a whole
-  // dimension class would pass while the README undercounted by nine, which is
-  // the drift this script exists to catch.
-  const total = REGISTRY.length;
-  const js = rowsForLangs(["js"]).length;
-  const jsx = rowsForLangs(["jsx"]).length;
-  const ruby = rowsForLangs(["ruby"]).length;
-  const component = { Vue: rowsForLangs(["vue"]).length, Svelte: rowsForLangs(["svelte"]).length };
-  const obligations = rowsOfKind("pairing").length;
+/**
+ * Every rule, each a function of the context, run in this order. A rule reads
+ * the documents through the context and claims through it; two rules reading
+ * one document read it once. Written as a table rather than one body so a rule
+ * can be run on its own over `documentsFrom`, and so a rule added shows by name.
+ */
+export const RULES = {
+  dimensionCounts,
+  buildContract,
+  gateTable,
+  caveatCodes,
+  severityReasons,
+  workingTree,
+  commandSurface,
+  glossaryShape,
+  intakeTable,
+  runtimeDependencies,
+  enginesAndGrammars,
+  measurementPaths,
+  trackedDocuments,
+  versions,
+};
 
-  // Section 4 of the walkthrough counts the rows asked of a file, so the
-  // obligations are counted apart from them there: they are one question about
-  // two paths rather than a question asked of a site.
-  const shipping = total - obligations;
-  const rubyRows = ruby - pairingsFor(["ruby"]).length;
-  const typeChecked = REGISTRY.filter((d) => d.tier === "semantic").length;
+// --- the dimension registry -------------------------------------------------
 
+function dimensionCounts({ docs, claim }) {
   // A released entry states the number that shipped in it and stays true forever.
   // Reading the whole changelog made every past release a claim about today, so
   // the first number that ever changed would fail three entries that are correct.
   //
-  // Its absence is not reported here: the version loop below asks every plugin's
+  // Its absence is not reported here: the version rule asks every plugin's
   // changelog for the same heading, and two sentences about one missing heading
   // is one more than a reader needs.
   for (const rel of ["README.md", "docs/usage.md", "docs/how-it-works.md", "CHANGELOG.md"]) {
-    const text = rel === "CHANGELOG.md" ? unreleased(read(rel)) : read(rel);
+    const text = rel === "CHANGELOG.md" ? unreleased(docs.read(rel)) : docs.read(rel);
     // Digits only: prose spells a share of the dimensions as a word ("one to
     // three dimensions each"), and the total is always written as a number.
     for (const m of text.matchAll(/(\d+)\s+dimensions/g)) {
@@ -786,17 +894,18 @@ export function checkDocs() {
       `${d.key} has no counterClaim decision, which reads the same as refused`
     );
   }
+}
 
-  // --- the build contract -----------------------------------------------------
+// --- the build contract -----------------------------------------------------
 
+function buildContract({ docs, claim, indexed, rowsRead, record }) {
   // Three files state this count, and they have disagreed with each other: the
   // table held 55 rows, the README said 55 and CONTRIBUTING said 54. It is the
   // one number in the docs that moves on every substantive change, so all three
   // are read against the table rather than against one another.
-  const indexed = indexRows(read("DECISIONS.md"));
-  const rows = indexed.length;
+  const rows = indexed().length;
   for (const rel of ["README.md", "docs/why.md", "CONTRIBUTING.md"]) {
-    for (const m of read(rel).matchAll(new RegExp(`(${N})\\s+numbered (?:decisions|rows)`, "g"))) {
+    for (const m of docs.read(rel).matchAll(new RegExp(`(${N})\\s+numbered (?:decisions|rows)`, "g"))) {
       claim(rel, counted(m[1]) === rows, `says "${m[1]} numbered", DECISIONS.md holds ${rows} rows`);
     }
   }
@@ -805,25 +914,25 @@ export function checkDocs() {
   // silently: an unescaped `|` inside a code span splits the cell it sits in, and
   // the File column falls off the end, the row's link with it. The escape is
   // `\|`, which the file already uses.
-  for (const row of indexed) {
+  for (const row of indexed()) {
     claim("DECISIONS.md", row.cells === 4, `row ${row.id} on line ${row.line} has ${row.cells} cells, not 4: escape a \`|\` inside a code span as \`\\|\``);
   }
 
   // The index says a row exists and its file says what the row is, so the two
   // are held to each other before anything below reads a row.
-  const rowsRead = new Map([...rowFiles(root)].map(([id, text]) => [id, readRowFile(text)]));
-  for (const { where, detail } of recordProblems(indexed, rowsRead)) claim(where, false, detail);
-  const record = [...rowsRead.values()].filter(Boolean);
+  for (const { where, detail } of recordProblems(indexed(), rowsRead())) claim(where, false, detail);
 
   // "(B13)" read as the source of a rule another row holds, and nothing read it.
   // An id that names the wrong row still passes; one that names no row does not.
-  for (const { row, cited } of rowsCitedMissing(record)) {
+  for (const { row, cited } of rowsCitedMissing(record())) {
     claim(`${DECISIONS_DIR}/${row}.md`, false, `cites ${cited}, and no row has that id`);
   }
+}
 
-  // --- the gate table ---------------------------------------------------------
+// --- the gate table ---------------------------------------------------------
 
-  const gateText = read("README.md") + read("docs/usage.md") + read("docs/how-it-works.md");
+function gateTable({ docs, claim }) {
+  const gateText = docs.read("README.md") + docs.read("docs/usage.md") + docs.read("docs/how-it-works.md");
   claim(
     "docs",
     /\b0\.90\b/.test(gateText),
@@ -836,26 +945,24 @@ export function checkDocs() {
     claim(`${REL.anatomiya}/lib/gates.mjs`, GATES[dead] === undefined, `${dead} is back in GATES; it was replaced by a repository-relative rule`);
     claim("docs", !gateText.includes(dead), `the docs still name ${dead}, which the gates no longer read`);
   }
+}
 
-  // --- the caveat codes -------------------------------------------------------
+// --- the caveat codes -------------------------------------------------------
 
-  // The codes became a public surface the day `--format json` printed them, so
-  // the table documenting them is held to the code in both directions: an
-  // undocumented code is a field a CI job cannot branch on, and a documented one
-  // that no longer exists is a branch nothing will ever take.
-  function caveatSection(text) {
-    const start = text.indexOf("### The caveat codes");
-    claim("docs/how-it-works.md", start !== -1, "has no ### The caveat codes section to read");
-    if (start === -1) return "";
-    // To the next heading of either level, so the window is this subsection
-    // rather than whatever is written after it. It is the last of section 8
-    // today, which is the only reason stopping at the next `##` read the same.
-    const next = text.slice(start).search(/\n#{2,3} /);
-    return next === -1 ? text.slice(start) : text.slice(start, start + next);
-  }
+// The codes became a public surface the day `--format json` printed them, so
+// the table documenting them is held to the code in both directions: an
+// undocumented code is a field a CI job cannot branch on, and a documented one
+// that no longer exists is a branch nothing will ever take.
+function caveatCodes({ docs, claim }) {
+  const text = docs.read("docs/how-it-works.md");
+  const start = text.indexOf("### The caveat codes");
+  claim("docs/how-it-works.md", start !== -1, "has no ### The caveat codes section to read");
+  // To the next heading of either level, so the window is this subsection
+  // rather than whatever is written after it. It is the last of section 8
+  // today, which is the only reason stopping at the next `##` read the same.
+  const next = start === -1 ? -1 : text.slice(start).search(/\n#{2,3} /);
+  const caveatText = start === -1 ? "" : next === -1 ? text.slice(start) : text.slice(start, start + next);
 
-  const codes = new Set(Object.values(CAVEATS));
-  const caveatText = caveatSection(read("docs/how-it-works.md"));
   const documented = new Set([...caveatText.matchAll(/^\| `([a-z-]+)` \|/gm)].map((m) => m[1]));
   for (const code of codes) {
     claim("docs/how-it-works.md", documented.has(code), `does not document the caveat code ${code}`);
@@ -871,15 +978,18 @@ export function checkDocs() {
     new RegExp(`There\\s+are ${codes.size}\\.`).test(caveatText),
     `does not say there are ${codes.size} caveat codes`
   );
+}
 
-  // --- the severity reasons ---------------------------------------------------
+// --- the severity reasons ---------------------------------------------------
 
-  // An agent relays a finding's reason line as fact, and the severity table is
-  // where a reader looks it up, so each row quotes every reason check prints at
-  // that severity. Read from the source because the reasons are built inline.
-  // A `${...}` in a reason is any placeholder the row spells, such as N or <area>.
-  const walkthroughLines = read("docs/how-it-works.md").split(/\r?\n/);
-  const checkSource = read(`${REL.anatomiya}/lib/check.mjs`);
+// An agent relays a finding's reason line as fact, and the severity table is
+// where a reader looks it up, so each row quotes every reason check prints at
+// that severity. Read from the source because the reasons are built inline.
+// A `${...}` in a reason is any placeholder the row spells, such as N or <area>.
+function severityReasons({ docs, claim }) {
+  const walkthroughLines = docs.read("docs/how-it-works.md").split(/\r?\n/);
+  // The ladders sit in `verdict.mjs`; `check.mjs` is read too, so a reason written there as a literal is held as well.
+  const checkSource = `${docs.read(`${REL.anatomiya}/lib/verdict.mjs`)}\n${docs.read(`${REL.anatomiya}/lib/check.mjs`)}`;
   const reasons = checkSource.matchAll(
     /severity: "(NIT|FIX|MUST-FIX)",\s*reason: (?:"([^"]*)"|`([^`]*)`)/g
   );
@@ -899,22 +1009,24 @@ export function checkDocs() {
     );
   }
   // A pattern that matches nothing passes every reason it never read.
-  claim(`${REL.anatomiya}/lib/check.mjs`, reasonsRead > 0, "no severity reason was read: the pattern that finds them matched nothing");
+  claim(`${REL.anatomiya}/lib/verdict.mjs`, reasonsRead > 0, "no severity reason was read: the pattern that finds them matched nothing");
   // A reason held in a constant is one the table is never checked against.
   const reasonSites = checkSource.match(/severity: "(?:NIT|FIX|MUST-FIX)",\s*reason:/g)?.length ?? 0;
   claim(
-    `${REL.anatomiya}/lib/check.mjs`,
+    `${REL.anatomiya}/lib/verdict.mjs`,
     reasonsRead === reasonSites,
     `severity reasons this cannot read, not written as a literal: ${reasonSites - reasonsRead} of ${reasonSites}`
   );
+}
 
-  // --- what a scan leaves in the working tree ---------------------------------
+// --- what a scan leaves in the working tree ---------------------------------
 
+function workingTree({ docs, claim }) {
   // The README spells these by hand, and nothing read them: adding another thing
   // a scan writes without adding its line leaves a reader with a dirty
   // `git status` and a document that says the opposite.
   for (const line of EXCLUDE_LINES) {
-    claim("README.md", read("README.md").includes(`'${line}'`), `does not tell a reader to exclude ${line}`);
+    claim("README.md", docs.read("README.md").includes(`'${line}'`), `does not tell a reader to exclude ${line}`);
   }
 
   // The `.worktreeinclude` a worktree Claude Code makes is copied from. The
@@ -924,32 +1036,25 @@ export function checkDocs() {
   // name that checkout, so the pin line is what keeps the copied map beside
   // the pin it was checked against everywhere else. Read as lines, since git on
   // Windows checks the README out with CRLF endings.
-  const readmeLines = new Set(read("README.md").split(/\r?\n/));
+  const readmeLines = new Set(docs.read("README.md").split(/\r?\n/));
   for (const path of [`${RULES_DIR}/${PREFIX}*.md`, FACTS_PATH, LAYOUT_PATH, PIN_PATH]) {
     claim("README.md", readmeLines.has(`**/${path}`), `does not have a worktree Claude Code makes copy ${path}`);
   }
+}
 
-  // --- the command surface ----------------------------------------------------
+// --- the command surface ----------------------------------------------------
 
-  const usage = execFileSync(process.execPath, [join(root, `${REL.anatomiya}/bin/anatomiya.mjs`), "--help"], {
-    encoding: "utf8",
-  });
-  const commands = [...usage.matchAll(/anatomiya\s+(\w+)/g)].map((m) => m[1]);
-  const unique = [...new Set(commands)];
-
-  for (const cmd of unique) {
-    let file;
-    try {
-      file = read(`${REL.anatomiya}/commands/${cmd}.md`);
-    } catch {
-      problems.push(`${REL.anatomiya}/commands/: ${cmd} is in the usage line and has no command file`);
-      continue;
-    }
-    claim(`${REL.anatomiya}/commands/${cmd}.md`, file.trim().length > 0, "is empty");
+// Runs the binary, so it asks nothing of documents held as strings.
+function commandSurface({ docs, claim, commands, commandDocs, topDocs }) {
+  if (docs.root === null) return;
+  for (const cmd of commands()) {
+    const file = docs.readOr(`${REL.anatomiya}/commands/${cmd}.md`, null);
+    claim(`${REL.anatomiya}/commands/`, file !== null, `${cmd} is in the usage line and has no command file`);
+    if (file !== null) claim(`${REL.anatomiya}/commands/${cmd}.md`, file.trim().length > 0, "is empty");
   }
 
-  const readme = read("README.md");
-  for (const cmd of unique) {
+  const readme = docs.read("README.md");
+  for (const cmd of commands()) {
     claim("README.md", readme.includes(`/anatomiya:${cmd}`), `does not mention /anatomiya:${cmd}`);
   }
 
@@ -961,20 +1066,14 @@ export function checkDocs() {
   // and answers with the usage, writing nothing, once everything before it
   // parsed.
   const INVOCATION = /node (?:"\$\{CLAUDE_PLUGIN_ROOT\}\/|plugins\/anatomiya\/)bin\/anatomiya\.mjs"?([^`\n]*)/g;
-  const commandDocs = readdirSync(join(root, REL.anatomiya, "commands"))
-    .filter((f) => f.endsWith(".md"))
-    .map((f) => `${REL.anatomiya}/commands/${f}`);
-  const topDocs = readdirSync(join(root, "docs"))
-    .filter((f) => f.endsWith(".md"))
-    .map((f) => `docs/${f}`);
   const parsed = new Map();
-  for (const rel of ["README.md", "CONTRIBUTING.md", ...topDocs, ...commandDocs]) {
-    for (const m of read(rel).matchAll(INVOCATION)) {
+  for (const rel of ["README.md", "CONTRIBUTING.md", ...topDocs(), ...commandDocs()]) {
+    for (const m of docs.read(rel).matchAll(INVOCATION)) {
       const args = m[1].trim().split(/\s+/).filter(Boolean);
       const key = args.join(" ");
       if (!parsed.has(key)) {
         try {
-          execFileSync(process.execPath, [join(root, `${REL.anatomiya}/bin/anatomiya.mjs`), ...args, "--help"], {
+          execFileSync(process.execPath, [docs.at(`${REL.anatomiya}/bin/anatomiya.mjs`), ...args, "--help"], {
             encoding: "utf8",
             stdio: "pipe",
           });
@@ -987,48 +1086,53 @@ export function checkDocs() {
       claim(rel, refused === null, `runs "anatomiya.mjs ${key}", which the CLI refuses: ${refused}`);
     }
   }
+}
 
-  // --- the glossary -----------------------------------------------------------
+// --- the glossary -----------------------------------------------------------
 
-  // Shape only. The one claim here that reaches the code is the entry spelling
-  // out a closed set the code owns: a sixth parse outcome reaches a reader as a
-  // word the glossary does not hold, and nothing else would say so.
-  const glossary = readGlossary(read("CONTEXT.md"));
-  for (const problem of glossary.problems) claim("CONTEXT.md", false, problem);
+// Shape only. The one claim here that reaches the code is the entry spelling
+// out a closed set the code owns: a sixth parse outcome reaches a reader as a
+// word the glossary does not hold, and nothing else would say so.
+function glossaryShape({ claim, glossary }) {
+  for (const problem of glossary().problems) claim("CONTEXT.md", false, problem);
 
-  const unexamined = glossary.terms.get("Unexamined");
+  const unexamined = glossary().terms.get("Unexamined");
   claim("CONTEXT.md", unexamined !== undefined, "has no Unexamined entry, which is where a file's outcomes are named");
   if (unexamined) {
     const unnamed = PARSE_OUTCOMES.filter((outcome) => !new RegExp(`\\b${outcome}\\b`).test(unexamined.body));
     claim("CONTEXT.md", unnamed.length === 0, `Unexamined does not name ${unnamed.join(", ")}, which parse.mjs counts a file as`);
   }
+}
 
-  // --- the intake table -------------------------------------------------------
+// --- the intake table -------------------------------------------------------
 
-  // A dimension that ships without an intake row is one nobody decided to build:
-  // the collapse, the rename and the drop were never asked about it. The README's
-  // dimension count has already drifted once, and this is the same failure with a
-  // worse consequence, so the table is checked rather than trusted.
-  const intake = readIntake(read("docs/dimension-intake.md"));
-  for (const p of intake.problems) claim("docs/dimension-intake.md", false, p);
+// A dimension that ships without an intake row is one nobody decided to build:
+// the collapse, the rename and the drop were never asked about it. The README's
+// dimension count has already drifted once, and this is the same failure with a
+// worse consequence, so the table is checked rather than trusted.
+function intakeTable({ claim, intake }) {
+  for (const p of intake().problems) claim("docs/dimension-intake.md", false, p);
 
   // Two rows claiming one entry print the same three numbers twice under two
   // names, which is the duplication the collapse exists to stop.
   const absorbedBy = new Map();
-  for (const r of intake.rows) {
+  for (const r of intake().rows) {
     for (const entry of r.absorbs) {
       const previous = absorbedBy.get(entry);
       claim("docs/dimension-intake.md", previous === undefined, `"${entry}" is absorbed by both ${previous} and ${r.key ?? "a dropped row"}`);
       absorbedBy.set(entry, r.key ?? "a dropped row");
     }
   }
+}
 
-  // --- the sites a new registry key has to reach ------------------------------
+// --- the sites a new registry key has to reach ------------------------------
 
+/** What each registry key still owes of the sites a row has to reach, by key. */
+function owedSites({ docs, intake }) {
   const sites = {
-    defaults: new Set(Object.keys(JSON.parse(read(`${REL.anatomiya}/lib/model-defaults.json`)))),
-    intake: new Map(intake.rows.filter((r) => r.key).map((r) => [r.key, r])),
-    dropped: new Set(intake.rows.filter((r) => r.status === "dropped" && r.key).map((r) => r.key)),
+    defaults: new Set(Object.keys(JSON.parse(docs.read(`${REL.anatomiya}/lib/model-defaults.json`)))),
+    intake: new Map(intake().rows.filter((r) => r.key).map((r) => [r.key, r])),
+    dropped: new Set(intake().rows.filter((r) => r.status === "dropped" && r.key).map((r) => r.key)),
     eligible: new Set(ELIGIBLE),
     refused: new Set(REFUSED),
   };
@@ -1038,31 +1142,35 @@ export function checkDocs() {
     const missing = sitesOwed(row, sites);
     if (missing.length) owed.set(row.key, missing);
   }
+  return owed;
+}
 
-  // --- runtime dependencies ---------------------------------------------------
+// --- runtime dependencies ---------------------------------------------------
 
-  // SECURITY.md said "oxc-parser is the only runtime dependency" for as long as
-  // there were two of them. A reader deciding whether to run this on a work
-  // repository is reading exactly that sentence, so the set is checked rather
-  // than trusted.
-  // The plugin's own manifest, not the marketplace's: the root declares the
-  // workspaces and no dependency of its own, so read from there the count was
-  // zero and every document that names one still said two.
-  const deps = Object.keys(JSON.parse(read(`${REL.anatomiya}/package.json`)).dependencies ?? {});
+// SECURITY.md said "oxc-parser is the only runtime dependency" for as long as
+// there were two of them. A reader deciding whether to run this on a work
+// repository is reading exactly that sentence, so the set is checked rather
+// than trusted.
+// The plugin's own manifest, not the marketplace's: the root declares the
+// workspaces and no dependency of its own, so read from there the count was
+// zero and every document that names one still said two.
+function runtimeDependencies({ docs, claim, deps }) {
   for (const doc of ["SECURITY.md", "README.md"]) {
-    const text = read(doc);
-    for (const dep of deps) claim(doc, text.includes(dep), `does not name the runtime dependency ${dep}`);
-    claim(doc, !/only runtime dependency/.test(text), `says "only runtime dependency" with ${deps.length} of them`);
+    const text = docs.read(doc);
+    for (const dep of deps()) claim(doc, text.includes(dep), `does not name the runtime dependency ${dep}`);
+    claim(doc, !/only runtime dependency/.test(text), `says "only runtime dependency" with ${deps().length} of them`);
   }
+}
 
-  // --- the engines and the grammars --------------------------------------------
+// --- the engines and the grammars --------------------------------------------
 
-  // Each of these is a count a third engine moved, and none was read: "two
-  // runtime dependencies" stood in four documents beside a manifest declaring
-  // three.
+// Each of these is a count a third engine moved, and none was read: "two
+// runtime dependencies" stood in four documents beside a manifest declaring
+// three.
+function enginesAndGrammars({ docs, claim, deps, rowsRead, commandDocs }) {
   const hosted = hostedBy("tree-sitter").length;
   const COUNTS = [
-    [`(${N})\\s+runtime\\s+dependencies`, deps.length, (n) => `the plugin's manifest declares ${n}`],
+    [`(${N})\\s+runtime\\s+dependencies`, deps().length, (n) => `the plugin's manifest declares ${n}`],
     [`(${N})\\s+parser\\s+engines`, Object.keys(ENGINES).length, (n) => `the registry declares ${n}`],
     [`(${N})\\s+node-hosted\\s+engines`, Object.values(ENGINES).filter((e) => e.host === "node").length, (n) => `the registry declares ${n} hosted by node`],
     // Told apart by the document: a build contract row says "spans two engines"
@@ -1071,10 +1179,10 @@ export function checkDocs() {
     [`(${N})\\s+(?:vendored\\s+)?grammar(?:s|\\s+files|\\s+packages)\\b`, hosted, (n) => `the registry routes ${n} languages to tree-sitter`],
     [`The registry holds (${N}) declarations`, LANGUAGES.length, (n) => `the registry holds ${n}`],
   ];
-  const rowDocs = [...rowsRead.keys()].map((name) => `${DECISIONS_DIR}/${name}.md`);
-  const stating = ["README.md", "docs/usage.md", "SECURITY.md", "CONTRIBUTING.md", "CONTEXT.md", "DECISIONS.md", ...rowDocs, "CHANGELOG.md", "docs/how-it-works.md", `${REL.anatomiya}/README.md`, ...commandDocs];
+  const rowDocs = [...rowsRead().keys()].map((name) => `${DECISIONS_DIR}/${name}.md`);
+  const stating = ["README.md", "docs/usage.md", "SECURITY.md", "CONTRIBUTING.md", "CONTEXT.md", "DECISIONS.md", ...rowDocs, "CHANGELOG.md", "docs/how-it-works.md", `${REL.anatomiya}/README.md`, ...commandDocs()];
   for (const rel of stating) {
-    const text = rel === "CHANGELOG.md" ? unreleased(read(rel)) : read(rel);
+    const text = rel === "CHANGELOG.md" ? unreleased(docs.read(rel)) : docs.read(rel);
     for (const [phrasing, held, source, pairsIn] of COUNTS) {
       if (pairsIn?.(rel)) continue;
       for (const m of text.matchAll(new RegExp(phrasing, "gi"))) {
@@ -1086,7 +1194,7 @@ export function checkDocs() {
   // The table section 10 prints, held to what doctor asks: an engine added to
   // the registry prints a line the day it lands, and a reader looking its row
   // up found four where doctor printed five.
-  const readiness = read("docs/how-it-works.md");
+  const readiness = docs.read("docs/how-it-works.md");
   const from = readiness.indexOf("## 10. Readiness and setup");
   claim("docs/how-it-works.md", from !== -1, "has no ## 10. Readiness and setup section to read the readiness table from");
   const tabled = new Set([...readiness.slice(Math.max(from, 0)).matchAll(/^\| `([a-z-]+)` \|/gm)].map((m) => m[1]));
@@ -1096,45 +1204,46 @@ export function checkDocs() {
 
   // The grammars are the one dependency a user runs that no manifest of theirs
   // lists, so the document a reader vets this tool by names each at its version.
-  const vendored = readJson(`${REL.anatomiya}/grammars/grammars.json`);
+  const vendored = docs.readJson(`${REL.anatomiya}/grammars/grammars.json`);
   claim(`${REL.anatomiya}/grammars/grammars.json`, Array.isArray(vendored.value), vendored.problem ?? "is not a list of grammars");
   for (const grammar of Array.isArray(vendored.value) ? vendored.value : []) {
     const named = `${grammar.package}@${grammar.version}`;
-    claim("SECURITY.md", read("SECURITY.md").includes(`\`${named}\``), `does not name the grammar package ${named}`);
+    claim("SECURITY.md", docs.read("SECURITY.md").includes(`\`${named}\``), `does not name the grammar package ${named}`);
   }
+}
 
-  // --- committed documents carry no local path --------------------------------
+// --- committed documents carry no local path --------------------------------
 
-  // The first A/B result committed here carried /Users/<name>/Documents/... into
-  // a public repository, in its title and in its table. Where a clone sat on the
-  // machine that ran something is not part of the record, and nobody else can
-  // check it. Measurements are generated, so the generator was fixed too; this is
-  // the net under it.
-  for (const rel of readdirSync(join(root, "docs/measurements")).filter((f) => f.endsWith(".md"))) {
-    const text = read(join("docs/measurements", rel));
-    const hit = text.match(/(?<![\w.-])(?:\/Users|\/home|[A-Za-z]:[\\/]+[Uu]sers)[\\/]+[^\s\\/]+/);
+// The first A/B result committed here carried /Users/<name>/Documents/... into
+// a public repository, in its title and in its table. Where a clone sat on the
+// machine that ran something is not part of the record, and nobody else can
+// check it. Measurements are generated, so the generator was fixed too; this is
+// the net under it. A generated document never spells the README's placeholder,
+// so the shape of a home directory alone is enough here.
+function measurementPaths({ docs, claim }) {
+  for (const rel of docs.list("docs/measurements").filter((f) => f.endsWith(".md"))) {
+    const text = docs.read(`docs/measurements/${rel}`);
+    const hit = text.match(HOME_PATH);
     claim(`docs/measurements/${rel}`, !hit, `carries the local path ${hit ? hit[0] : ""}`);
   }
+}
 
+// --- committed documents name paths this repository has ---------------------
 
-  // --- committed documents name paths this repository has ---------------------
-
-  // Moving two plugins under `plugins/` left 68 sentences pointing at files that
-  // had gone, in the contributor guide, the security notes and the build
-  // contract. Nothing read them, because a number that drifts fails a gate here
-  // and a path that drifts failed nothing.
-  // Git's list rather than a walk, because the local working directories a tool
-  // leaves behind are full of paths that were never this repository's, and
-  // because a tree git cannot answer for is not this repository: the gate runs on
-  // a checkout, and there is nothing there to check a path against. That is a
-  // failure and never a pass: with no list, every check below reads nothing and
-  // the summary line says the documents match.
-  const listed = repositoryFiles();
-  claim("git", Array.isArray(listed), `could not list the files here, so no path a document names was read against the tree: ${listed.error}`);
-  const tracked = new Set(Array.isArray(listed) ? listed : []);
+// Moving two plugins under `plugins/` left 68 sentences pointing at files that
+// had gone, in the contributor guide, the security notes and the build
+// contract. Nothing read them, because a number that drifts fails a gate here
+// and a path that drifts failed nothing.
+// Git's list rather than a walk, because the local working directories a tool
+// leaves behind are full of paths that were never this repository's, and
+// because a tree git cannot answer for is not this repository: the gate runs on
+// a checkout, and there is nothing there to check a path against. That is a
+// failure and never a pass: with no list, every check below reads nothing and
+// the summary line says the documents match.
+function trackedDocuments({ docs, claim, listed, tracked, glossary, record }) {
+  claim("git", Array.isArray(listed()), `could not list the files here, so no path a document names was read against the tree: ${listed().error}`);
   // The same leak the measurements are checked for, from the other kind of
-  // document. A generated one never spells a placeholder, so the shape of a home
-  // directory is enough there; a hand-written one does, and `/Users/me/code/app`
+  // document. A hand-written one spells the placeholder, and `/Users/me/code/app`
   // in the README is how the output is shown to a reader. What may never ship is
   // this machine's own home, which is the one that got into a public repository
   // before: a note written while reading an installed build carried it nine
@@ -1149,9 +1258,9 @@ export function checkDocs() {
     HOME && HOME.length > 3
       ? new RegExp(`(?<![\\w.-])(?<![A-Za-z]:)${HOME.split(/[\\/]+/).map(escapeRe).join(sep)}(?![\\w-])(?!\\.[\\w-])`, process.platform === "linux" ? "" : "i")
       : null;
-  for (const rel of tracked) {
+  for (const rel of tracked()) {
     if (rel.endsWith(".wasm")) continue;
-    const text = read(rel);
+    const text = docs.read(rel);
     if (HOME_AT) claim(rel, !HOME_AT.test(text), "carries the path of the machine it was written on");
     if (!rel.endsWith(".md") || THIRD_PARTY.has(rel)) continue;
     claim(rel, !BUILD_OFFSET.test(text), "quotes a byte offset into a build");
@@ -1160,44 +1269,46 @@ export function checkDocs() {
     const named = rel.startsWith("docs/measurements/") ? null : text.match(HOME_SHAPED);
     claim(rel, !named, `names the home directory ${named?.[0]}`);
     if (RECORDS_THE_PAST.some((r) => r.test(rel))) continue;
-    for (const { spelled, now, several } of pathsThatMoved(CHANGELOG.test(rel) ? unreleased(text) : text, rel, tracked)) {
+    for (const { spelled, now, several } of pathsThatMoved(CHANGELOG.test(rel) ? unreleased(text) : text, rel, tracked())) {
       claim(rel, false, several ? `names \`${spelled}\`, which is these files now: ${now}` : `names \`${spelled}\`, which is \`${now}\` now`);
     }
   }
   // CONTRIBUTING bars a word on an `_Avoid_` line from a claim, a test name and a comment, and the
   // documents keep to it as well.
-  const written = [...tracked].filter((rel) => /\.(?:md|mjs)$/.test(rel) && rel !== "CONTEXT.md" && !THIRD_PARTY.has(rel));
-  for (const { rel, line, word, term } of avoidedWords(glossary.terms, written.map((rel) => [rel, CHANGELOG.test(rel) ? unreleased(read(rel)) : read(rel)]))) {
+  const written = [...tracked()].filter((rel) => /\.(?:md|mjs)$/.test(rel) && rel !== "CONTEXT.md" && !THIRD_PARTY.has(rel));
+  for (const { rel, line, word, term } of avoidedWords(glossary().terms, written.map((rel) => [rel, CHANGELOG.test(rel) ? unreleased(docs.read(rel)) : docs.read(rel)]))) {
     claim(`${rel}:${line}`, false, `says "${word}", a word the ${term} entry in CONTEXT.md displaces`);
   }
-  for (const { row, spelled } of doneFilesGone(record, tracked)) {
+  for (const { row, spelled } of doneFilesGone(record(), tracked())) {
     claim(`${DECISIONS_DIR}/${row}.md`, false, `names \`${spelled}\` as done, and no such file is here`);
   }
   // A comment cited two rows before either was written, and every check passed.
-  const rowIds = new Set(record.map((row) => row.id));
-  for (const { rel, cited } of rowsCitedInCode(rowIds, [...tracked].filter(citesRows).map((rel) => [rel, read(rel)]))) {
+  const rowIds = new Set(record().map((row) => row.id));
+  for (const { rel, cited } of rowsCitedInCode(rowIds, [...tracked()].filter(citesRows).map((rel) => [rel, docs.read(rel)]))) {
     claim(rel, false, `a comment cites ${cited}, and no row has that id`);
   }
+}
 
-  // --- versions ---------------------------------------------------------------
+// --- versions ---------------------------------------------------------------
 
-  // Every plugin the marketplace can release, not only the one at the root: the
-  // second plugin's version answered to nothing but semver, so it could move to a
-  // number no changelog described and the tag would be the first to say so, after
-  // it was pushed. `notesFor` is what the release itself runs, so a version that
-  // passes here is one that will tag.
+// Every plugin the marketplace can release, not only the one at the root: the
+// second plugin's version answered to nothing but semver, so it could move to a
+// number no changelog described and the tag would be the first to say so, after
+// it was pushed. `notesFor` is what the release itself runs, so a version that
+// passes here is one that will tag.
+function versions({ docs, claim }) {
   for (const release of RELEASES) {
     // Read through a guard the rest of this file does not need: every other path
     // here reads a file this repository is known to have, and these two are the
     // ones a release moves. One that is not there, or one that does not parse,
     // threw past the sentence naming it, which is the one thing the author needed.
-    const manifest = readJson(release.manifests[0]);
+    const manifest = docs.readJson(release.manifests[0]);
     claim(release.manifests[0], manifest.problem === null, manifest.problem ?? "");
 
     // Asked whatever the manifest did, so a plugin with two things wrong is told
     // both at once rather than one release at a time. A changelog that is not
     // there is that, rather than one missing a heading.
-    const changelog = readOr(release.changelog, null);
+    const changelog = docs.readOr(release.changelog, null);
     claim(release.changelog, changelog !== null, "is missing, so there is nothing to release this plugin with");
     if (changelog !== null) {
       claim(release.changelog, changelog.includes(UNRELEASED), `has no ${UNRELEASED} heading to write the next change under`);
@@ -1226,10 +1337,11 @@ export function checkDocs() {
     }
 
     // `notesFor` answers a missing changelog in its own wording, and the author
-    // has one file to put back either way.
-    if (changelog === null) continue;
+    // has one file to put back either way. It reads the tree, so documents held
+    // as strings end here.
+    if (changelog === null || docs.root === null) continue;
 
-    const answered = notesFor(root, tagFor(release, version));
+    const answered = notesFor(docs.root, tagFor(release, version));
     // Reported against the file the author has to edit: the changelog problems
     // `notesFor` returns are about the changelog, whatever read them. Its
     // sentences name that file, and `claim` names it again, so the leading path
@@ -1240,15 +1352,39 @@ export function checkDocs() {
     const said = answered.problem?.startsWith(`${about} `) ? answered.problem.slice(about.length + 1) : answered.problem;
     claim(about, answered.problem === null, said ?? "");
   }
+}
 
-  // ----------------------------------------------------------------------------
+// ----------------------------------------------------------------------------
+
+/**
+ * Every claim, run once over one reading of the tree, and what it found.
+ *
+ * A function rather than the module's own top level: importing a reader here
+ * used to run the whole gate, so the two tests that reach one spawned the
+ * binary for `--help`, ran `git ls-files` and read every document before
+ * their first assertion. `problems` and `claim` live inside it so a second
+ * call answers for itself.
+ */
+export function checkDocs(root = ROOT) {
+  const docs = documents(root);
+  const { problems, claim } = claims();
+
+  const absent = READS.filter((rel) => !docs.has(rel));
+  if (absent.length > 0) {
+    for (const rel of absent) problems.push(`${rel}: is missing, and this gate is every claim it makes`);
+    return { problems, owed: new Map(), summary: null };
+  }
+
+  const c = context(docs, claim);
+  for (const rule of Object.values(RULES)) rule(c);
+  const owed = owedSites(c);
 
   // Only where nothing failed: the line reads a manifest's version, and a
   // manifest that is not one was already claimed above.
   const summary = problems.length || owed.size ? null :
     `docs match the code: ${total} dimensions (${js} js, ${jsx} jsx, ${ruby} ruby, ${obligations} of them file-to-file obligations), ` +
-    `${unique.length} commands, ${codes.size} caveat codes, ${deps.length} runtime dependencies, ` +
-    `${intake.rows.length} intake rows, ${RELEASES.map((r) => `${r.plugin} ${JSON.parse(read(r.manifests[0])).version}`).join(" and ")}`;
+    `${c.commands().length} commands, ${codes.size} caveat codes, ${c.deps().length} runtime dependencies, ` +
+    `${c.intake().rows.length} intake rows, ${RELEASES.map((r) => `${r.plugin} ${JSON.parse(docs.read(r.manifests[0])).version}`).join(" and ")}`;
   return { problems, owed, summary };
 }
 

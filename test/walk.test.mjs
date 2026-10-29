@@ -2,7 +2,7 @@ import { test } from "node:test";
 import assert from "node:assert/strict";
 import { parseSync } from "oxc-parser";
 
-import { asks, walk, collectHits, fromVisitor, whereOf } from "../plugins/anatomiya/lib/walk.mjs";
+import { asks, walk, collectHits, FILE_FIELDS, fileContext, fromVisitor, whereOf } from "../plugins/anatomiya/lib/walk.mjs";
 import { doublingRatio, LINEAR } from "./growth.mjs";
 
 const { program } = parseSync(
@@ -379,4 +379,21 @@ test("a field a row emits that the boundary does not carry reaches neither the f
   const row = { key: "probe", run: (tree, add) => add({ conforming: 1, novel: "x", node: tree }) };
   assert.deepEqual(collectHits(program, [row]).probe, [{ conforming: true, where: null }]);
   assert.deepEqual(collectHits(program, [row], {}, { keepNode: true }).probe, [{ conforming: true, where: null, node: program }]);
+});
+
+test("every bridge hands a row one file context, every field present and null where the bridge has none", () => {
+  assert.deepEqual(fileContext({ rel: "a.rb", lang: "ruby" }), { rel: "a.rb", lang: "ruby", source: null, comments: [], facets: null });
+  assert.deepEqual(Object.keys(fileContext({ rel: "a.ts", lang: "js", source: "x", comments: [], facets: { empty: true } })), FILE_FIELDS);
+});
+
+test("a row declaring outsideTests is handed no node of a test file, and the file stays eligible", () => {
+  const { program } = parseSync("a.js", "export const a = 1;\n", { sourceType: "module" });
+  const row = (over = {}) => ({ key: "r", outsideTests: true, run: (_program, add) => add({ conforming: true, where: "a" }), ...over });
+  const at = (rel, dim) => collectHits(program, [dim], fileContext({ rel, lang: "js" }));
+  assert.deepEqual(at("src/a.js", row()), { r: [{ conforming: true, where: "a" }] });
+  assert.deepEqual(at("src/a.test.js", row()), {}, "a test by its name");
+  assert.deepEqual(at("src/__tests__/a.js", row()), {}, "a test by its directory, the one address `isTestFile` reads without a parse");
+  assert.deepEqual(at("test/fixtures/a.js", row()), { r: [{ conforming: true, where: "a" }] }, "a support file under a test tree is read as source");
+  assert.deepEqual(at("test/fixtures/a.js", row({ outsideTestTrees: true })), {}, "unless the row keeps off the whole tree");
+  assert.deepEqual(collectHits(program, [row()], fileContext({ rel: "src/a.test.js", lang: null })), { r: [{ conforming: true, where: "a" }] }, "no language, no rule");
 });
