@@ -10,7 +10,8 @@ import { asksById, exitsWhere, scriptGit, unaskedOn, unaskedWhere } from "./git-
 import { needsPosixPermissions, needsShebang, needsSymlinks, removeTree } from "./platform.mjs";
 import { installWithoutDependencies } from "./plugin-install.mjs";
 import { scratch } from "./git-worktrees.mjs";
-import { runCheck, runDoctor, runFind, runPin, runScan, runSetup } from "../plugins/anatomiya/lib/commands.mjs";
+import { runCheck, runDoctor, runPin, runScan, runSetup } from "../plugins/anatomiya/lib/commands.mjs";
+import { runFind } from "../plugins/anatomiya/lib/find-command.mjs";
 import { pinJson, pinLines, scanLines } from "../plugins/anatomiya/lib/summary.mjs";
 import { PIN_PATH, readPin } from "../plugins/anatomiya/lib/baseline.mjs";
 import { Unasked } from "../plugins/anatomiya/lib/git.mjs";

@@ -2,15 +2,19 @@
  * Whether the echo delivers the map on this call: once per 192 KiB of what the
  * model reads, and once per parallel batch of calls (A92).
  *
- * The map, its digest and the stamp are `hook.mjs`'s; this decides only from
- * the digest, the window's transcript and the plugin's data directory, so the
- * replay over kept transcripts walks the window the way a call does.
+ * `echoContext` builds what a call delivers, the map under its stamp and its
+ * digest, and `echoDue` decides from the digest, the window's transcript and the
+ * plugin's data directory alone, so the replay over kept transcripts walks the
+ * window the way a call does.
  */
 import { createHash } from "node:crypto";
 import { lstatSync, mkdirSync, unlinkSync } from "node:fs";
 import { dirname, isAbsolute, join } from "node:path";
 
-import { namesIn, readHead } from "./rules.mjs";
+import { locator } from "./encode.mjs";
+import { refreshRecord } from "./facts.mjs";
+import { ownMap } from "./hook.mjs";
+import { namesIn, readHead, RULES_DIR } from "./rules.mjs";
 import { createdAlone, mtimeAge, takeDeadLock } from "./lock.mjs";
 import { atomic, quietUnlink } from "./store.mjs";
 import { echoEventOf, parsed, transcriptTail, windowBytes } from "./transcript.mjs";
@@ -148,3 +152,79 @@ function sweep(dir, kept) {
     }
   }
 }
+
+/**
+ * The map as a hook would deliver it, or null where there is none to deliver or
+ * the session's context window already holds this same map (A92).
+ *
+ * Null rather than a note about the absence: a repository nobody has scanned is
+ * the ordinary case, and saying so on every tool call is worse than silence.
+ */
+export function echoContext(root, { now = new Date(), transcript = null, data = null } = {}) {
+  const found = ownMap(root);
+  if (found === null) return null;
+
+  // The frontmatter is how the file is delivered, not what it says. A leading
+  // BOM and CRLF are both read, the way `isOwned` reads them one module over:
+  // a map re-saved on Windows carries both, and a strip that misses them puts
+  // `generator: anatomiya` into the echoed body as if it were content.
+  const body = found.map.replace(/^﻿?---[ \t]*\r?\n[\s\S]*?\r?\n---[ \t]*\r?\n/, "").trim();
+  if (body === "") return null;
+
+  // Where the counts came from is part of what was delivered, so a worktree
+  // scanned after it borrowed hears its own stamp even when the body matches.
+  const hash = createHash("sha256").update(body);
+  if (found.from !== null) hash.update(`\0${found.from}`);
+  // A failed refresh changes what the delivery says, so a window holding the
+  // healthy map hears it again. Only the flag is read: the error text is the
+  // repository's own and never reaches the context.
+  const failed = refreshFailed(found.from ?? found.root);
+  if (failed) hash.update("\0refresh-failed");
+  const digest = hash.digest("hex").slice(0, 12);
+  if (!echoDue({ digest, transcript, data })) return null;
+
+  // The remedy is the plugin's own command, which is the one spelling a model
+  // can run: the binary is `anatomiya.mjs` under a directory only the plugin
+  // loader knows, and a bare `anatomiya` is on nobody's PATH. Both stamps name
+  // where the counts came from, because a call about another checkout's file
+  // is answered from that checkout's map (H40), and a session holding two
+  // maps that each said only "this repository" could not tell them apart. The
+  // digest stays the body's: two maps with one body state the same things.
+  const stamp =
+    found.from === null
+      ? [
+          `Counted from this repository's own code at ${locator(found.root)} and re-read just now.`,
+          "Where this and the code disagree, the code is right and the map is stale:",
+          "run `/anatomiya:scan` rather than believing this.",
+        ]
+      : [
+          `Counted from this repository's main checkout at ${locator(found.from)}, not this worktree, and re-read just now.`,
+          `The area files it names are under ${locator(join(found.from, RULES_DIR))}, not in this worktree, so read them there.`,
+          "Where this and the code here disagree, the code is right:",
+          "run `/anatomiya:scan` in this worktree for its own counts.",
+        ];
+
+  // Where the map is borrowed, the refresh that failed is the main checkout's,
+  // and a scan here would build this worktree a map of its own instead.
+  if (failed) {
+    stamp.push(
+      found.from === null
+        ? "The last automatic refresh of this map failed, so it may be behind the code:"
+        : "The last automatic refresh of this map failed in the main checkout, so it may be behind the code:",
+      found.from === null
+        ? "run `/anatomiya:scan` to rebuild it and see why."
+        : "run `/anatomiya:scan` in the main checkout to rebuild it and see why."
+    );
+  }
+
+  return [
+    `<repository-map delivered="${now.toISOString()}" digest="${digest}">`,
+    ...stamp,
+    "",
+    body,
+    "</repository-map>",
+  ].join("\n");
+}
+
+/** Whether the refresh worker's last run in this checkout failed: anything but an explicit `ok: false` reads as no failure. */
+const refreshFailed = (root) => refreshRecord(root)?.ok === false;

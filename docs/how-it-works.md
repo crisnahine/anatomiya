@@ -1499,7 +1499,7 @@ A workflow stage's carries no `toolUseResult` copy of each tool result and runs 
 token, so there the window is about 46k tokens.
 Anything the hook cannot read answers with a delivery. The decision is one function, `echoDue` in
 `echo.mjs`, over the map's digest, the window's transcript and the plugin's data directory; the map,
-its digest and the stamp around it stay in `hook.mjs`. What a transcript record says, a delivery, a
+its digest and the stamp around it are `echoContext` beside it, loaded inside the echo verb alone. What a transcript record says, a delivery, a
 compaction or bytes the model reads, is read in `transcript.mjs`, which the end-of-turn check reads
 its own moments through too (A116, A119).
 

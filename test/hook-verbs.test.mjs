@@ -88,7 +88,7 @@ test("the map a call is answered with is the one for the repository the call is 
   // under the line saying it was counted from this repository's own code.
   const parent = await siblings(t);
 
-  const answered = runEcho(join(parent, "beta"), read(join(parent, "alpha/src/core/a.js")));
+  const answered = await runEcho(join(parent, "beta"), read(join(parent, "alpha/src/core/a.js")));
 
   assert.match(answered.hookSpecificOutput.additionalContext, /src\/core: 6 \.js/);
   assert.doesNotMatch(answered.hookSpecificOutput.additionalContext, /lib\/widgets/);
@@ -101,9 +101,9 @@ test("a call that names no path is still answered from where the session is", as
   const parent = await siblings(t);
   const ran = { hook_event_name: "PostToolUse", tool_name: "Bash", tool_input: { command: "ls" } };
 
-  assert.match(runEcho(join(parent, "beta"), ran).hookSpecificOutput.additionalContext, /lib\/widgets: 6 \.js/);
-  assert.match(runEcho(join(parent, "alpha"), ran).hookSpecificOutput.additionalContext, /src\/core: 6 \.js/);
-  assert.deepEqual(runEcho(parent, ran), {}, "and a parent that is no repository still answers nothing");
+  assert.match((await runEcho(join(parent, "beta"), ran)).hookSpecificOutput.additionalContext, /lib\/widgets: 6 \.js/);
+  assert.match((await runEcho(join(parent, "alpha"), ran)).hookSpecificOutput.additionalContext, /src\/core: 6 \.js/);
+  assert.deepEqual(await runEcho(parent, ran), {}, "and a parent that is no repository still answers nothing");
 });
 
 test("the notice answers for the repository the write is going into, not the one the shell is in", async (t) => {
@@ -129,7 +129,7 @@ test("a notebook names its path under its own key, and is answered like any othe
     tool_input: { notebook_path: join(parent, "alpha/src/core/a.ipynb") },
   };
 
-  assert.match(runEcho(join(parent, "beta"), edit).hookSpecificOutput.additionalContext, /src\/core: 6 \.js/);
+  assert.match((await runEcho(join(parent, "beta"), edit)).hookSpecificOutput.additionalContext, /src\/core: 6 \.js/);
 });
 
 test("a search names a directory rather than a file, and is not taken a level above it", async (t) => {
@@ -144,7 +144,7 @@ test("a search names a directory rather than a file, and is not taken a level ab
     tool_input: { pattern: "**/*.js", path: join(parent, "alpha") },
   };
 
-  assert.match(runEcho(join(parent, "beta"), globbed).hookSpecificOutput.additionalContext, /src\/core: 6 \.js/);
+  assert.match((await runEcho(join(parent, "beta"), globbed)).hookSpecificOutput.additionalContext, /src\/core: 6 \.js/);
 });
 
 test("a path the payload spells relative is read against the directory the payload names", async (t) => {
@@ -163,7 +163,7 @@ test("a path the payload spells relative is read against the directory the paylo
     tool_input: { file_path: "../alpha/src/core/a.js" },
   };
 
-  const said = runEcho(parent, read).hookSpecificOutput.additionalContext;
+  const said = (await runEcho(parent, read)).hookSpecificOutput.additionalContext;
 
   assert.match(said, /src\/core: 6 \.js/);
   assert.doesNotMatch(said, /lib\/widgets/);
@@ -182,7 +182,7 @@ test("the working directory the payload carries is the one the agent is in", asy
     tool_input: { command: "ls" },
   };
 
-  assert.match(runEcho(join(parent, "beta"), ran).hookSpecificOutput.additionalContext, /src\/core: 6 \.js/);
+  assert.match((await runEcho(join(parent, "beta"), ran)).hookSpecificOutput.additionalContext, /src\/core: 6 \.js/);
 });
 
 test("the notice reads a relative target the same way the map does", async (t) => {
@@ -211,8 +211,8 @@ test("a file the call names outside any map leaves the session's own map standin
   const parent = await siblings(t);
   const outside = { hook_event_name: "PostToolUse", tool_name: "Read", tool_input: { file_path: "/etc/hosts" } };
 
-  assert.match(runEcho(join(parent, "alpha"), outside).hookSpecificOutput.additionalContext, /src\/core: 6 \.js/);
-  assert.deepEqual(runEcho(parent, outside), {}, "and a session in no repository still has none to stand");
+  assert.match((await runEcho(join(parent, "alpha"), outside)).hookSpecificOutput.additionalContext, /src\/core: 6 \.js/);
+  assert.deepEqual(await runEcho(parent, outside), {}, "and a session in no repository still has none to stand");
 });
 
 test("a search whose directory is reached through a link is still that directory", async (t) => {
@@ -225,7 +225,7 @@ test("a search whose directory is reached through a link is still that directory
   symlinkSync(join(parent, "alpha"), link, "dir");
   const globbed = { hook_event_name: "PostToolUse", tool_name: "Glob", tool_input: { pattern: "**/*.js", path: link } };
 
-  assert.match(runEcho(join(parent, "beta"), globbed).hookSpecificOutput.additionalContext, /src\/core: 6 \.js/);
+  assert.match((await runEcho(join(parent, "beta"), globbed)).hookSpecificOutput.additionalContext, /src\/core: 6 \.js/);
 });
 
 test("a checkout of its own is answered by itself, even when the answer is nothing", async (t) => {
@@ -241,7 +241,7 @@ test("a checkout of its own is answered by itself, even when the answer is nothi
   execFileSync("git", ["init", "-q"], { cwd: join(parent, "alpha/vendor/sub") });
   const read = { hook_event_name: "PostToolUse", tool_name: "Read", tool_input: { file_path: join(nested, "n.js") } };
 
-  assert.deepEqual(runEcho(join(parent, "alpha"), read), {});
+  assert.deepEqual(await runEcho(join(parent, "alpha"), read), {});
 });
 
 test("a mapped repository whose map says nothing is not handed another's", async (t) => {
@@ -256,7 +256,7 @@ test("a mapped repository whose map says nothing is not handed another's", async
     tool_input: { file_path: join(parent, "beta/lib/widgets/one.js") },
   };
 
-  assert.deepEqual(runEcho(join(parent, "alpha"), read), {});
+  assert.deepEqual(await runEcho(join(parent, "alpha"), read), {});
 });
 
 test("a path too long to name a place does not cost the turn its map", async (t) => {
@@ -267,7 +267,7 @@ test("a path too long to name a place does not cost the turn its map", async (t)
   const absurd = `/${"a/".repeat(3000)}b.js`;
   const read = { hook_event_name: "PostToolUse", tool_name: "Read", tool_input: { file_path: absurd } };
 
-  assert.match(runEcho(join(parent, "alpha"), read).hookSpecificOutput.additionalContext, /src\/core: 6 \.js/);
+  assert.match((await runEcho(join(parent, "alpha"), read)).hookSpecificOutput.additionalContext, /src\/core: 6 \.js/);
 });
 
 test("the notice answers for a test going where its kind of file has none", needsRuby, async (t) => {
@@ -305,7 +305,7 @@ test("a repository nobody has scanned is answered with an empty object by both h
   t.after(() => removeTree(dir));
 
   assert.deepEqual(await runNotice(dir, write(dir, "spec/mailers/x_spec.rb")), {});
-  assert.deepEqual(runEcho(dir, { hook_event_name: "UserPromptSubmit" }), {});
+  assert.deepEqual(await runEcho(dir, { hook_event_name: "UserPromptSubmit" }), {});
 });
 
 /** A linked worktree of a checkout, which carries none of its untracked `.claude/`. */
@@ -324,7 +324,7 @@ test("a linked worktree with no map of its own is answered from its main checkou
   assert.match(said.hookSpecificOutput.additionalContext, /app\/mailers: 0 of 4 \.rb files have a namesake test/);
   assert.ok(said.hookSpecificOutput.additionalContext.endsWith(`\n  Counted from this repository's main checkout at ${realpathSync.native(dir)}, not this worktree.`), "it names where the counts were taken");
 
-  const echoed = runEcho(wt, read(join(wt, "app/mailers/admin_mailer.rb"))).hookSpecificOutput.additionalContext;
+  const echoed = (await runEcho(wt, read(join(wt, "app/mailers/admin_mailer.rb")))).hookSpecificOutput.additionalContext;
   assert.match(echoed, /# Repository map/);
   assert.ok(echoed.includes(`main checkout at ${realpathSync.native(dir)}`), "the stamp does not claim this worktree's own code");
   assert.doesNotMatch(echoed, /Counted from this repository's own code/);
@@ -377,7 +377,7 @@ test("a worktree that was scanned answers with its own map, not its main checkou
   const wt = worktreeOf(t, dir);
   await runScan(wt, {});
 
-  const echoed = runEcho(wt, read(join(wt, "app/mailers/admin_mailer.rb"))).hookSpecificOutput.additionalContext;
+  const echoed = (await runEcho(wt, read(join(wt, "app/mailers/admin_mailer.rb")))).hookSpecificOutput.additionalContext;
   assert.match(echoed, /Counted from this repository's own code/);
   assert.ok(!echoed.includes("main checkout"));
   assert.doesNotMatch((await runNotice(wt, write(wt, "spec/mailers/invoice_mailer_spec.rb"))).hookSpecificOutput.additionalContext, /main checkout/);
@@ -392,7 +392,7 @@ test("both hooks answer a payload when this process has no working directory", n
   // naming live paths.
   const dir = await railsish(t);
 
-  const out = runEcho(undefined, {
+  const out = await runEcho(undefined, {
     hook_event_name: "PostToolUse",
     tool_name: "Read",
     cwd: dir,
@@ -408,57 +408,57 @@ test("a payload that names no place, with no working directory either, is silenc
   // The fallback is the only base such a payload has, and there is none. Both
   // hooks answer the empty object; the guard in the bin would turn a throw into
   // the same object, so the difference this holds is that nothing threw.
-  assert.deepEqual(runEcho(undefined, { hook_event_name: "UserPromptSubmit" }), {});
-  assert.deepEqual(runEcho(undefined, { hook_event_name: "PostToolUse", tool_name: "Bash", tool_input: { command: "ls" } }), {});
+  assert.deepEqual(await runEcho(undefined, { hook_event_name: "UserPromptSubmit" }), {});
+  assert.deepEqual(await runEcho(undefined, { hook_event_name: "PostToolUse", tool_name: "Bash", tool_input: { command: "ls" } }), {});
   assert.deepEqual(await runNotice(undefined, { hook_event_name: "PreToolUse", tool_name: "Write", tool_input: { file_path: "spec/x_spec.rb" } }), {});
 });
 
 test("the echo hands back the map it was asked for, and nothing without an event", needsRuby, async (t) => {
   const dir = await railsish(t);
 
-  assert.deepEqual(runEcho(dir, {}), {}, "no event name");
-  const out = runEcho(dir, { hook_event_name: "PostToolUse" });
+  assert.deepEqual(await runEcho(dir, {}), {}, "no event name");
+  const out = await runEcho(dir, { hook_event_name: "PostToolUse" });
   assert.equal(out.hookSpecificOutput.hookEventName, "PostToolUse");
   assert.match(out.hookSpecificOutput.additionalContext, /<repository-map delivered="/);
 });
 
 test("a re-scan that changes the map on disk is delivered on the next call", needsRuby, async (t) => {
   const dir = await railsish(t);
-  const first = runEcho(dir, { hook_event_name: "PostToolUse" }).hookSpecificOutput.additionalContext;
+  const first = (await runEcho(dir, { hook_event_name: "PostToolUse" })).hookSpecificOutput.additionalContext;
   const path = transcript(t, [delivered(first)]);
   const overview = join(dir, RULES, OVERVIEW_FILE);
   writeFileSync(overview, readFileSync(overview, "utf8").replace("# Repository map", "# Repository map\n\nOne more line."));
 
-  assert.match(runEcho(dir, { hook_event_name: "PostToolUse", transcript_path: path }).hookSpecificOutput.additionalContext, /One more line/);
+  assert.match((await runEcho(dir, { hook_event_name: "PostToolUse", transcript_path: path })).hookSpecificOutput.additionalContext, /One more line/);
 });
 
 test("the echo delivers when the transcript names nothing it can read, and ignores a copy that is not its own delivery", needsRuby, async (t) => {
   const dir = await railsish(t);
-  const first = runEcho(dir, { hook_event_name: "PostToolUse" }).hookSpecificOutput.additionalContext;
+  const first = (await runEcho(dir, { hook_event_name: "PostToolUse" })).hookSpecificOutput.additionalContext;
   const quoted = { type: "user", message: { content: [{ type: "tool_result", content: first }] } };
 
   for (const transcript_path of [join(dir, "absent.jsonl"), dir, 7]) {
-    assert.match(runEcho(dir, { hook_event_name: "PostToolUse", transcript_path }).hookSpecificOutput.additionalContext, /<repository-map /);
+    assert.match((await runEcho(dir, { hook_event_name: "PostToolUse", transcript_path })).hookSpecificOutput.additionalContext, /<repository-map /);
   }
   const path = transcript(t, [quoted]);
-  assert.match(runEcho(dir, { hook_event_name: "PostToolUse", transcript_path: path }).hookSpecificOutput.additionalContext, /<repository-map /, "a tool result quoting the map is not a delivery");
+  assert.match((await runEcho(dir, { hook_event_name: "PostToolUse", transcript_path: path })).hookSpecificOutput.additionalContext, /<repository-map /, "a tool result quoting the map is not a delivery");
 });
 
 test("a subagent's echo is answered from its own transcript, never from the session's", needsRuby, async (t) => {
   const dir = await railsish(t);
-  const first = runEcho(dir, { hook_event_name: "PostToolUse" }).hookSpecificOutput.additionalContext;
+  const first = (await runEcho(dir, { hook_event_name: "PostToolUse" })).hookSpecificOutput.additionalContext;
   const session = transcript(t, [delivered(first)]);
   const agentLog = join(session.replace(/\.jsonl$/, ""), "subagents", "agent-a1b2c3.jsonl");
   const sub = { hook_event_name: "PostToolUse", transcript_path: session, agent_id: "a1b2c3" };
 
-  assert.match(runEcho(dir, sub).hookSpecificOutput.additionalContext, /<repository-map /, "the session's copy is not in the subagent's window");
+  assert.match((await runEcho(dir, sub)).hookSpecificOutput.additionalContext, /<repository-map /, "the session's copy is not in the subagent's window");
   mkdirSync(join(agentLog, ".."), { recursive: true });
   writeFileSync(agentLog, `${JSON.stringify({ ...delivered(first), isSidechain: true, agentId: "a1b2c3" })}\n`);
-  assert.deepEqual(runEcho(dir, sub), {});
+  assert.deepEqual(await runEcho(dir, sub), {});
   const outside = join(session.replace(/\.jsonl$/, ""), "probe.jsonl");
   writeFileSync(outside, `${JSON.stringify(delivered(first))}\n`);
   assert.match(
-    runEcho(dir, { ...sub, agent_id: "x/../../probe" }).hookSpecificOutput.additionalContext,
+    (await runEcho(dir, { ...sub, agent_id: "x/../../probe" })).hookSpecificOutput.additionalContext,
     /<repository-map /,
     "an id that is not a plain name reads nothing, even where a path through it holds a delivery"
   );
@@ -466,43 +466,43 @@ test("a subagent's echo is answered from its own transcript, never from the sess
 
 test("a workflow stage's echo is answered from its transcript under the workflow's run", needsRuby, async (t) => {
   const dir = await railsish(t);
-  const first = runEcho(dir, { hook_event_name: "PostToolUse" }).hookSpecificOutput.additionalContext;
+  const first = (await runEcho(dir, { hook_event_name: "PostToolUse" })).hookSpecificOutput.additionalContext;
   const session = transcript(t, []);
   const run = join(session.replace(/\.jsonl$/, ""), "subagents", "workflows", "wf_1a2b3c-d4e");
   const stage = { hook_event_name: "PostToolUse", transcript_path: session, agent_id: "a9f8e7d6" };
 
-  assert.match(runEcho(dir, stage).hookSpecificOutput.additionalContext, /<repository-map /);
+  assert.match((await runEcho(dir, stage)).hookSpecificOutput.additionalContext, /<repository-map /);
   mkdirSync(run, { recursive: true });
   writeFileSync(join(run, "agent-a9f8e7d6.jsonl"), `${JSON.stringify(delivered(first))}\n`);
-  assert.deepEqual(runEcho(dir, stage), {});
+  assert.deepEqual(await runEcho(dir, stage), {});
 });
 
 test("a subagent's window is found whatever case the session transcript's extension is in", needsRuby, async (t) => {
   const dir = await railsish(t);
-  const first = runEcho(dir, { hook_event_name: "PostToolUse" }).hookSpecificOutput.additionalContext;
+  const first = (await runEcho(dir, { hook_event_name: "PostToolUse" })).hookSpecificOutput.additionalContext;
   const session = transcript(t, []).replace(/\.jsonl$/, ".JSONL");
   const agentLog = join(session.slice(0, -".JSONL".length), "subagents", "agent-b1c2.jsonl");
   mkdirSync(join(agentLog, ".."), { recursive: true });
   writeFileSync(agentLog, `${JSON.stringify(delivered(first))}\n`);
 
-  assert.deepEqual(runEcho(dir, { hook_event_name: "PostToolUse", transcript_path: session, agent_id: "b1c2" }), {});
+  assert.deepEqual(await runEcho(dir, { hook_event_name: "PostToolUse", transcript_path: session, agent_id: "b1c2" }), {});
 });
 
 test("the echo stays silent over a delivery made after a compaction, and reads a null agent_id as the main thread", needsRuby, async (t) => {
   const dir = await railsish(t);
-  const first = runEcho(dir, { hook_event_name: "PostToolUse" }).hookSpecificOutput.additionalContext;
+  const first = (await runEcho(dir, { hook_event_name: "PostToolUse" })).hookSpecificOutput.additionalContext;
   const path = transcript(t, [compact(), delivered(first)]);
 
-  assert.deepEqual(runEcho(dir, { hook_event_name: "PostToolUse", transcript_path: path }), {});
-  assert.deepEqual(runEcho(dir, { hook_event_name: "PostToolUse", transcript_path: path, agent_id: null }), {});
+  assert.deepEqual(await runEcho(dir, { hook_event_name: "PostToolUse", transcript_path: path }), {});
+  assert.deepEqual(await runEcho(dir, { hook_event_name: "PostToolUse", transcript_path: path, agent_id: null }), {});
 });
 
 test("a rewrite that changes only the frontmatter is not a new map", needsRuby, async (t) => {
   const dir = await railsish(t);
-  const first = runEcho(dir, { hook_event_name: "PostToolUse" }).hookSpecificOutput.additionalContext;
+  const first = (await runEcho(dir, { hook_event_name: "PostToolUse" })).hookSpecificOutput.additionalContext;
   const path = transcript(t, [delivered(first)]);
   const overview = join(dir, RULES, OVERVIEW_FILE);
   writeFileSync(overview, readFileSync(overview, "utf8").replace("generator: anatomiya", "generator: anatomiya\nnote: rewritten"));
 
-  assert.deepEqual(runEcho(dir, { hook_event_name: "PostToolUse", transcript_path: path }), {});
+  assert.deepEqual(await runEcho(dir, { hook_event_name: "PostToolUse", transcript_path: path }), {});
 });

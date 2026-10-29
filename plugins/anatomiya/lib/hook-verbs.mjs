@@ -1,12 +1,13 @@
 /**
  * What each hook verb answers with. Kept apart from the commands a person runs,
  * so a hook process loads the map readers and not the scan, the check or the
- * parser behind them.
+ * parser behind them; and each verb loads its own module inside its function,
+ * so the notice pays for no echo and the echo for no change reader (A100).
  */
 import { join } from "node:path";
 
-import { aboutDir, childLayouts, echoContext, holdsTestIn, inCheckout, isPathTaken, ownLayout, targetIn, windowOf } from "./hook.mjs";
-import { toolCallsIn, transcriptTail, turnStartIn } from "./transcript.mjs";
+import { aboutDir, childLayouts, holdsTestIn, inCheckout, isPathTaken, ownLayout, targetIn } from "./hook.mjs";
+import { windowOf } from "./payload.mjs";
 
 /**
  * The directory whose repository answers this call.
@@ -39,11 +40,13 @@ function answersFor(payload, cwd) {
  * that. An absent map, an unreadable payload and an event this cannot name all
  * answer with the same empty object.
  */
-export function runEcho(cwd, payload) {
+export async function runEcho(cwd, payload) {
   const event = payload?.hook_event_name;
   if (!event) return {};
   const root = answersFor(payload, cwd);
   if (root === null) return {};
+  // Loaded here: the echo's lock, its transcript walk and its text are the echo's alone.
+  const { echoContext } = await import("./echo.mjs");
   const additionalContext = echoContext(root, { transcript: windowOf(payload), data: process.env.CLAUDE_PLUGIN_DATA ?? null });
   if (additionalContext === null) return {};
   return { hookSpecificOutput: { hookEventName: event, additionalContext } };
@@ -92,8 +95,8 @@ export async function runNotice(cwd, payload) {
  *
  * A session started above its checkouts has no map of its own and a Stop
  * payload names no file, so each mapped checkout directly below is read, and
- * its files named from the session's directory. A file's mark is its
- * checkout's, so a session that later moves into the checkout is not asked again.
+ * its files named from the session's directory. What the turn is asked is
+ * `reuseAnswer`'s, in the module that reads the change.
  */
 export async function runReuse(cwd, payload) {
   if (payload?.hook_event_name !== "Stop") return {};
@@ -104,41 +107,6 @@ export async function runReuse(cwd, payload) {
   if (checkouts.length === 0) return {};
   // Loaded here: the change it reads comes from the check, which the echo and
   // the notice must not pay for on every tool call.
-  const { askedMarksIn, closestTo, continuedByReuseIn, finderFor, pendingChange, resumedByReuseIn, reuseReason, reuseRecord, sessionStart, REUSE_GIT_MS, REUSE_INDEX_BYTES, TRANSCRIPT_MOST } = await import("./reuse.mjs");
-  // Both halves of "once per change, and only this session's work" are read off
-  // the transcript: when the session began and which tool calls it made, and
-  // what it already asked. One that cannot be read says neither, so nothing is
-  // asked. Asking anyway blocked every turn, a question included, over a tree
-  // left dirty before the session, since no ask it made was ever recorded
-  // anywhere it could read back.
-  const since = sessionStart(payload.transcript_path);
-  if (since === null) return {};
-  let before = transcriptTail(payload.transcript_path, TRANSCRIPT_MOST)?.text ?? null;
-  const turn = turnStartIn(before);
-  const calls = toolCallsIn(before);
-  // Let go before the git reads, so two 64 MiB tails are never held at once.
-  before = null;
-  // One parse budget and one git deadline for the whole stop, however many checkouts it reads.
-  const parsing = { deadline: null };
-  const gitBy = performance.now() + REUSE_GIT_MS;
-  const changes = await Promise.all(checkouts.map((c) => pendingChange(c.root, { since, turnStart: turn, calls, parsing, gitBy })));
-  const change = checkouts.flatMap((c, i) => (changes[i] ?? []).map((file) => ({ ...file, path: c.prefix + file.path })));
-  if (change.length === 0) return {};
-  // Read again past the git reads, which take seconds: an ask or a record
-  // another stop wrote meanwhile covers this change.
-  const after = transcriptTail(payload.transcript_path, TRANSCRIPT_MOST)?.text ?? null;
-  const asked = askedMarksIn(after);
-  const fresh = change.filter((file) => !asked.has(file.mark));
-  if (fresh.length === 0) return {};
-  if (payload.stop_hook_active === true) {
-    return continuedByReuseIn(after) ? { systemMessage: reuseRecord(fresh) } : {};
-  }
-  if (resumedByReuseIn(after)) return { systemMessage: reuseRecord(fresh) };
-  // Only for the one checkout the session sits in, where `find` run from its directory reads that checkout's index.
-  const { usableIndex } = await import("./index-home.mjs");
-  const usable = found !== null ? usableIndex(found.root, { readMost: REUSE_INDEX_BYTES }) : null;
-  const finder = finderFor(usable);
-  // Where the reason cannot name `find`, it is A123's word for word (A124), so it names no candidate either.
-  const closest = finder === null || usable.index === null ? null : closestTo(usable.index, fresh);
-  return { decision: "block", reason: reuseReason(fresh, { finder, closest }) };
+  const { reuseAnswer } = await import("./reuse.mjs");
+  return reuseAnswer(checkouts, payload, { own: found?.root ?? null });
 }

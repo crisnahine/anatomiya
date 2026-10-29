@@ -7,14 +7,16 @@ import { fileURLToPath } from "node:url";
 import { spawn, spawnSync, execFileSync } from "node:child_process";
 
 import { needsFileSizeLimit, needsPosixPermissions, needsPosixSpecialFiles, needsUnreadableDirs, removeTree } from "./platform.mjs";
-import { aboutDir, echoContext, fieldsIn, ownLayout, planRemoval, commitRemoval, removeStaleHook, targetIn, HOOK_COMMAND, NOTICE_COMMAND, PAYLOAD_WAIT_MS, REFRESH_COMMAND, REUSE_COMMAND, SETTINGS_PATH } from "../plugins/anatomiya/lib/hook.mjs";
+import { aboutDir, ownLayout, targetIn } from "../plugins/anatomiya/lib/hook.mjs";
+import { fieldsIn, PAYLOAD_WAIT_MS } from "../plugins/anatomiya/lib/payload.mjs";
+import { planRemoval, commitRemoval, removeStaleHook, HOOK_COMMAND, NOTICE_COMMAND, REFRESH_COMMAND, REUSE_COMMAND, SETTINGS_PATH } from "../plugins/anatomiya/lib/settings.mjs";
 import { FACTS_PATH, FACTS_SCHEMA, LAYOUT_PATH } from "../plugins/anatomiya/lib/facts.mjs";
 import { pluginPaths } from "../scripts/validate.mjs";
 import { HEAD_BYTES } from "../plugins/anatomiya/lib/rules.mjs";
 import { ANATOMIYA } from "../scripts/plugins.mjs";
 import { delivered, transcript } from "./transcript.mjs";
 import { echoEvent } from "../plugins/anatomiya/lib/transcript.mjs";
-import { LOCK_HELD_MOST_MS } from "../plugins/anatomiya/lib/echo.mjs";
+import { echoContext, LOCK_HELD_MOST_MS } from "../plugins/anatomiya/lib/echo.mjs";
 import { addWorktree, initWithCommit, scratch } from "./git-worktrees.mjs";
 
 /** The three entries 0.2.4 through 0.2.6 wrote into a scanned repository. */
@@ -1094,7 +1096,7 @@ test("a settings repair the disk refuses part way leaves the file as it was", ne
   mkdirSync(join(dir, ".claude"), { recursive: true });
   const theirs = { permissions: { allow: ["Bash(npm test:*)"] }, ...OLD_SETTINGS };
   writeFileSync(join(dir, SETTINGS_PATH), JSON.stringify(theirs, null, 2));
-  const hook = new URL("../plugins/anatomiya/lib/hook.mjs", import.meta.url).href;
+  const hook = new URL("../plugins/anatomiya/lib/settings.mjs", import.meta.url).href;
   const code = `const { removeStaleHook } = await import(${JSON.stringify(hook)}); process.stdout.write(JSON.stringify(removeStaleHook(${JSON.stringify(dir)})));`;
 
   // No file may grow past nothing in the child, which is a disk with no room left. Nor its coverage
@@ -1524,7 +1526,7 @@ test("a settings path that is not a file is refused rather than opened and waite
   // unbounded open stops this process's event loop, so a case that waits in
   // place takes the whole file down before it can assert anything, and the
   // reporter never flushes the cases that already passed.
-  const script = `import { planRemoval } from ${JSON.stringify(new URL("../plugins/anatomiya/lib/hook.mjs", import.meta.url).href)};
+  const script = `import { planRemoval } from ${JSON.stringify(new URL("../plugins/anatomiya/lib/settings.mjs", import.meta.url).href)};
     try { planRemoval(${JSON.stringify(dir)}); process.stdout.write("no refusal"); }
     catch (err) { process.stdout.write(err.message); }`;
 

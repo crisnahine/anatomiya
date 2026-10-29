@@ -276,7 +276,7 @@ Where the code goes:
 - `plugins/anatomiya/lib/dimensions-naming.mjs` the learned rows, and `NAMING_CORPUS`, the filename row the reducer
   composes off the corpus rather than off a tree
 
-Twelve modules hold no row and sit under the scan, the hooks or both. A change to how a file is written, how a
+Fifteen modules hold no row and sit under the scan, the hooks or both. A change to how a file is written, how a
 lock is taken, what a transcript record says, when the echo delivers, which added lines the reuse check asks
 about or how a history walk is fed goes in the one that owns it:
 
@@ -294,8 +294,17 @@ about or how a history walk is fed goes in the one that owns it:
   that take text, so a hook reads the transcript once for several answers, and the one table of
   what makes a record a compaction (A116)
 - `plugins/anatomiya/lib/echo.mjs` whether the echo delivers on a call: `echoDue` over a digest, a
-  transcript and the plugin's data directory, and `heldIn`, the walk of the window that
-  `scripts/measure-echo.mjs` replays through (A119, A92)
+  transcript and the plugin's data directory, `heldIn`, the walk of the window that
+  `scripts/measure-echo.mjs` replays through, and `echoContext`, the map under its stamp and its
+  digest, which only the echo verb loads (A119, A92, A100)
+- `plugins/anatomiya/lib/payload.mjs` the hook contract on the wire: the payload read off stdin,
+  bounded and timed out, the one object written back, and which transcript is a call's window. A
+  leaf, which is what lets the binary read a payload before it knows which verb's modules to load
+  (A24, A45, A100)
+- `plugins/anatomiya/lib/settings.mjs` the settings entry an older version arranged and its
+  removal, which only a scan runs (A24, A25)
+- `plugins/anatomiya/lib/find-command.mjs` the `find` command, apart from the other commands so
+  its arm loads the index reader and the query side and none of the scan (H60, A124)
 - `plugins/anatomiya/lib/inert.mjs` which of a file's lines define nothing callable, the one question
   the end-of-turn reuse check asks: `inertLinesOf`, the line rules of oxc and prism, and
   `REUSE_PARSE_MS`, the second every file of one stop shares: the line rules' reads, and the

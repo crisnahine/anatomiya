@@ -191,6 +191,18 @@ async function passes(root, store, { scan, pin }) {
  * directories it left stopped, which the refresh retries as it does its own.
  * Never throws: the scan it follows has already succeeded.
  */
+/**
+ * A scan run by hand, which is the refresh's answer too: it clears a failed
+ * refresh the echo is reporting, and the next refresh has nothing to redo. A
+ * dry run writes nothing, so it records nothing either (A95).
+ */
+export async function scanByHand(cwd, { dryRun = false, targets = null } = {}) {
+  const before = dryRun ? null : await scanStamp(cwd);
+  const scanned = await runScan(cwd, { dryRun, targets });
+  if (!dryRun) await noteScan(scanned.result.root, before, scanned);
+  return scanned;
+}
+
 export async function noteScan(root, before, scanned) {
   try {
     const store = resolveInside(root, STORE_DIR);

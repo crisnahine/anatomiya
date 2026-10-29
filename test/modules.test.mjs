@@ -698,7 +698,7 @@ test("a name this repository's own module offers is imported where it is used, n
 // tests reach some names through a namespace or a dynamic import; a name two
 // files both export passes on the other's use, which only makes this lenient.
 test("every export is read somewhere outside its own file", () => {
-  assert.ok(exportedBy(`${REL.anatomiya}/lib/hook.mjs`).has("SETTINGS_PATH"), "the list form of export is read");
+  assert.ok(exportedBy(`${REL.anatomiya}/lib/settings.mjs`).has("SETTINGS_PATH"), "the list form of export is read");
   const files = sourceFiles();
   assert.ok(files.length >= 100, `read ${files.length} files`);
   const texts = files.map((rel) => [rel, scan(readFileSync(join(ROOT, rel), "utf8"), { strings: true })]);
@@ -747,7 +747,7 @@ test("every verb the binary declares carries its own arm in the one table", () =
   const loads = [...scan(src).matchAll(/\bimport\(\s*"([^"]+)"/g)];
   assert.ok(loads.length >= verbs.length, `read ${loads.length} arm imports`);
   const outside = loads.filter((m) => m.index < table.init.start || m.index >= table.init.end).map((m) => m[1]);
-  assert.deepEqual(outside.sort(), ["../lib/encode.mjs", "../lib/hook.mjs", "../lib/targets.mjs"]);
+  assert.deepEqual(outside.sort(), ["../lib/encode.mjs", "../lib/payload.mjs", "../lib/targets.mjs"]);
 });
 
 /**
@@ -776,20 +776,18 @@ function armReach(verb, { lazy = false } = {}) {
 
 // Written out rather than counted, so a module joining the echo's load shows by name.
 const ECHO_LOADS = [
-  "echo.mjs",
   "encode.mjs",
   "facts.mjs",
   "gates.mjs",
   "hook-verbs.mjs",
   "hook.mjs",
-  "lock.mjs",
   "node-floor.mjs",
   "paths.mjs",
+  "payload.mjs",
   "rules.mjs",
   "slot.mjs",
   "store.mjs",
   "targets.mjs",
-  "transcript.mjs",
   "worktree.mjs",
 ];
 
@@ -800,7 +798,7 @@ test("a hook verb loads none of the scan, the check or the parser", () => {
   // oxc's native binding among them.
   for (const verb of ["echo", "notice", "reuse", "refresh"]) {
     const reached = armReach(verb, { lazy: true });
-    assert.ok(reached.has("hook.mjs"), `${verb}: the binary's own imports were not read`);
+    assert.ok(reached.has("payload.mjs"), `${verb}: the binary's own imports were not read`);
     for (const heavy of ["scan.mjs", "parse.mjs", "walk.mjs", "dimensions.mjs", "reduce.mjs", "check.mjs"]) {
       assert.equal(reached.has(heavy), false, `${verb} reaches ${heavy}`);
     }
@@ -810,10 +808,17 @@ test("a hook verb loads none of the scan, the check or the parser", () => {
   assert.deepEqual([...armReach("echo")].sort(), ECHO_LOADS);
   // The other arms by count, before any lazy import and with each followed (A100).
   const sizes = (opts) => Object.fromEntries(["echo", "notice", "reuse", "refresh"].map((verb) => [verb, armReach(verb, opts).size]));
-  assert.deepEqual(sizes(), { echo: 15, notice: 15, reuse: 15, refresh: 33 });
-  assert.deepEqual(sizes({ lazy: true }), { echo: 41, notice: 41, reuse: 41, refresh: 33 });
+  assert.deepEqual(sizes(), { echo: 13, notice: 13, reuse: 13, refresh: 31 });
+  assert.deepEqual(sizes({ lazy: true }), { echo: 42, notice: 42, reuse: 42, refresh: 31 });
   assert.ok(armReach("notice", { lazy: true }).has("precedent.mjs"), "the notice's lazy import was not followed");
   assert.ok(armReach("reuse", { lazy: true }).has("reuse.mjs"), "the reuse check's lazy import was not followed");
+  // The find arm: the index reader and the query side, and none of the scan behind the other commands,
+  // since the reuse check's reason sends the subagent to it up to three times per ask (A124).
+  const find = armReach("find", { lazy: true });
+  for (const heavy of ["scan.mjs", "parse.mjs", "walk.mjs", "dimensions.mjs", "reduce.mjs", "check.mjs", "write.mjs", "commands.mjs"]) {
+    assert.equal(find.has(heavy), false, `find reaches ${heavy}`);
+  }
+  assert.ok(find.has("find-command.mjs") && find.has("find.mjs"), "the find arm was not followed");
 });
 
 const FUNCTIONS = new Set(["FunctionDeclaration", "FunctionExpression", "ArrowFunctionExpression"]);

@@ -10,7 +10,7 @@ import { language } from "./langs.mjs";
 import { collect, corpusByName, countUntrackedSource, gitRoot, lsFiles } from "./corpus.mjs";
 import { buildPin, readPin, writePin, pinDelta, pinTarget, PIN_PATH } from "./baseline.mjs";
 import { ask, askWhether, caseMagic, headSha } from "./git.mjs";
-import { encodePath, printableOnly } from "./encode.mjs";
+import { encodePath } from "./encode.mjs";
 import { byCode } from "./paths.mjs";
 import { plural } from "./render-layout.mjs";
 import { auditRules, EXCLUDE_LINES, isMapName, listSome, LISTED, PREFIX, recordFor, RULES_DIR, targetStatus, trackedRulesDir, turningOff } from "./rules.mjs";
@@ -19,11 +19,11 @@ import { readFacts } from "./facts.mjs";
 import { NODE_PROBE_IDS, PROBE_IDS, couldNotRead, installProblem, lostGrammar, pluginRoot, probeName, readiness, readinessAfresh, readinessLines, remedyForMissing } from "./readiness.mjs";
 import { otherEntries, pinSummary, scanSummary } from "./summary.mjs";
 import { untrackedSentence } from "./render.mjs";
-import { removeStaleHook } from "./hook.mjs";
+import { removeStaleHook } from "./settings.mjs";
 import { saveHistory } from "./history.mjs";
 import { saveIndex } from "./code-index.mjs";
-import { findSymbols, formatHit, queryWords } from "./find.mjs";
-import { indexRefused, usableIndex } from "./index-home.mjs";
+import { noIndex } from "./find-command.mjs";
+import { usableIndex } from "./index-home.mjs";
 
 /**
  * One entry per command: the whole recipe, composed once.
@@ -71,32 +71,6 @@ export async function runScan(cwd, { dryRun = false, targets = null, leaveAlone 
 }
 
 // The index's line when there is none to read: one the last scan could not write, another would not either.
-const noIndex = (root) => (indexRefused(root) ? "none; the last scan could not write one, past the size a scan writes" : "none; the next scan or refresh writes one");
-
-/**
- * The definitions the last scan indexed that best answer `words`, as lines to
- * print and as hits. The index is the last scan's, so a function written since
- * is not in it, and the first line says so.
- */
-export async function runFind(cwd, words) {
-  const root = await gitRoot(cwd);
-  const index = usableIndex(root)?.index ?? null;
-  if (index === null) {
-    const line = indexRefused(root)
-      ? "The last scan could not write a code index: it was past the size a scan writes, and another scan would not write one either."
-      : "No code index here yet: run `anatomiya scan` in this repository first.";
-    return { indexed: false, hits: [], lines: [line] };
-  }
-  const asked = printableOnly(words.join(" "));
-  if (queryWords(words).length === 0) return { indexed: true, hits: [], lines: [`"${asked}" holds no word to look up: a letter alone or a word like "the" is in nearly every name.`] };
-  const hits = findSymbols(index, words);
-  if (hits.length === 0) {
-    return { indexed: true, hits, lines: [`No definition among the ${index.count} the last scan indexed matches "${asked}". Code written since that scan is not in it.`] };
-  }
-  const head = `The ${hits.length} of ${index.count} indexed definitions closest to "${asked}", as of the last scan:`;
-  return { indexed: true, hits, lines: [head, ...hits.map(formatHit)] };
-}
-
 /**
  * Accept the current population as the baseline (E5).
  *

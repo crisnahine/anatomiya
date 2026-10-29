@@ -5,7 +5,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { spawn } from "node:child_process";
 import { ANATOMIYA } from "../scripts/plugins.mjs";
-import { fieldsIn } from "../plugins/anatomiya/lib/hook.mjs";
+import { fieldsIn } from "../plugins/anatomiya/lib/payload.mjs";
 import { hostEnv } from "./host-env.mjs";
 import { removeTree } from "./platform.mjs";
 

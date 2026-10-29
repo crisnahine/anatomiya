@@ -10,7 +10,7 @@
 import { existsSync, mkdirSync, renameSync, statSync, unlinkSync } from "node:fs";
 import { basename, dirname, join } from "node:path";
 
-import { outsideClaude, readHead, resolveInside } from "./rules.mjs";
+import { outsideClaude, readHead, REFRESH_STATE, resolveInside } from "./rules.mjs";
 import { encodePath } from "./encode.mjs";
 import { READ_MOST, putBack, recordBytes, writeTemp } from "./store.mjs";
 import { slotRecord } from "./slot.mjs";
@@ -429,4 +429,10 @@ function factsRecord(result, targets = {}, removing = {}) {
     ...(named.length ? { targets: Object.fromEntries(named) } : {}),
     ...(going.length ? { removing: Object.fromEntries(going) } : {}),
   };
+}
+
+/** The refresh worker's last record in this checkout, read through F2's containment like every other store read, or null. */
+export function refreshRecord(root) {
+  const path = resolveInside(root, REFRESH_STATE);
+  return path === null ? null : readRecord(path).record;
 }

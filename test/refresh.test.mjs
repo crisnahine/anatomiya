@@ -13,7 +13,7 @@ import { discover } from "../plugins/anatomiya/lib/areas.mjs";
 import { EXCLUDE_LINES, REFRESH_STATE } from "../plugins/anatomiya/lib/rules.mjs";
 import { movedByRemote, runRefresh } from "../plugins/anatomiya/lib/refresh.mjs";
 import { acquire } from "../plugins/anatomiya/lib/lock.mjs";
-import { noteScan, refreshRepository, scanStamp } from "../plugins/anatomiya/lib/refresh-run.mjs";
+import { noteScan, refreshRepository, scanByHand, scanStamp } from "../plugins/anatomiya/lib/refresh-run.mjs";
 import { collect } from "../plugins/anatomiya/lib/corpus.mjs";
 import { answerWith, Unasked } from "../plugins/anatomiya/lib/git.mjs";
 import { loadTypeScript, runSemantic, verdictStamp } from "../plugins/anatomiya/lib/semantic.mjs";
@@ -404,9 +404,7 @@ test("a scan that could not write the code index is not run again on every trigg
 test("a scan run by hand that writes the first code index is recorded, so the refresh after it has nothing to do", async (t) => {
   const dir = await scanned(t);
   rmSync(join(dir, ".claude", "anatomiya", "index.json.gz"));
-  const before = await scanStamp(dir);
-  const scanned2 = await runScan(dir);
-  await noteScan(dir, before, scanned2);
+  await scanByHand(dir);
 
   assert.equal((await refreshRepository(dir)).reason, "current");
 });

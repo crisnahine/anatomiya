@@ -6,7 +6,7 @@ import { unsupportedNode } from "../lib/node-floor.mjs";
 let locator, readPayload, respond, parseTargets;
 async function load() {
   ({ locator } = await import("../lib/encode.mjs"));
-  ({ readPayload, respond } = await import("../lib/hook.mjs"));
+  ({ readPayload, respond } = await import("../lib/payload.mjs"));
   ({ parseTargets } = await import("../lib/targets.mjs"));
 }
 
@@ -98,14 +98,9 @@ const COMMANDS = {
     dryRun: true,
     formats: ["text", "json"],
     async run(cwd, opts) {
-      const { runScan } = await import("../lib/commands.mjs");
-      const { noteScan, scanStamp } = await import("../lib/refresh-run.mjs");
+      const { scanByHand } = await import("../lib/refresh-run.mjs");
       const { scanJson, scanLines } = await import("../lib/summary.mjs");
-      const before = opts.dryRun ? null : await scanStamp(cwd);
-      const scanned = await runScan(cwd, { dryRun: opts.dryRun, targets: opts.targets });
-      // A scan run by hand is the refresh's answer too: it clears a failed
-      // refresh the echo is reporting, and the next refresh has nothing to redo.
-      if (!opts.dryRun) await noteScan(scanned.result.root, before, scanned);
+      const scanned = await scanByHand(cwd, { dryRun: opts.dryRun, targets: opts.targets });
       if (opts.format === "json") process.stdout.write(scanJson(scanned.summary));
       else console.log(scanLines(scanned.summary).join("\n"));
     },
@@ -143,7 +138,7 @@ const COMMANDS = {
     dryRun: false,
     formats: ["text", "json"],
     async run(_cwd, opts) {
-      const { runFind } = await import("../lib/commands.mjs");
+      const { runFind } = await import("../lib/find-command.mjs");
       const { lines, hits, indexed } = await runFind(sessionDir(false), opts.words);
       if (opts.format === "json") process.stdout.write(`${JSON.stringify({ indexed, hits })}\n`);
       else console.log(lines.join("\n"));
@@ -190,7 +185,7 @@ const COMMANDS = {
       // object and exits 0, including the one where stdin was never readable and
       // the one where nobody is left to read the answer.
       const { runEcho } = await import("../lib/hook-verbs.mjs");
-      respond(runEcho(cwd, await readPayload()));
+      respond(await runEcho(cwd, await readPayload()));
     },
   },
   notice: {

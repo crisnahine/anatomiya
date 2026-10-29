@@ -12,9 +12,9 @@ import { needsPathControl, needsPosixPaths, needsPosixSpecialFiles, needsShebang
 import { snapshot, transcript } from "./transcript.mjs";
 import { usableIndex } from "../plugins/anatomiya/lib/index-home.mjs";
 import { findSymbols, RANKING } from "../plugins/anatomiya/lib/find.mjs";
-import { askedMarksIn, closestTo, continuedByReuseIn, declaredIn, finderFor, pendingChange, quotable, resumedByReuseIn, REUSE_GIT_MS, REUSE_MARK, reuseReason, TRANSCRIPT_MOST } from "../plugins/anatomiya/lib/reuse.mjs";
+import { askedMarksIn, askingHunks, closestTo, continuedByReuseIn, declaredIn, finderFor, pendingChange, quotable, resumedByReuseIn, REUSE_GIT_MS, REUSE_MARK, reuseReason, TRANSCRIPT_MOST } from "../plugins/anatomiya/lib/reuse.mjs";
 import { runReuse } from "../plugins/anatomiya/lib/hook-verbs.mjs";
-import { PAYLOAD_WAIT_MS } from "../plugins/anatomiya/lib/hook.mjs";
+import { PAYLOAD_WAIT_MS } from "../plugins/anatomiya/lib/payload.mjs";
 import { REUSE_PARSE_MS } from "../plugins/anatomiya/lib/inert.mjs";
 import { transcriptTail } from "../plugins/anatomiya/lib/transcript.mjs";
 import { FACTS_PATH, FACTS_SCHEMA } from "../plugins/anatomiya/lib/facts.mjs";
@@ -1644,11 +1644,13 @@ async function stubbedAsync(name, stub, call) {
   }
 }
 
-test("a recording stop reads the transcript's head once and its tail twice", async (t) => {
-  // The head once, and the tail once before the change set and once after it,
-  // where each reader once read a 64 MiB tail of its own. A recording stop runs
-  // all four readers. The snapshot puts the transcript past the head's 64 KiB,
-  // so a head read and a tail read differ in size.
+test("a recording stop reads the transcript as a tail twice, and never its head while the tail is the whole transcript", async (t) => {
+  // The tail once before the change set and once after it, where each reader
+  // once read a 64 MiB tail of its own, and the session's start read off the
+  // first tail rather than off a head that regrew from 64 KiB until it held a
+  // stamp. A recording stop runs every reader. The snapshot puts the first
+  // stamped record past 64 KiB, the case that cost two head reads, and a head
+  // read and a tail read differ in size.
   const { dir, write } = repo(t);
   write("src/b.ts", NEW_B);
   const first = await runReuse(dir, stop(dir, { transcript_path: begun(t) }));
@@ -1680,7 +1682,7 @@ test("a recording stop reads the transcript's head once and its tail twice", asy
 
   assert.deepEqual(Object.keys(after), ["systemMessage"], "every reader ran");
   assert.ok(size > 64 * 1024, `the transcript is ${size} bytes`);
-  assert.deepEqual(reads.sort(), ["head", "tail", "tail"]);
+  assert.deepEqual(reads.sort(), ["tail", "tail"]);
 });
 
 test("the marks read after the change set include one written meanwhile", async (t) => {
@@ -1890,4 +1892,17 @@ test("the declared stop hook answers an object and exits 0 for a payload it cann
     assert.equal(run.status, 0, `${what}: ${run.stderr}`);
     assert.deepEqual(JSON.parse(run.stdout), {}, what);
   }
+});
+
+test("what one changed file asks is read off its text: the hunks that define something and the names they declare", async () => {
+  const parsing = { deadline: null };
+  const asking = await askingHunks("src/new.mjs", "// the helper\nexport function helper(x) {\n  return x;\n}\n", [{ from: 1, to: 4, created: true }], parsing);
+  assert.deepEqual(asking, { hunks: [{ from: 1, to: 4, created: true }], names: ["helper"] });
+  assert.ok(parsing.deadline !== null, "the first file sets the stop's parse deadline");
+  assert.equal(await askingHunks("src/notes.mjs", "// a note\n// another\n", [{ from: 1, to: 2, created: false }]), null, "a hunk of comments alone asks nothing");
+  // A line past the end of what was read is one nobody read, so its hunk asks.
+  assert.deepEqual((await askingHunks("src/cut.mjs", "// read\n", [{ from: 1, to: 3, created: false }])).hunks, [{ from: 1, to: 3, created: false }]);
+  // A view template asks by its kind's rule and declares no name (A122).
+  assert.equal(await askingHunks("app/views/a.html.erb", "<p>hello</p>\n", [{ from: 1, to: 1, created: true }]), null);
+  assert.deepEqual(await askingHunks("app/views/b.html.erb", "<%= user.name.upcase %>\n", [{ from: 1, to: 1, created: true }]), { hunks: [{ from: 1, to: 1, created: true }], names: [] });
 });
