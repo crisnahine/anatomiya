@@ -1,0 +1,65 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="860" height="556" viewBox="0 0 860 556" role="img" aria-labelledby="tl dl" font-family="-apple-system, BlinkMacSystemFont, &quot;Segoe UI&quot;, &quot;Noto Sans&quot;, Helvetica, Arial, sans-serif">
+<title id="tl">How anatomiya works</title>
+<desc id="dl">Two columns. What a scan does: collect the corpus from git ls-files, find the areas, parse once in a pool of child processes with oxc, prism and tree-sitter, count each dimension per area with one pass over git log, apply the gates at 0.90 of sites with a Wilson bound and a pinned baseline, and write the map into .claude/rules and .claude/anatomiya. What the hooks do in a session: refresh rescans in the background when HEAD moves, echo hands the overview back, notice speaks before a Write or an Edit, reuse asks one subagent for an existing function when the turn ends, and /anatomiya:check compares the branch with its merge base before review.</desc>
+<text x="0" y="18" font-size="13" fill="#59636e">What a scan does</text>
+<line x1="18" y1="60" x2="18" y2="440" stroke="#d1d9e0" stroke-width="2"/>
+<circle cx="18" cy="60" r="6" fill="#ffffff" stroke="#2a78d6" stroke-width="2.5"/>
+<rect x="40" y="42" width="380" height="64" rx="6" fill="#f6f8fa" stroke="#d1d9e0"/>
+<text x="52" y="61" font-size="14" font-weight="600" fill="#1f2328">Collect the corpus</text>
+<text x="52" y="80" font-size="12.5" fill="#59636e">the files git ls-files lists, nothing else, less fixture,</text>
+<text x="52" y="97" font-size="12.5" fill="#59636e">vendor and build directories</text>
+<circle cx="18" cy="136" r="6" fill="#ffffff" stroke="#2a78d6" stroke-width="2.5"/>
+<rect x="40" y="118" width="380" height="64" rx="6" fill="#f6f8fa" stroke="#d1d9e0"/>
+<text x="52" y="137" font-size="14" font-weight="600" fill="#1f2328">Find the areas</text>
+<text x="52" y="156" font-size="12.5" fill="#59636e">any directory holding enough source; the smallest fold</text>
+<text x="52" y="173" font-size="12.5" fill="#59636e">into their parent when there are too many</text>
+<circle cx="18" cy="212" r="6" fill="#ffffff" stroke="#2a78d6" stroke-width="2.5"/>
+<rect x="40" y="194" width="380" height="64" rx="6" fill="#f6f8fa" stroke="#d1d9e0"/>
+<text x="52" y="213" font-size="14" font-weight="600" fill="#1f2328">Parse once, in a pool of children</text>
+<text x="52" y="232" font-size="12.5" fill="#59636e">oxc for JavaScript and TypeScript, prism for Ruby, seven</text>
+<text x="52" y="249" font-size="12.5" fill="#59636e">tree-sitter grammars shipped as WebAssembly for the rest</text>
+<circle cx="18" cy="288" r="6" fill="#ffffff" stroke="#2a78d6" stroke-width="2.5"/>
+<rect x="40" y="270" width="380" height="64" rx="6" fill="#f6f8fa" stroke="#d1d9e0"/>
+<text x="52" y="289" font-size="14" font-weight="600" fill="#1f2328">Count per area</text>
+<text x="52" y="308" font-size="12.5" fill="#59636e">each dimension: sites that conform out of sites that could,</text>
+<text x="52" y="325" font-size="12.5" fill="#59636e">plus one pass over git log for authors and what ships together</text>
+<circle cx="18" cy="364" r="6" fill="#ffffff" stroke="#2a78d6" stroke-width="2.5"/>
+<rect x="40" y="346" width="380" height="64" rx="6" fill="#f6f8fa" stroke="#d1d9e0"/>
+<text x="52" y="365" font-size="14" font-weight="600" fill="#1f2328">Apply the gates</text>
+<text x="52" y="384" font-size="12.5" fill="#59636e">at least 0.90 of sites, a Wilson lower bound, enough files</text>
+<text x="52" y="401" font-size="12.5" fill="#59636e">and authors, and the pinned baseline; the rest print as counts</text>
+<circle cx="18" cy="440" r="6" fill="#ffffff" stroke="#2a78d6" stroke-width="2.5"/>
+<rect x="40" y="422" width="380" height="64" rx="6" fill="#f6f8fa" stroke="#d1d9e0"/>
+<text x="52" y="441" font-size="14" font-weight="600" fill="#1f2328">Write the map</text>
+<text x="52" y="460" xml:space="preserve" font-size="12.5" font-family="ui-monospace, SFMono-Regular, &quot;SF Mono&quot;, Menlo, Consolas, monospace" fill="#1f2328">.claude/rules/anatomiya-*.md</text>
+<text x="52" y="477" xml:space="preserve" font-size="12.5" font-family="ui-monospace, SFMono-Regular, &quot;SF Mono&quot;, Menlo, Consolas, monospace" fill="#1f2328">.claude/anatomiya/  facts, layout, pin, index</text>
+<text x="440" y="18" font-size="13" fill="#59636e">What the hooks do in a Claude Code session</text>
+<line x1="458" y1="60" x2="458" y2="364" stroke="#d1d9e0" stroke-width="2"/>
+<circle cx="458" cy="60" r="6" fill="#ffffff" stroke="#2a78d6" stroke-width="2.5"/>
+<rect x="480" y="42" width="380" height="64" rx="6" fill="#f6f8fa" stroke="#d1d9e0"/>
+<text x="492" y="61" font-size="14" font-weight="600" fill="#1f2328"><tspan font-family="ui-monospace, SFMono-Regular, &quot;SF Mono&quot;, Menlo, Consolas, monospace" fill="#2a78d6">refresh</tspan><tspan dx="10" font-size="12.5" font-weight="400" fill="#59636e">SessionStart, and whenever HEAD moves</tspan></text>
+<text x="492" y="80" font-size="12.5" fill="#59636e">a rescan in the background; the pin follows</text>
+<text x="492" y="97" font-size="12.5" fill="#59636e">your default branch&#x27;s fetched tip on its own</text>
+<circle cx="458" cy="136" r="6" fill="#ffffff" stroke="#2a78d6" stroke-width="2.5"/>
+<rect x="480" y="118" width="380" height="64" rx="6" fill="#f6f8fa" stroke="#d1d9e0"/>
+<text x="492" y="137" font-size="14" font-weight="600" fill="#1f2328"><tspan font-family="ui-monospace, SFMono-Regular, &quot;SF Mono&quot;, Menlo, Consolas, monospace" fill="#2a78d6">echo</tspan><tspan dx="10" font-size="12.5" font-weight="400" fill="#59636e">a prompt, a tool result</tspan></text>
+<text x="492" y="156" font-size="12.5" fill="#59636e">the overview handed back once the model has</text>
+<text x="492" y="173" font-size="12.5" fill="#59636e">read on past its last copy of it</text>
+<circle cx="458" cy="212" r="6" fill="#ffffff" stroke="#2a78d6" stroke-width="2.5"/>
+<rect x="480" y="194" width="380" height="64" rx="6" fill="#f6f8fa" stroke="#d1d9e0"/>
+<text x="492" y="213" font-size="14" font-weight="600" fill="#1f2328"><tspan font-family="ui-monospace, SFMono-Regular, &quot;SF Mono&quot;, Menlo, Consolas, monospace" fill="#2a78d6">notice</tspan><tspan dx="10" font-size="12.5" font-weight="400" fill="#59636e">before a Write or an Edit</tspan></text>
+<text x="492" y="232" font-size="12.5" fill="#59636e">what your history ships with that kind of file,</text>
+<text x="492" y="249" font-size="12.5" fill="#59636e">or a test going where its siblings keep none</text>
+<circle cx="458" cy="288" r="6" fill="#ffffff" stroke="#2a78d6" stroke-width="2.5"/>
+<rect x="480" y="270" width="380" height="64" rx="6" fill="#f6f8fa" stroke="#d1d9e0"/>
+<text x="492" y="289" font-size="14" font-weight="600" fill="#1f2328"><tspan font-family="ui-monospace, SFMono-Regular, &quot;SF Mono&quot;, Menlo, Consolas, monospace" fill="#2a78d6">reuse</tspan><tspan dx="10" font-size="12.5" font-weight="400" fill="#59636e">when the turn ends</tspan></text>
+<text x="492" y="308" font-size="12.5" fill="#59636e">one subagent looks for a function that already</text>
+<text x="492" y="325" font-size="12.5" fill="#59636e">does the job, starting from find</text>
+<circle cx="458" cy="364" r="6" fill="#ffffff" stroke="#2a78d6" stroke-width="2.5"/>
+<rect x="480" y="346" width="380" height="64" rx="6" fill="#f6f8fa" stroke="#d1d9e0"/>
+<text x="492" y="365" font-size="14" font-weight="600" fill="#1f2328"><tspan font-family="ui-monospace, SFMono-Regular, &quot;SF Mono&quot;, Menlo, Consolas, monospace" fill="#2a78d6">/anatomiya:check</tspan><tspan dx="10" font-size="12.5" font-weight="400" fill="#59636e">before you review</tspan></text>
+<text x="492" y="384" font-size="12.5" fill="#59636e">the branch against its merge base: each habit</text>
+<text x="492" y="401" font-size="12.5" fill="#59636e">it broke, at the line that broke it</text>
+<rect x="0.5" y="508" width="859" height="44" rx="8" fill="#ddf4ff"/>
+<text x="18" y="535" font-size="13" fill="#1f2328"><tspan font-weight="600">Everything is counted from your code</tspan>  and every claim carries its count, so Claude can tell a habit from an accident</text>
+</svg>

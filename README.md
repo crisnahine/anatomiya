@@ -17,8 +17,18 @@
   <a href="https://github.com/crisnahine/anatomiya/actions/workflows/ci.yml"><img src="https://github.com/crisnahine/anatomiya/actions/workflows/ci.yml/badge.svg" alt="CI status"></a>
   <a href="https://github.com/crisnahine/anatomiya/releases/latest"><img src="https://img.shields.io/github/v/release/crisnahine/anatomiya?color=3b82f6&label=release" alt="Latest release"></a>
   <a href="LICENSE"><img src="https://img.shields.io/github/license/crisnahine/anatomiya?color=3b82f6" alt="MIT license"></a>
+  <a href="https://scorecard.dev/viewer/?uri=github.com/crisnahine/anatomiya"><img src="https://api.securityscorecards.dev/projects/github.com/crisnahine/anatomiya/badge" alt="OpenSSF Scorecard"></a>
   <img src="https://img.shields.io/badge/node-22%2B-3b82f6" alt="Node 22 or newer">
   <img src="https://img.shields.io/badge/Claude%20Code-plugin-3b82f6" alt="Claude Code plugin">
+</p>
+
+<p align="center">
+  <a href="#try-it-in-your-repository">Quick start</a> ·
+  <a href="#what-it-does">What it does</a> ·
+  <a href="#how-it-works">How it works</a> ·
+  <a href="#the-whole-test-ties-included">The measurements</a> ·
+  <a href="docs/usage.md">Usage guide</a> ·
+  <a href="CONTRIBUTING.md">Contributing</a>
 </p>
 
 <p align="center">
@@ -28,10 +38,29 @@
   </picture>
 </p>
 
+## Contents
+
+- [What it does](#what-it-does)
+- [Try it in your repository](#try-it-in-your-repository)
+- [A closer look](#a-closer-look): the house rules, the notice before a write, the helper you already have, the code index, the check before review
+- [How it works](#how-it-works)
+- [The whole test, ties included](#the-whole-test-ties-included)
+- [What it costs](#what-it-costs)
+- [Why I built it](#why-i-built-it)
+- [Questions you should ask first](#questions-you-should-ask-first)
+- [What it will not do](#what-it-will-not-do)
+- [Install options and configuration](#install-options-and-configuration)
+- [Troubleshooting](#troubleshooting)
+- [Development](#development)
+- [Contributing and security](#contributing-and-security)
+- [Learn more](#learn-more)
+
 ## What it does
 
-anatomiya scans your repository and its git history, keeps the result current on its own, and hands
-Claude each part at the moment it matters. Everything it says is counted from your code, with the
+A coding agent starts every session with no memory of the last review, and the conventions it needs
+are rarely written down anywhere: they are what the existing code happens to do. anatomiya scans
+your repository and its git history, keeps the result current on its own, and hands Claude each part
+at the moment it matters. Everything it says is counted from your code, with the
 count beside it, so Claude can tell a habit from an accident.
 
 | When | What Claude gets | A real line from a map |
@@ -61,11 +90,14 @@ Blade, Razor, Jinja, Twig and Go templates. Cursor and GitHub Copilot get the sa
 ```
 
 That is the whole setup. The first scan took 1.1 seconds on excalidraw's 693 files and 13 seconds on
-forem's 4,687, and a rescan of forem about 3
+forem's 4,687, and a rescan of forem about 3 seconds
 ([measured](docs/measurements/2026-10-25-readme-examples.md#scan-time)). The scan runs on your machine,
-and anatomiya itself sends nothing anywhere. You need Node 22 or newer, and for
-Ruby, `ruby` with `prism` 1.x (Ruby 3.4 ships it). [More ways to install](#more-ways-to-install) are
-further down.
+and anatomiya itself sends nothing anywhere.
+
+You need Node 22 or newer on the `PATH` Claude Code runs hooks with, git 2.31 or newer for the
+ship-together claims, and for Ruby, `ruby` with `prism` 1.x (Ruby 3.4 ships it). Linux, macOS and
+Windows run the suite and an end-to-end scan, pin and check on every commit. [Other ways to install,
+and how to keep the map out of git](#install-options-and-configuration), are further down.
 
 ## A closer look
 
@@ -227,6 +259,41 @@ MUST-FIX  "lib/rubocop/cop/style/reverse_first.rb":1  a .rb file added to "lib/r
 MUST-FIX means the code you accepted has no exception to the habit at all. Nothing is blocked, and
 `--format github` turns each finding into an annotation on the pull request.
 
+## How it works
+
+<p align="center">
+  <picture>
+    <source media="(prefers-color-scheme: dark)" srcset="docs/assets/pipeline-dark.svg">
+    <img src="docs/assets/pipeline-light.svg" alt="Two columns. What a scan does: collect the corpus from git ls-files, find the areas, parse once in a pool of child processes with oxc, prism and tree-sitter, count each dimension per area with one pass over git log, apply the gates at 0.90 of sites with a Wilson bound and a pinned baseline, and write the map into .claude/rules and .claude/anatomiya. What the hooks do in a session: refresh rescans in the background when HEAD moves, echo hands the overview back, notice speaks before a Write or an Edit, reuse asks one subagent for an existing function when the turn ends, and /anatomiya:check compares the branch with its merge base before review." width="860">
+  </picture>
+</p>
+
+A scan reads the files `git ls-files` lists and nothing else, so an `.env` or a key file never enters
+the corpus, and it leaves out fixture, vendor and build directories, whose code is unidiomatic on
+purpose. Every directory holding enough source is an area. A pool of child processes parses each
+file once: `oxc-parser` for JavaScript and TypeScript, Ruby's own `prism` for Ruby, and the seven
+tree-sitter grammars the plugin ships as WebAssembly for Python, PHP, Go, Java, C#, Rust and Kotlin.
+Each dimension counts, per area, how many sites conform out of how many could, and one pass over
+`git log` adds who wrote them and which files change together.
+
+A count becomes a stated claim only past every gate: at least 0.90 of sites, a Wilson lower bound on
+the same counts, evidence spread over enough files and authors, and a pinned baseline, so the agent's
+own output cannot raise the bar it is judged against. Everything else prints as a count, which is how
+a reader tells "no convention here" from "the tool missed it". The map is written as files of forty
+lines at most: `.claude/rules/anatomiya-overview.md`, which Claude Code loads on every turn, and one
+file per area beside it, which loads when Claude reads a file there. The facts, the layout, the pin
+and the code index sit beside them in `.claude/anatomiya/`.
+
+Four hooks run in a session, each a short call into the same binary. `refresh` starts a background
+rescan at the start of a session and whenever HEAD moves. `echo` hands the overview back once the
+model has read on past its last copy. `notice` speaks before a Write, an Edit or a notebook edit, and only where
+the history or the test layout has something to say about that path. `reuse` runs when a turn ends and
+asks one subagent for a function that already does the job. `/anatomiya:check` runs the same counts
+at the merge base and at the working tree, and reports what the branch introduced.
+
+[docs/how-it-works.md](docs/how-it-works.md) is the mechanical walkthrough, close enough to predict a
+scan's output, and [DECISIONS.md](DECISIONS.md) holds the measurement behind each choice.
+
 ## The whole test, ties included
 
 Fourteen reuse tasks in thirteen open-source repositories, measured on 0.19.0, and four tasks of
@@ -338,8 +405,8 @@ subagent in your own session.
 Claude that where the map and the code disagree, the code is right. The map rebuilds itself on the
 next checkout or pull.
 
-**Should I commit the map?** Usually not, and [the exclude lines below](#more-ways-to-install) keep
-it out of git. A team can commit it instead, and the background refresh then leaves it alone.
+**Should I commit the map?** Usually not, and [the exclude lines below](#install-options-and-configuration)
+keep it out of git. A team can commit it instead, and the background refresh then leaves it alone.
 
 **Does it work in CI?** `node plugins/anatomiya/bin/anatomiya.mjs check . --format github` prints one
 annotation per finding, and `--format json` gives a job the same answer as a record.
@@ -374,7 +441,7 @@ session found the repository's own helper with or without it.
   directory with no test precedent, so it can win over your own instruction.
   [docs/usage.md](docs/usage.md#limits) lists each one and what it rests on.
 
-## More ways to install
+## Install options and configuration
 
 `/anatomiya:doctor` says what loaded, `/anatomiya:setup` repairs an install that stopped short, and
 `/anatomiya:pin` accepts the current code as the baseline by hand for a repository with no remote. The
@@ -383,15 +450,35 @@ three runtime dependencies, `oxc-parser`, `flow-remove-types` and `web-tree-sitt
 
 Without Claude Code it is a plain CLI:
 
-```
+```sh
 git clone https://github.com/crisnahine/anatomiya
 cd anatomiya && npm install --ignore-scripts
 node plugins/anatomiya/bin/anatomiya.mjs scan /path/to/your/repo
 ```
 
+`scan`, `check` and `pin` take the repository's path, or run inside it; `find` asks the repository
+it is run in, and `doctor` and `setup` answer about the installation. The options a session reaches
+for:
+
+```sh
+node plugins/anatomiya/bin/anatomiya.mjs scan /path/to/your/repo --dry-run
+node plugins/anatomiya/bin/anatomiya.mjs scan /path/to/your/repo --targets cursor,copilot
+node plugins/anatomiya/bin/anatomiya.mjs check /path/to/your/repo --base origin/main --format github
+node plugins/anatomiya/bin/anatomiya.mjs pin /path/to/your/repo --dry-run
+node plugins/anatomiya/bin/anatomiya.mjs find 'compare urls' --format json
+node plugins/anatomiya/bin/anatomiya.mjs doctor
+```
+
+`--dry-run` prints what a scan or a pin would write and writes nothing. `--targets` names the whole
+set of other tools the map is written for, and the choice sticks until a scan names a set without
+it; `--targets claude` turns both off and removes the files this tool wrote there. `check` compares
+against the remote's default branch unless `--base` names another ref, and answers in text, `json`
+or `github`. `find` takes its words inside single quotes, so a shell does not read `?` or `*` in a
+name as a pattern.
+
 To keep the map out of git:
 
-```
+```sh
 exclude="$(git rev-parse --git-common-dir)/info/exclude"
 echo '.claude/rules/anatomiya-*.md' >> "$exclude"
 echo '.claude/anatomiya/' >> "$exclude"
@@ -402,7 +489,7 @@ echo '.github/instructions/anatomiya-*.instructions.md' >> "$exclude"
 For worktrees Claude Code creates, a `.worktreeinclude` at the repository root carries the map and its
 baseline into each one:
 
-```
+```text
 **/.claude/rules/anatomiya-*.md
 **/.claude/anatomiya/facts.json
 **/.claude/anatomiya/layout.json
@@ -411,6 +498,77 @@ baseline into each one:
 
 [docs/usage.md](docs/usage.md) has every command, option and edge case.
 
+## Troubleshooting
+
+- **Start with `/anatomiya:doctor`.** It prints one line for Node, one for each parser engine (`oxc`,
+  `prism` and `tree-sitter`) and one for each package beside them, each with the remedy where
+  something is wrong, and exits 0 either way. Inside a mapped repository it also says how many
+  definitions the code index holds.
+- **`nothing is installed here` on its first line.** `/plugin install` did not run `npm ci` in the
+  plugin's directory, or stopped short. `/anatomiya:setup` installs the three runtime dependencies
+  there, and is the only command that reaches a package registry. On Windows it prints the npm
+  command for you to run by hand.
+- **`node: not found` on every prompt and tool call.** The hooks run `node` by name on the `PATH`
+  Claude Code uses. Install Node 22 or newer and put it first on `PATH`, or disable the plugin. On an
+  older Node every command refuses with one sentence naming the version it found, and the hooks
+  answer with nothing rather than interrupt the session.
+- **Ruby files went uncounted.** The scan and the map say so and name the remedy: `ruby` on `PATH`
+  with `prism` 1.x, which Ruby 3.4 ships, or `gem install prism` on an older Ruby (2.7 or newer).
+  Every other language is still mapped meanwhile.
+- **`grammars: 6 of 7, kotlin.wasm did not load` on the `tree-sitter` line.** A grammar file is the
+  plugin's own, so the fix is to reinstall the plugin; `setup` does not touch it. The other six
+  languages are still read.
+- **The map looks stale.** A checkout, a pull or a commit refreshes it in the background, and
+  `/anatomiya:scan` rewrites it now. Where the map and the code disagree, the code is right, and
+  every overview says so.
+- **`check` says `git could not be asked`.** Git never answered a question the check asked. Run the
+  check again, and if the line repeats, the text after the colon is git's own reason. A non-zero exit from
+  `check` means it could not run, never that it found something: findings never set the exit code.
+- **Every `check` finding is capped at FIX.** No baseline is pinned, the map is stale, or the branch
+  has no merge base, and the reason line under each finding says which. The pin follows your default
+  branch on its own once the checkout sits on its fetched tip with nothing uncommitted, and
+  `/anatomiya:pin` takes one by hand.
+
+## Development
+
+```sh
+git clone https://github.com/crisnahine/anatomiya
+cd anatomiya && npm install --ignore-scripts
+npm test
+```
+
+ES modules, Node 22 or newer, `node:test` and `node:assert` only. Tests that need a repository build
+one in a temp directory with real `git init` and real commits. The gates a change passes before it
+merges:
+
+| Command | What it holds |
+|---|---|
+| `npm test` | the suite; the Ruby tests skip where `ruby -rprism` is missing, and the rest still run |
+| `npm run check:docs` | every number, path and command line the documents state, read against the code: dimension counts, the command surface, the caveat codes, the gate table, the runtime dependency set |
+| `npm run validate` | the manifests, the shipped set, the plugin's own lockfile, and each grammar file against its recorded hash |
+| `npm run coverage` | the suite under per-file coverage floors |
+| `node scripts/line-endings.mjs` | the suite as a Windows runner checks it out, with CRLF endings |
+| `npm run e2e:corpus` | scan, a byte-identical rescan, pin, check and a planted violation on a fresh clone of each corpus repository |
+
+CI runs the suite on Linux, macOS and Windows with Node 22 and 24 on every commit, the coverage
+floors, the docs gate and `validate` on Linux, and an end-to-end scan, pin and check of a real
+repository on all three. [CONTRIBUTING.md](CONTRIBUTING.md)
+has the setup, the bar a new dimension has to clear and how a decision is recorded, and
+[docs/releasing.md](docs/releasing.md) is the release checklist.
+
+## Contributing and security
+
+Pull requests are welcome. Keep the diff to one thing and say what you measured: a new counting rule
+needs a denominator and a run over the corpus before it ships, and [CONTRIBUTING.md](CONTRIBUTING.md)
+has the bar. The [issue templates](.github/ISSUE_TEMPLATE) ask for what a report needs. This project
+follows the [Contributor Covenant](CODE_OF_CONDUCT.md).
+
+Report a security problem privately through
+[GitHub's advisory form](https://github.com/crisnahine/anatomiya/security/advisories/new), never in a
+public issue. [SECURITY.md](SECURITY.md) says what an attacker who controls a repository can reach and
+what the code does about each case, what to expect from a report (a first reply within 7 days), and
+that fixes land on `main` only: anatomiya is pre-1.0, with no backports.
+
 ## Learn more
 
 - [docs/usage.md](docs/usage.md): the full guide.
@@ -418,24 +576,17 @@ baseline into each one:
 - [docs/how-it-works.md](docs/how-it-works.md): the mechanics, close enough to predict a scan's output.
 - [DECISIONS.md](DECISIONS.md): 379 numbered decisions, each with the measurement or review finding
   that forced it.
+- [CONTEXT.md](CONTEXT.md): the glossary, so a word in a map or a document means one thing.
 - [docs/measurements/corpus.md](docs/measurements/corpus.md): every repository a measurement ran on,
   with its commit.
-
-## Development
-
-```
-npm install --ignore-scripts
-node --test 'test/**/*.test.mjs'
-npm run check:docs
-```
-
-ES modules, Node 22 or newer. CI runs the suite and an end-to-end scan, pin and check on Linux, macOS
-and Windows on every commit. [CONTRIBUTING.md](CONTRIBUTING.md) has the bar a new habit has to clear
-and the release checklist.
 
 ## License
 
 [MIT](LICENSE)
+
+Try it on a repository you know well, and read the map against the code. Where a line is wrong,
+[open an issue](https://github.com/crisnahine/anatomiya/issues/new/choose) with the line and the
+directory it was counted over.
 
 P.S. Don't take the headline on faith. Clone mastodon at `3f5c32f`, then
 `node scripts/ab-scenario.mjs --repo <that clone> --scenario scripts/ab/scenarios/mastodon-reuse-and-i18n.json --model claude-opus-5-5 --trials 20`
