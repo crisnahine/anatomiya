@@ -356,6 +356,7 @@ public measurement, a 4,616-comment classification, and a 237-entry glossary re-
 | G17 | No document quotes code, prompt text or byte offsets read out of a proprietary build, Claude Code's included: a note describes what the build does, and quotes only first-party documentation, open-source source and the output a command prints. `check:docs` refuses a byte offset into a build | done | [G17](docs/decisions/G17.md) |
 | G18 | What a user gets is measured as the plugin on against the plugin off, on tasks whose checks a scenario file fixes before any trial runs: each arm a session with the tools a coding session has, each alone at the same leaf name, scored on what git shows it changed, and reported with each arm's Wilson interval, Fisher's exact test and what each trial cost | done | [G18](docs/decisions/G18.md) |
 | G19 | The reuse result is measured outside JavaScript, TypeScript and Ruby by one task per tree-sitter language, picked by a rule committed before any repository was scanned for it (`docs/measurements/2026-10-26-language-replication-rule.md`), and run as G18 runs every task | done | [G19](docs/decisions/G19.md) |
+| G20 | The docs gate reads each document once, through `documents(root)`, and runs its claims as a table of rules, `RULES`, each a function of one context, so a rule can be run on its own over documents held as strings (`documentsFrom`) and a rule added shows by name | done | [G20](docs/decisions/G20.md) |
 
 ## H. Layout
 
