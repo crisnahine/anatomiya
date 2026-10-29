@@ -520,7 +520,8 @@ file never reaches a terminal or a transcript. The reuse check puts up to five r
 the session reads, each in backticks with every backtick of its own removed and its path encoded
 where a shell would not read it plainly, so a doc sentence reads as quoted repository text rather
 than as part of the instruction (A126). It reads a file past 2 MiB only for the schema and the
-count at its head, through the one handle that sizes it, and never follows a link. A copy committed
+count at its head, through the one handle that sizes it, and opens no link at the file itself, inside a
+store that is never read outside `.claude`. A copy committed
 to a repository is replaced by the next scan, and one this cannot read answers as no index.
 
 ### The history stores hold what git printed

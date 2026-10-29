@@ -7,6 +7,17 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and
 
 ## [Unreleased]
 
+## [0.21.0] - 2026-10-29
+
+The end-of-turn reuse check now hands its subagent the definitions the code index already lists
+nearest each function a turn added, from code the new file can call, and the Stop hook bounds what it
+reads and searches, so a large index stays inside the time the hook has. One rule now credits a helper's
+importers in the area file and in `find`, every row is asked and run one way by the scan, the fold and
+the check, and the tree-sitter reader takes every node type from the table its grammar test holds. On
+the four reuse tasks with Haiku, 10 sessions per arm, 34 of 40 sessions called the helper the
+repository already had, against 67 of 80 on 0.20.0, at $0.0162 a session against $0.0157; ten
+sessions per arm claim no gain.
+
 ### Changed
 
 - The end-of-turn reuse check now names, in its reason, the definitions the code index already lists
@@ -5398,7 +5409,8 @@ which are partial; several listed there are not implemented yet.
 - No claim that this catches defects. Measured across ten repositories, 1 of 317 defect review
   comments was preventable by a conventions map.
 
-[Unreleased]: https://github.com/crisnahine/anatomiya/compare/v0.20.0...HEAD
+[Unreleased]: https://github.com/crisnahine/anatomiya/compare/v0.21.0...HEAD
+[0.21.0]: https://github.com/crisnahine/anatomiya/compare/v0.20.0...v0.21.0
 [0.20.0]: https://github.com/crisnahine/anatomiya/compare/v0.19.0...v0.20.0
 [0.19.0]: https://github.com/crisnahine/anatomiya/compare/v0.18.2...v0.19.0
 [0.18.2]: https://github.com/crisnahine/anatomiya/compare/v0.18.1...v0.18.2
