@@ -61,6 +61,9 @@ reports on the three full clones, whose findings are row findings alone.
   and a rerun names the build by its commit (G21).
 - `plugins/anatomiya/lib/payload.mjs`, `settings.mjs` and `find-command.mjs`: the hook contract on
   the wire, the settings entry an older version arranged, and the `find` command (A24, A45, A100).
+- The overview head, the check's command file and the reuse check's reason tell the model to report
+  its work as it happened, never a test or a check it did not run and never a site changed to get past
+  a rule, and to ask the user whether to file a defect in the map or the plugin at the tracker (A127).
 
 ### Fixed
 

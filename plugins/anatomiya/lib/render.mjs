@@ -897,6 +897,11 @@ function overviewHead(result, target) {
     // scope guard is measured to move the out-of-scope rate by double digits
     // (docs/research/one-line-that-finishes-in-house-style.md).
     "When a change is asked for, follow what this repository already does and carry it through instead of stopping at a suggestion.",
+    // What the counts cannot see: a site moved to get past a row, or a check
+    // reported and never run. One line, beside the permission to say unverified,
+    // with the one place a defect in this tool can go; a second line here is a
+    // line the areas lose at the bound (A127).
+    "Report your work as it happened: never a test, a read or a check you did not run, and never a site changed to get past a rule, which you fix or say why you left; where this map or the plugin that wrote it is wrong about the code, tell the user and ask whether to file it at github.com/crisnahine/anatomiya/issues.",
     "",
   ];
 

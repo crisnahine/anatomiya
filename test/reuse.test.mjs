@@ -86,6 +86,7 @@ test("the reason is the wording A123 settled, naming the lines the change added"
         "For each added function, call the closest one it names, the repository's own before a package's, and delete the copy it replaces. Where one does part of the job, call it for that part. " +
         "Where one falls short on a case this change needs, make the new code fit it, or extend it without changing what it returns to its current callers, and call it. " +
         "If it names none, finish without changing anything. " +
+        "Say what the search ran and found; do not report a search that did not run. If this check is wrong about a file, tell the user and ask whether to file it at github.com/crisnahine/anatomiya/issues. " +
         "If this session has no subagent tool, run that search yourself."
     ),
     reason

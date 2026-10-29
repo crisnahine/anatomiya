@@ -1572,7 +1572,7 @@ until a file under it is touched. A subagent that only greps and `cat`s never to
 the exploration phase issue #34 measured going dark, and it is the whole of the gap: a subagent that
 Reads is served like the main thread, overview included.
 
-The overview head carries three fixed sentences beside the counts. "Read a file before editing it:
+The overview head carries four fixed sentences beside the counts. "Read a file before editing it:
 these notes load when you read, not when you grep" is that ceiling said to the agent. "When unsure
 what this code does, read it, grep it, or run it instead of guessing, and say what you could not
 verify" names the tools the agent already has and permits the abstention, which is what keeps a
@@ -1583,7 +1583,11 @@ about what to do with a change instead of what to read first: the counts below i
 files they point at, say what the practice is, and this says to follow it and finish. It opens on a
 trigger clause because removing the equivalent scope guard is measured to move the out-of-scope rate
 by double digits; `docs/research/one-line-that-finishes-in-house-style.md` carries the sources
-(A42). All three are constant, so A5 holds, and to keep the overview inside its forty lines with
+(A42). The fourth, one line, is about what the counts cannot see, a construct moved to get past the
+row that counts it or a check reported and never run, and sends a defect in the map or the plugin to
+the user and the tracker, since the model reading a wrong claim is the first to see one; one line and
+not two, because every line of the head is a line the areas lose at the bound (A127). All four are
+constant, so A5 holds, and to keep the overview inside its forty lines with
 every optional line on, the string line of Not covered shares the line that says memory, GC and I/O
 are runtime only. The line above them that says what a claim is also carries the key to every counts
 line: `"no convention" means the gate in parentheses stopped it, and its sites may still all agree`.

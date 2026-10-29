@@ -652,7 +652,9 @@ test("the overview tells the agent to follow this repository's own practice and 
     lines[at - 1],
     "When unsure what this code does, read it, grep it, or run it instead of guessing, and say what you could not verify."
   );
-  assert.equal(lines[at + 1], "", "it closes the block of behavioural lines");
+  // The fourth and last: what the counts cannot see, and where a defect in this tool goes (A127).
+  assert.equal(lines[at + 1], "Report your work as it happened: never a test, a read or a check you did not run, and never a site changed to get past a rule, which you fix or say why you left; where this map or the plugin that wrote it is wrong about the code, tell the user and ask whether to file it at github.com/crisnahine/anatomiya/issues.");
+  assert.equal(lines[at + 2], "", "it closes the block of behavioural lines");
 });
 
 test("a truncated scan still tells the agent how to work, because the head is not a count", () => {
@@ -3948,6 +3950,7 @@ const CLAUDE_OVERVIEW = [
   "Read a file before editing it: these notes load when you read, not when you grep.",
   "When unsure what this code does, read it, grep it, or run it instead of guessing, and say what you could not verify.",
   "When a change is asked for, follow what this repository already does and carry it through instead of stopping at a suggestion.",
+  "Report your work as it happened: never a test, a read or a check you did not run, and never a site changed to get past a rule, which you fix or say why you left; where this map or the plugin that wrote it is wrong about the code, tell the user and ask whether to file it at github.com/crisnahine/anatomiya/issues.",
   "",
   "The scan was truncated, so no directive is stated. Counts only.",
   "",
@@ -4028,8 +4031,9 @@ const overviewFor = (key, reads, listed, generated) => {
   expected.splice(2, 0, key);
   expected.splice(7, 0, WROTE);
   expected[11] = reads;
-  expected[22] = `- and 1 more area in its own file, ${listed}`;
-  expected[32] = `Generated files: 3 under ${generated}`;
+  // By content rather than by index, so a constant line added to the head moves nothing here.
+  expected[expected.findIndex((line) => line.startsWith("- and 1 more area in its own file, "))] = `- and 1 more area in its own file, ${listed}`;
+  expected[expected.findIndex((line) => line.startsWith("Generated files: 3 under "))] = `Generated files: 3 under ${generated}`;
   return expected;
 };
 

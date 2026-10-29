@@ -170,7 +170,10 @@ export function reuseReason(files, { finder = null, closest = null } = {}) {
     // A session that named the helper kept a copy where it fell short on one case (A123).
     "Where one falls short on a case this change needs, make the new code fit it, or extend it without changing what it returns to its current callers, and call it. " +
     "If it names none, finish without changing anything. " +
-    // Last, so the measured wording above is unchanged where the tool exists.
+    // After the measured wording, which is unchanged up to here (A123, A124); what a search reports is
+    // the one thing the hook cannot read back, and a check wrong about a file is the plugin's to fix (A127).
+    "Say what the search ran and found; do not report a search that did not run. If this check is wrong about a file, tell the user and ask whether to file it at github.com/crisnahine/anatomiya/issues. " +
+    // Last, so a session without the tool reads the ask whole first.
     "If this session has no subagent tool, run that search yourself.\n" +
     tag(files)
   );
