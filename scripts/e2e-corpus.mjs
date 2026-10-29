@@ -31,6 +31,7 @@ import { appendFileSync, constants, existsSync, mkdirSync, readdirSync, readFile
 import { dirname, join, resolve, sep } from "node:path";
 import { fileURLToPath } from "node:url";
 
+import { semanticCell } from "./cells.mjs";
 import { corpusRepos, invokedAs, readArgv, selectRepos } from "./entry.mjs";
 import { runFrozen } from "./frozen-build.mjs";
 import { BINARY, REL } from "./plugins.mjs";
@@ -86,18 +87,6 @@ export function summaryProblems(s) {
   if (!s.baseline) problems.push("no baseline");
   if (typeof s.wrote !== "number") problems.push("no wrote count");
   return problems;
-}
-
-/**
- * The checker's answer for one repository, off its facts record: the status and
- * rate when it ran, and the reason when it did not, so a corpus that never ran
- * it says so in every row.
- */
-export function semanticCell(semantic) {
-  if (!semantic) return "-";
-  if (!semantic.ran) return `off ${semantic.reason}`;
-  const rate = semantic.typedResolutionRate;
-  return [semantic.status, semantic.reason, rate === null ? null : `${(rate * 100).toFixed(1)}%`].filter(Boolean).join(" ");
 }
 
 // The roots column is what the scan printed, so it is read off the layout line

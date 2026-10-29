@@ -30,13 +30,13 @@ import {
   rootsProblems,
   rootsPrinted,
   rosterCounts,
-  semanticCell,
   summaryProblems,
   tableOf,
   timeless,
   writtenProblems,
   wroteProblems,
 } from "../scripts/e2e-corpus.mjs";
+import { semanticCell } from "../scripts/cells.mjs";
 
 /** What a scan of a pinned Rails repository prints, line for line. */
 const SCAN = [

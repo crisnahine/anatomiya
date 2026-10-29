@@ -22,7 +22,7 @@ import { existsSync, mkdirSync, writeFileSync } from "node:fs";
 import { join, resolve } from "node:path";
 
 import { checkOutput, corpusRepos, invokedAs, readArgv, selectRepos } from "./entry.mjs";
-import { semanticCell } from "./e2e-corpus.mjs";
+import { semanticCell } from "./cells.mjs";
 import { namesakeCompanions } from "../plugins/anatomiya/lib/companions.mjs";
 import { collect, frameworksIn } from "../plugins/anatomiya/lib/corpus.mjs";
 import {
