@@ -76,9 +76,10 @@ const mayHold = (text, asked) => {
  * doc sentence or its path, so a word said in three places is still one word. The
  * more files import a definition the more its match weighs, and a test's half as
  * much. A word only the path holds finds nothing. Ties go to the one more files
- * import, then by path and line.
+ * import, then by path and line. `where`, given a path, says whether its file's
+ * definitions may be hits; every definition still weighs the words.
  */
-export function findSymbols(index, words, ranking = RANKING, { deadline = Infinity } = {}) {
+export function findSymbols(index, words, ranking = RANKING, { deadline = Infinity, where = null } = {}) {
   if (Object.keys(RANKING).some((k) => typeof ranking[k] !== "number")) throw new TypeError("a ranking names every weight RANKING does");
   const asked = queryWords(words);
   if (asked.length === 0) return [];
@@ -86,6 +87,7 @@ export function findSymbols(index, words, ranking = RANKING, { deadline = Infini
   if (weight === null) return [];
   const hits = [];
   for (const [rel, test, symbols] of index.files) {
+    if (where !== null && !where(rel)) continue;
     let inPath = null;
     for (const [name, kind, line, container, params, doc, importers] of symbols) {
       // A ranking cut short would put whatever the cut reached first; past `deadline` there is none.

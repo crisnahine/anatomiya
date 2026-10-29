@@ -1025,6 +1025,13 @@ test("a candidate comes from code the added file could call: its own language, o
   assert.deepEqual(vue.hits.map((h) => h.rel), ["app/javascript/api.ts"], "a component calls the module's TypeScript");
 });
 
+test("a runtime's candidate is found however many of another runtime's rank above it, and a name each runtime declares is asked of each", () => {
+  const ts = Array.from({ length: 40 }, (_, i) => [`app/javascript/f${i}.ts`, 0, [["formatLink", "fn", 1, null, "()", null, 40]]]);
+  const index = { schema: 1, count: 42, files: [...ts, ["lib/fmt.rb", 0, [["format_link", "method", 3, "Fmt", "(url)", null, 0]]], ["src/fmt.py", 0, [["format_link", "fn", 2, null, "(url)", null, 0]]]] };
+  const closest = closestTo(index, [{ path: "app/lib/a.rb", names: ["format_link"] }, { path: "tools/b.py", names: ["format_link"] }]);
+  assert.deepEqual(closest.hits.map((h) => h.rel), ["lib/fmt.rb", "src/fmt.py"]);
+});
+
 test("a search past its deadline gives up rather than hand back a part of its ranking", () => {
   const index = { schema: 1, count: 1, files: [["src/url.ts", 0, [["parseUrl", "fn", 1, null, "(t)", null, 3]]]] };
   assert.deepEqual(findSymbols(index, ["parse", "url"], RANKING, { deadline: performance.now() - 1 }), []);

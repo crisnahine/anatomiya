@@ -260,7 +260,6 @@ const REUSE_FIND_MS = 500;
 // Per name, and over the whole change: enough to point at a helper, short enough to read in the reason.
 const CLOSEST_EACH = 3;
 const CLOSEST_MOST = 5;
-const CLOSEST_ASKED = 30;
 // django's 39,257 definitions zip to 634 KB and read in about 15 ms; a larger index is left to `find`, which no hook clock bounds.
 export const REUSE_INDEX_BYTES = 2 * 1024 * 1024;
 
@@ -279,18 +278,18 @@ export function closestTo(index, files, { deadline = performance.now() + REUSE_F
   const hits = new Map();
   for (const file of files) {
     const callable = runtimeOf(file.path);
+    const where = (rel) => !changed.has(rel) && runtimeOf(rel) === callable;
     for (const name of file.names ?? []) {
       if (hits.size >= CLOSEST_MOST || performance.now() > deadline) break;
-      if (asked.has(name)) continue;
-      asked.add(name);
+      // A name two runtimes declare is asked of each, since each can call only its own.
+      if (asked.has(`${callable}\0${name}`)) continue;
+      asked.add(`${callable}\0${name}`);
       const before = hits.size;
-      // Searched past the hits it keeps, since a definition the added file cannot call is passed over.
-      const near = findSymbols(index, [name], { ...RANKING, shown: CLOSEST_ASKED }, { deadline }).filter((hit) => !changed.has(hit.rel) && runtimeOf(hit.rel) === callable);
-      for (const hit of near.slice(0, CLOSEST_EACH)) {
+      for (const hit of findSymbols(index, [name], { ...RANKING, shown: CLOSEST_EACH }, { deadline, where })) {
         const at = `${hit.rel}:${hit.line}`;
         if (!hits.has(at) && hits.size < CLOSEST_MOST) hits.set(at, hit);
       }
-      if (hits.size > before) found.push(name);
+      if (hits.size > before && !found.includes(name)) found.push(name);
     }
   }
   return hits.size ? { names: found, hits: [...hits.values()] } : null;
@@ -300,7 +299,6 @@ export function closestTo(index, files, { deadline = performance.now() + REUSE_F
 const SHARED_RUNTIME = { java: "jvm", kotlin: "jvm" };
 function runtimeOf(rel) {
   const lang = language(rel);
-  if (lang === null) return null;
   const engine = engineOf(lang);
   return engine === "tree-sitter" ? (SHARED_RUNTIME[lang] ?? lang) : engine;
 }
