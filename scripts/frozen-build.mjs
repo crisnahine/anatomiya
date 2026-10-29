@@ -20,7 +20,7 @@
 import { execFileSync, spawnSync } from "node:child_process";
 import { constants, cpSync, existsSync, mkdirSync, mkdtempSync, readFileSync, readdirSync, renameSync, rmSync, statSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
-import { join } from "node:path";
+import { dirname, join } from "node:path";
 
 import { REL, ROOT } from "./plugins.mjs";
 
@@ -95,7 +95,15 @@ function publish(building, root) {
     } catch (err) {
       if (existsSync(join(root, FROZEN_FROM))) return {};
       if (attempt > 0 || !existsSync(root)) return { error: `could not put the build at ${root}: ${err.code ?? err.message}` };
-      rmSync(root, { recursive: true, force: true });
+      // Moved aside in one step rather than removed in place, so a build another freeze puts at the
+      // name meanwhile is never the one removed; a move that fails is said, not thrown.
+      const aside = join(dirname(root), `.building-stale-${process.pid}-${Date.now()}`);
+      try {
+        renameSync(root, aside);
+        rmSync(aside, { recursive: true, force: true });
+      } catch (moved) {
+        return { error: `could not clear ${root}, which holds no build: ${moved.code ?? moved.message}` };
+      }
     }
   }
 }

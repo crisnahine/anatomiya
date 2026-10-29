@@ -1,7 +1,7 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import { execFileSync } from "node:child_process";
-import { existsSync, mkdirSync, mkdtempSync, readFileSync, writeFileSync } from "node:fs";
+import { existsSync, mkdirSync, mkdtempSync, readFileSync, utimesSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 
@@ -77,4 +77,13 @@ test("a frozen run is the harness at the commit, out of the build, with the free
   writeFileSync(join(half, "left-by-a-killed-run"), "");
   assert.equal(frozenBuild(sha, dir, { source: made.dir }).error, undefined);
   assert.ok(existsSync(join(half, FROZEN_FROM)) && !existsSync(join(half, "left-by-a-killed-run")));
+  // A temp directory a killed freeze left is swept once it is a day old, and a fresh one is left for the freeze that owns it.
+  const stale = join(dir, ".building-abcdef012345-old");
+  const fresh = join(dir, ".building-abcdef012345-new");
+  for (const p of [stale, fresh]) mkdirSync(p);
+  const dayAgo = (Date.now() - 25 * 60 * 60 * 1000) / 1000;
+  utimesSync(stale, dayAgo, dayAgo);
+  removeTree(half);
+  assert.equal(frozenBuild(sha, dir, { source: made.dir }).error, undefined);
+  assert.deepEqual([existsSync(stale), existsSync(fresh)], [false, true]);
 });

@@ -625,8 +625,9 @@ export async function reuseAnswer(checkouts, payload, { own = null } = {}) {
   // Under the bound the tail is the whole transcript and the start is read off it; past it the head
   // is read apart, after the tail is let go, so two 64 MiB buffers are never held at once, and
   // nothing holds the tail across the git reads below.
-  const since = before?.start === 0 ? sessionStartIn(before.text) : ((before = null), sessionStart(payload.transcript_path));
+  let since = before?.start === 0 ? sessionStartIn(before.text) : undefined;
   before = null;
+  since ??= sessionStart(payload.transcript_path);
   if (since === null) return {};
   // One parse budget and one git deadline for the whole stop, however many checkouts it reads.
   const parsing = { deadline: null };
