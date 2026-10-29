@@ -8,10 +8,10 @@ import { join } from "node:path";
 import { buildIndex, saveIndex } from "../plugins/anatomiya/lib/code-index.mjs";
 import { findSymbols, formatHit, queryWords, RANKING } from "../plugins/anatomiya/lib/find.mjs";
 import { creditOf } from "../plugins/anatomiya/lib/siblings.mjs";
-
-const importersOf = (symbols, byName, rel) => creditOf(symbols, byName, rel).files.map((files) => files.size);
 import { readIndex } from "../plugins/anatomiya/lib/index-home.mjs";
 import { INDEX_FILE, STORE_DIR } from "../plugins/anatomiya/lib/rules.mjs";
+
+const importersOf = (symbols, byName, rel) => creditOf(symbols, byName, rel).files.map((files) => files.size);
 
 /** A parse record as the worker writes it, carrying only what the index reads. */
 const record = (symbols, imports = [], extra = {}) => ({

@@ -11,7 +11,7 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and
 
 - The end-of-turn reuse check now names, in its reason, the definitions the code index already lists
   nearest each function the turn added: an added `local_url_for?` on mastodon brings
-  `TagManager#local_url?` first. Not yet measured in sessions (A126).
+  `TagManager#local_url?` first (A126).
 - The "most imported from here" line counts a class's importers the way the code index does, so a
   class whose methods the rest of the repository calls is counted with those callers, and one helper
   reads the same number in its area file and in `find`. 94 of 979 area lines changed over 12
@@ -23,8 +23,8 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and
 
 - A test holds the rows that ask one question of different engines to one row per language, and
   every difference in their wording to a recorded reason (C72).
-- `scripts/find-replay.mjs` scores `find`'s ranking against the 19 recorded queries: 0.882 on this
-  build, and none of 810 other weight sets scored higher (H60).
+- `scripts/find-replay.mjs` scores `find`'s ranking against the 19 recorded queries: 0.882, and with
+  `--sweep` none of the 810 weight sets H60 records, today's among them, scores higher (H60).
 
 ## [0.20.0] - 2026-10-29
 

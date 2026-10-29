@@ -3,12 +3,13 @@
  * whether its last scan could not write one. Apart from `code-index.mjs`, whose
  * imports are the scan's: the Stop hook asks this and loads none of those.
  */
+import { closeSync, constants, fstatSync, openSync, readFileSync, readSync } from "node:fs";
 import { join } from "node:path";
-import { gunzipSync } from "node:zlib";
+import { constants as zlib, gunzipSync } from "node:zlib";
 
 import { refreshRecord } from "./hook.mjs";
 import { INDEX_FILE, resolveInside, STORE_DIR } from "./rules.mjs";
-import { READ_MOST, recordBytes } from "./store.mjs";
+import { READ_MOST } from "./store.mjs";
 import { DOC_MOST, PARAMS_MOST, SYMBOL_KINDS } from "./symbols.mjs";
 import { mainCheckoutOf } from "./worktree.mjs";
 
@@ -24,14 +25,35 @@ export function indexPath(root) {
   return dir === null ? null : join(dir, INDEX_FILE);
 }
 
-/** The index a scan of this repository wrote, or null where there is none this can read. */
-export function readIndex(root) {
-  const path = indexPath(root);
-  if (path === null) return null;
+// What a scan writes first: the schema and how many definitions follow, read off the head of a file too large to read whole.
+const HEAD_BYTES = 4096;
+const HEAD = /^\{"schema":(\d+),"count":(\d+),"files":\[/;
+
+/**
+ * The bytes of the file at `path` through one handle, so the file sized is the file read: all of it, or
+ * only its head where it is larger than `readMost`. Null where it is no regular file, a link refused, or
+ * larger than any index a scan writes.
+ */
+function indexBytes(path, readMost) {
+  let fd;
   try {
-    // Typed and read through one handle, a link refused, so the file read is the file checked.
-    const bytes = recordBytes(path);
-    if (!bytes) return null;
+    // O_NONBLOCK, so a FIFO planted at the path is opened rather than waited on, and refused as no file.
+    fd = openSync(path, constants.O_RDONLY | (constants.O_NOFOLLOW ?? 0) | (constants.O_NONBLOCK ?? 0));
+    const stat = fstatSync(fd);
+    if (!stat.isFile() || stat.size > INDEX_MOST) return null;
+    if (stat.size <= readMost) return { whole: true, bytes: readFileSync(fd) };
+    const head = Buffer.alloc(HEAD_BYTES);
+    return { whole: false, bytes: head.subarray(0, readSync(fd, head, 0, HEAD_BYTES, 0)) };
+  } catch {
+    return null;
+  } finally {
+    if (fd !== undefined) closeSync(fd);
+  }
+}
+
+/** The index in `bytes` read whole, or null where it is not one this schema writes. */
+function indexOf(bytes) {
+  try {
     const index = JSON.parse(gunzipSync(bytes, { maxOutputLength: UNZIPPED_MOST }).toString("utf8"));
     return index?.schema === INDEX_SCHEMA && Array.isArray(index.files) ? wellFormed(index.files) : null;
   } catch {
@@ -39,16 +61,44 @@ export function readIndex(root) {
   }
 }
 
+/** How many definitions an index's head says follow, or null where the head is not one this schema writes. */
+function headCount(bytes) {
+  try {
+    const head = HEAD.exec(gunzipSync(bytes, { finishFlush: zlib.Z_SYNC_FLUSH }).toString("utf8"));
+    return head !== null && Number(head[1]) === INDEX_SCHEMA ? Number(head[2]) : null;
+  } catch {
+    return null;
+  }
+}
+
+/** The index a scan of this repository wrote, or null where there is none this can read. */
+export function readIndex(root) {
+  const path = indexPath(root);
+  const read = path === null ? null : indexBytes(path, Infinity);
+  return read === null || read.bytes.length === 0 ? null : indexOf(read.bytes);
+}
+
 /**
- * The index that answers for `root` and the checkout it is read from: its own,
- * or for a linked worktree whose own cannot be read its main checkout's, as the
- * map is borrowed. Null where neither reads, which is the one answer the reuse
- * check, `find` and the doctor all take.
+ * The index that answers for `root`, the checkout it is read from and how many
+ * definitions it holds: its own, or for a linked worktree whose own cannot be
+ * read its main checkout's, as the map is borrowed. Null where neither reads,
+ * which is the one answer the reuse check, `find` and the doctor all take. A
+ * file of more than `readMost` bytes is judged by its head and handed back
+ * unread, as `index: null`, so a hook never parses an index larger than its
+ * time allows.
  */
-export function usableIndex(root) {
+export function usableIndex(root, { readMost = Infinity } = {}) {
   for (const home of [root, mainCheckoutOf(root)]) {
-    const index = home === null ? null : readIndex(home);
-    if (index !== null) return { home, index };
+    const path = home === null ? null : indexPath(home);
+    const read = path === null ? null : indexBytes(path, readMost);
+    if (read === null || read.bytes.length === 0) continue;
+    if (!read.whole) {
+      const count = headCount(read.bytes);
+      if (count !== null) return { home, index: null, count };
+      continue;
+    }
+    const index = indexOf(read.bytes);
+    if (index !== null) return { home, index, count: index.count };
   }
   return null;
 }

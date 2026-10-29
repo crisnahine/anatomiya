@@ -286,9 +286,8 @@ test("every field a reader takes off a site crossed the worker boundary, or is t
   }
 });
 
-// The check took raw hits off a row's own `run` while the scan took what
-// crossed, so a field the boundary dropped still worked in the check and in
-// the row tests and was missing from the map.
+// The check and the row tests took raw hits while the scan took what crossed, so a field the
+// boundary dropped worked in both and was missing from the map.
 test("a row is run through hit collection alone, by the scan, the check and the tests", () => {
   const lib = readdirSync(LIB).filter((f) => f.endsWith(".mjs") && /\.run\(/.test(scan(readFileSync(join(LIB, f), "utf8"))));
   assert.deepEqual(lib, ["walk.mjs"]);

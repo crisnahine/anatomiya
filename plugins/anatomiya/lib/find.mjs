@@ -44,10 +44,11 @@ export const queryWords = (words) => [...new Set(words.flatMap(wordsOf).filter((
  * unweighed, `new` or `id` in a hundred names buries `uuid` in one, and `the` in
  * every doc outweighs both.
  */
-function weightsOf(index, asked) {
+function weightsOf(index, asked, deadline) {
   const seen = new Map([...asked].map((w) => [w, 0]));
   let total = 0;
   for (const [, , symbols] of index.files) {
+    if (performance.now() > deadline) return null;
     for (const [name, , , container, , doc] of symbols) {
       total++;
       if (!mayHold(`${name} ${container ?? ""} ${doc ?? ""}`, asked)) continue;
@@ -77,13 +78,16 @@ const mayHold = (text, asked) => {
  * much. A word only the path holds finds nothing. Ties go to the one more files
  * import, then by path and line.
  */
-export function findSymbols(index, words, ranking = RANKING) {
+export function findSymbols(index, words, ranking = RANKING, { deadline = Infinity } = {}) {
   if (Object.keys(RANKING).some((k) => typeof ranking[k] !== "number")) throw new TypeError("a ranking names every weight RANKING does");
   const asked = queryWords(words);
   if (asked.length === 0) return [];
-  const weight = weightsOf(index, asked);
+  const weight = weightsOf(index, asked, deadline);
+  if (weight === null) return [];
   const hits = [];
   for (const [rel, test, symbols] of index.files) {
+    // A ranking cut short would put whatever the cut reached first; past `deadline` there is none.
+    if (performance.now() > deadline) return [];
     let inPath = null;
     for (const [name, kind, line, container, params, doc, importers] of symbols) {
       if (!mayHold(`${name} ${container ?? ""} ${doc ?? ""}`, asked)) continue;

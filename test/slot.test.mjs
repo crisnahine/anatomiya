@@ -6,6 +6,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 
 import { runScan } from "../plugins/anatomiya/lib/commands.mjs";
+import { applyGates, reduceArea } from "../plugins/anatomiya/lib/reduce.mjs";
 import { isWholeArea, SCAN_ONLY, scopeOf, SLOT_FIELDS, slotRecord, statedSide } from "../plugins/anatomiya/lib/slot.mjs";
 import { removeTree } from "./platform.mjs";
 
@@ -174,6 +175,18 @@ test("every field a scan hands a slot is one the record stores or one the scan k
   assert.ok(fields.has("learned") && fields.has("files"), "the fixture reaches a learned row and the scan's own fields");
   const known = new Set([...SLOT_FIELDS, ...Object.keys(SCAN_ONLY)]);
   assert.deepEqual([...fields].filter((f) => !known.has(f)).sort(), []);
+});
+
+test("a route table's slot, counted over its sections, holds only fields the two lists name", () => {
+  // The fold gives a slot `sections` and `sectionDirs` only where a site names its declaration, which no plain scan fixture reaches.
+  const rels = ["src/router/routes.tsx", "src/router/Router.tsx", "src/router/index.tsx", "src/router/keys.tsx"];
+  const hits = Array.from({ length: 40 }, (_, i) => ({ conforming: false, where: `seg${i}`, class: "kebab-case", section: `s${i % 10}` }));
+  const parsed = rels.map((rel, i) => ({ rel, ok: true, facets: { jsx: true }, hits: i === 0 ? { url_segment_case: hits } : {} }));
+  const slot = reduceArea({ langs: ["jsx"], files: rels.map((rel) => ({ rel, lang: "jsx" })) }, parsed).find((d) => d.key === "url_segment_case");
+  const gated = { ...slot, ...applyGates(slot, { authors: 3, areaFileCount: 4, areaDirCount: 1 }) };
+  assert.ok("sections" in gated && "sectionDirs" in gated, "the fixture reaches a route table's fields");
+  const known = new Set([...SLOT_FIELDS, ...Object.keys(SCAN_ONLY)]);
+  assert.deepEqual(Object.keys(gated).filter((f) => !known.has(f)).sort(), []);
 });
 
 test("every field the table says the record keeps is one the record reads", () => {

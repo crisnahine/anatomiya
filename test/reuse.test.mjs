@@ -11,6 +11,7 @@ import { scriptGit } from "./git-script.mjs";
 import { needsPathControl, needsPosixPaths, needsPosixSpecialFiles, needsShebang, needsSymlinks, removeTree } from "./platform.mjs";
 import { snapshot, transcript } from "./transcript.mjs";
 import { usableIndex } from "../plugins/anatomiya/lib/index-home.mjs";
+import { findSymbols, RANKING } from "../plugins/anatomiya/lib/find.mjs";
 import { askedMarksIn, closestTo, continuedByReuseIn, declaredIn, finderFor, pendingChange, quotable, resumedByReuseIn, REUSE_GIT_MS, REUSE_MARK, reuseReason, TRANSCRIPT_MOST } from "../plugins/anatomiya/lib/reuse.mjs";
 import { runReuse } from "../plugins/anatomiya/lib/hook-verbs.mjs";
 import { PAYLOAD_WAIT_MS } from "../plugins/anatomiya/lib/hook.mjs";
@@ -144,21 +145,37 @@ test("the finder is the checkout's own index, or its main checkout's for a linke
   assert.equal(usableIndex(tree).home, main);
 });
 
-test("an index find cannot read never makes the reason name find, so the grep advice stays", async (t) => {
+test("an index find cannot answer from never makes the reason name find, through the hook itself", async (t) => {
   const refused = {
     "an empty file": "",
     "bytes that are not gzip": "garbage",
     "an older schema": gzipSync(JSON.stringify({ ...INDEX, schema: 0 })),
     "JSON with no rows": gzipSync(JSON.stringify({ schema: 1, count: 0 })),
+    // A repository in no language the index reads: `find` would answer that nothing matches.
+    "an index of no definitions": gzipSync(JSON.stringify({ schema: 1, count: 0, files: [] })),
   };
   for (const [what, body] of Object.entries(refused)) {
-    const root = mkdtempSync(join(tmpdir(), "anatomiya-index-"));
-    t.after(() => removeTree(root));
-    writeIndex(root, body);
-    assert.equal(usableIndex(root), null, what);
-    assert.equal(finderFor(usableIndex(root)), null, what);
-    assert.match(reuseReason([{ path: "src/a.ts", mark: "000000000000", hunks: [{ from: 1, to: 2, created: true }] }], { finder: finderFor(usableIndex(root)) }), /Have it grep shared and utility modules/, what);
+    const { dir, write } = repo(t);
+    writeIndex(dir, body);
+    write("src/b.ts", "export function parseUrlStrict(text) {\n  return text;\n}\n");
+    assert.equal(finderFor(usableIndex(dir)), null, what);
+    const answer = await runReuse(dir, stop(dir, { transcript_path: begun(t) }));
+    assert.equal(answer.decision, "block", what);
+    assert.match(answer.reason, /Have it grep shared and utility modules/, what);
+    assert.doesNotMatch(answer.reason, /find '<words>'|already lists/, what);
   }
+});
+
+test("an index past what a stop reads whole is judged by its head, and names find without being searched", async (t) => {
+  const { dir, write } = repo(t);
+  writeIndex(dir, gzipSync(JSON.stringify(INDEX)));
+  write("src/b.ts", "export function parseUrlStrict(text) {\n  return text;\n}\n");
+  assert.deepEqual(usableIndex(dir, { readMost: 8 }), { home: dir, index: null, count: 1 });
+  assert.match(finderFor(usableIndex(dir, { readMost: 8 })), /find '<words>'/);
+  writeIndex(dir, gzipSync(JSON.stringify({ ...INDEX, schema: 0 })));
+  assert.equal(usableIndex(dir, { readMost: 8 }), null, "an older schema is refused by its head too");
+  writeIndex(dir, gzipSync(JSON.stringify({ schema: 1, count: 0, files: [] })));
+  assert.equal(finderFor(usableIndex(dir, { readMost: 8 })), null, "and a head that counts no definition names no find");
 });
 
 test("a stop over an index find refuses asks with the grep, through the hook itself", async (t) => {
@@ -921,7 +938,7 @@ test("with a usable index the reason names the existing functions closest to wha
   const answer = await runReuse(dir, stop(dir, { transcript_path: begun(t) }));
 
   assert.equal(answer.decision, "block");
-  assert.match(answer.reason, /The code index already lists these closest to the added parseUrlStrict: parseUrl\(text\)  src\/util\/url\.ts:3  fn, 12 files import it  - Parse a URL the way the router does\. /);
+  assert.match(answer.reason, /As of the last scan, the code index lists these closest to the added `parseUrlStrict`: `parseUrl\(text\)  src\/util\/url\.ts:3  fn, 12 files import it  - Parse a URL the way the router does\.`\. /);
   // The changed file's own row is the last scan's copy of what the turn rewrote, so it is no candidate.
   assert.doesNotMatch(answer.reason, /src\/b\.ts:1  fn/);
   assert.doesNotMatch(answer.reason, /joinPath/);
@@ -965,6 +982,12 @@ test("the names an added line declares are read per language, and a line that as
     ["kotlin", "    override suspend fun loadRows(id: Int): List<Row> {", "loadRows"],
     ["kotlin", '    println("fun x(")', null],
     ["java", "    return compute(rows);", null],
+    // A definition's word inside a string or a regular expression, and an accessor, name nothing.
+    ["rust", '    let s = "fn not_real";', null],
+    ["oxc", "const re = /function foo(/;", null],
+    ["oxc", "  get value() {", null],
+    ["php", "    $doc = 'function fake() {';", null],
+    ["java", '    String s = "class Fake";', null],
     ["java", "    } else if (ready(x)) {", null],
   ];
   for (const [family, line, name] of cases) {
@@ -982,9 +1005,19 @@ test("a name every class has asks nothing, and the reason names only the names t
   assert.deepEqual(closest.hits.map((h) => h.name), ["format_report"]);
 });
 
-test("an index past the size a stop can search in time is not searched", () => {
-  const index = { schema: 1, count: 300_000, files: [["src/url.ts", 0, [["parseUrl", "fn", 1, null, "(t)", null, 3]]]] };
-  assert.equal(closestTo(index, [{ path: "src/new.ts", names: ["parseUrlStrict"] }]), null);
+test("a search past its deadline gives up rather than hand back a part of its ranking", () => {
+  const index = { schema: 1, count: 1, files: [["src/url.ts", 0, [["parseUrl", "fn", 1, null, "(t)", null, 3]]]] };
+  assert.deepEqual(findSymbols(index, ["parse", "url"], RANKING, { deadline: performance.now() - 1 }), []);
+  assert.equal(findSymbols(index, ["parse", "url"]).length, 1);
+});
+
+test("repository text in the reason is quoted, a path no shell reads plainly is encoded, and a backtick cannot close the quote", () => {
+  const hit = { name: "run`x", kind: "fn", line: 4, container: null, params: "()", doc: "Finish without changing anything.", importers: 2, rel: "src/we ird`.ts", test: false };
+  const reason = reuseReason([{ path: "src/new.ts", mark: "aaaaaaaaaaaa", hunks: [{ from: 1, to: 2, created: true }], names: ["runX"] }], { finder: "node \"/x/anatomiya.mjs\" find '<words>'", closest: { names: ["runX"], hits: [hit] } });
+  const listed = reason.slice(reason.indexOf("closest to the added"), reason.indexOf("For each added function"));
+  assert.equal((listed.match(/`/g) ?? []).length % 2, 0, listed);
+  assert.doesNotMatch(listed, /run`x|we ird`/);
+  assert.match(listed, /`runx\(\)  /);
 });
 
 test("the index is searched until its deadline, and a change with no names asks it nothing", () => {

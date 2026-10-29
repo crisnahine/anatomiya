@@ -3,11 +3,10 @@ import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
 
 import { RANKING } from "../plugins/anatomiya/lib/find.mjs";
-import { QUERIES, replay, report } from "../scripts/find-replay.mjs";
+import { GRID, QUERIES, replay, report, sweep } from "../scripts/find-replay.mjs";
 
-// The recorded queries over the definitions of each repository's index that hold one of its words, in
-// the files of each query's six best hits and of its helper. Smaller than a whole index, so its
-// scores are its own: 0.798 against 0.882 over the whole indexes on 0.20.0.
+// The recorded queries over each index's definitions that hold a query word, in the files of each query's
+// six best hits and its helper: a smaller index, so its own scores, 0.798 against 0.882 over whole indexes.
 const SAMPLE = JSON.parse(readFileSync(new URL("./find-sample.json", import.meta.url), "utf8"));
 const indexes = new Map(Object.entries(SAMPLE.indexes));
 
@@ -40,4 +39,17 @@ test("the report names each query's rank and every repository it was given no in
 test("the sample asks the recorded queries", () => {
   const { queries } = JSON.parse(readFileSync(QUERIES, "utf8"));
   assert.deepEqual(SAMPLE.queries, queries.map(({ repository, query, helper }) => ({ repository, query, helper })));
+});
+
+test("a sweep over weight sets says how many score above today's and how many the same", () => {
+  const grid = { name: [0, 3], reach: [0.15] };
+  const result = sweep(indexes, SAMPLE.queries, grid);
+  assert.equal(result.sets, 2);
+  assert.equal(result.today.meanReciprocalRank, replay(indexes, SAMPLE.queries).meanReciprocalRank);
+  assert.deepEqual([result.higher, result.same], [0, 1], "a name weight of 0 scores below, and today's set is itself");
+});
+
+test("the grid H60 swept is 810 sets, and today's weights are one of them", () => {
+  assert.equal(Object.values(GRID).reduce((n, values) => n * values.length, 1), 810);
+  for (const [key, values] of Object.entries(GRID)) assert.ok(values.includes(RANKING[key]), key);
 });

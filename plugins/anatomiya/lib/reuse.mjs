@@ -119,6 +119,10 @@ function clipped(hunks, spans) {
 // line break or a quote into the reason the model reads.
 const PLAIN_PATH = /^[\w./@+-]+$/;
 
+// Repository text inside the reason, held in a quote it cannot close.
+const quoted = (text) => `\`${text.replaceAll("`", "")}\``;
+const listed = (hit) => quoted(formatHit({ ...hit, rel: PLAIN_PATH.test(hit.rel) ? hit.rel : encodePath(hit.rel) }));
+
 const tag = (files) => `(${REUSE_MARK} ${files.slice(0, MARKED_MOST).map((f) => f.mark).join(" ")})`;
 
 // The bin this hook runs from, which is the copy whose `find` reads the index this scan's build wrote.
@@ -131,11 +135,12 @@ export const quotable = (path) => QUOTABLE.test(path);
 
 /**
  * The command that asks this checkout's code index, or null where there is no
- * index `find` can read (`usable` is `usableIndex`'s answer) or the path to the
- * bin could not be quoted safely.
+ * index `find` can read and answer from (`usable` is `usableIndex`'s answer) or
+ * the path to the bin could not be quoted safely.
  */
 export function finderFor(usable) {
-  if (!quotable(BIN) || usable === null) return null;
+  // An index of no definitions, a repository in no language it lists, would answer every search with nothing.
+  if (!quotable(BIN) || usable === null || usable.count === 0) return null;
   // One single-quoted argument, so a shell globs none of the words: `local_url?` is a pattern to zsh.
   return `node "${BIN}" find '<words>'`;
 }
@@ -160,7 +165,7 @@ export function reuseReason(files, { finder = null, closest = null } = {}) {
       ? "Have it grep shared and utility modules, files near the change, and code making the same calls, "
       : `Have it run \`${finder}\` in the repository, two or three words with no quote mark for what each added function does, at most three calls, which lists the closest functions by name, doc and path with how many files import each; have it grep only for code making the same calls, `) +
     "then name every existing function that does the same job or part of it. " +
-    (closest === null ? "" : `The code index already lists these closest to the added ${closest.names.join(", ")}: ${closest.hits.map(formatHit).join("; ").replace(/\.?$/, ". ")}`) +
+    (closest === null ? "" : `As of the last scan, the code index lists these closest to the added ${closest.names.map(quoted).join(", ")}: ${closest.hits.map(listed).join("; ")}. `) +
     "For each added function, call the closest one it names, the repository's own before a package's, and delete the copy it replaces. Where one does part of the job, call it for that part. " +
     // A session that named the helper kept a copy where it fell short on one case (A123).
     "Where one falls short on a case this change needs, make the new code fit it, or extend it without changing what it returns to its current callers, and call it. " +
@@ -185,10 +190,11 @@ const ATTRIBUTED = String.raw`(?:\[[^\]]*\]\s*)*`;
 const KEYWORD = String.raw`(?!(?:if|for|while|switch|catch|with|function|return|new|throw|else|case|await|yield)\b)`;
 const LINE_DECLARES = {
   oxc: [
-    /\bfunction\s*\*?\s*([A-Za-z_$][\w$]*)\s*[<(]/,
-    /\b(?:const|let|var)\s+([A-Za-z_$][\w$]*)\s*(?::[^=]*)?=\s*(?:async\s+)?(?:function\b|\([^()]*\)\s*(?::[^=]*)?=>|[A-Za-z_$][\w$]*\s*=>)/,
-    /\bclass\s+([A-Za-z_$][\w$]*)/,
-    new RegExp(String.raw`^\s*(?:(?:public|private|protected|static|async|override|get|set)\s+)*\*?\s*${KEYWORD}([A-Za-z_$][\w$]*)\s*${TYPE_PARAMS}\([^()]*\)\s*(?::\s*[^{=]+)?\{\s*$`),
+    /^\s*(?:export\s+)?(?:default\s+)?(?:async\s+)?function\s*\*?\s*([A-Za-z_$][\w$]*)\s*[<(]/,
+    /^\s*(?:export\s+)?(?:const|let|var)\s+([A-Za-z_$][\w$]*)\s*(?::[^=]*)?=\s*(?:async\s+)?(?:function\b|\([^()]*\)\s*(?::[^=]*)?=>|[A-Za-z_$][\w$]*\s*=>)/,
+    /^\s*(?:export\s+)?(?:default\s+)?(?:abstract\s+)?class\s+([A-Za-z_$][\w$]*)/,
+    // An accessor is a property, which nobody reuses as a helper, so `get` and `set` head no definition here.
+    new RegExp(String.raw`^\s*(?:(?:public|private|protected|static|async|override)\s+)*\*?\s*${KEYWORD}([A-Za-z_$][\w$]*)\s*${TYPE_PARAMS}\([^()]*\)\s*(?::\s*[^{=]+)?\{\s*$`),
     // A class field bound to an arrow: `handleClick = () => {`.
     new RegExp(String.raw`^\s*(?:(?:public|private|protected|static|readonly)\s+)*([A-Za-z_$][\w$]*)\s*(?::[^=]*)?=\s*(?:async\s+)?\([^()]*\)\s*(?::[^=]*)?=>`),
   ],
@@ -196,20 +202,26 @@ const LINE_DECLARES = {
 };
 const TREE_DECLARES = {
   python: [/^\s*(?:async\s+)?def\s+([A-Za-z_]\w*)/, /^\s*class\s+([A-Za-z_]\w*)/],
-  php: [/\bfunction\s+&?\s*([A-Za-z_]\w*)\s*\(/, /\b(?:class|interface|trait|enum)\s+([A-Za-z_]\w*)/],
+  php: [
+    /^\s*(?:(?:public|private|protected|static|final|abstract)\s+)*function\s+&?\s*([A-Za-z_]\w*)\s*\(/,
+    /^\s*(?:(?:abstract|final|readonly)\s+)*(?:class|interface|trait|enum)\s+([A-Za-z_]\w*)/,
+  ],
   go: [/^\s*func\s+(?:\([^)]*\)\s*)?([A-Za-z_]\w*)/, /^\s*type\s+([A-Za-z_]\w*)\s+(?:struct|interface)\b/],
   java: [
     new RegExp(String.raw`${STATEMENT}^\s*${ANNOTATED}(?:(?:public|private|protected|static|final|abstract|synchronized|default)\s+)*${TYPE_PARAMS}${KEYWORD}${TYPE}\s+([A-Za-z_]\w*)\s*\(`),
-    /\b(?:class|interface|record|enum)\s+([A-Za-z_]\w*)/,
+    new RegExp(String.raw`^\s*${ANNOTATED}(?:(?:public|private|protected|static|final|abstract|sealed|non-sealed)\s+)*(?:class|interface|record|enum)\s+([A-Za-z_]\w*)`),
   ],
   csharp: [
     new RegExp(String.raw`${STATEMENT_OR_ARROW}^\s*${ATTRIBUTED}(?:(?:public|private|protected|internal|static|async|override|virtual|abstract|sealed|partial)\s+)+${KEYWORD}${TYPE}\s+([A-Za-z_]\w*)\s*[<(]`),
-    /\b(?:class|interface|record|struct|enum)\s+([A-Za-z_]\w*)/,
+    new RegExp(String.raw`^\s*${ATTRIBUTED}(?:(?:public|private|protected|internal|static|abstract|sealed|partial|readonly)\s+)*(?:class|interface|record|struct|enum)\s+([A-Za-z_]\w*)`),
   ],
-  rust: [/\bfn\s+([A-Za-z_]\w*)/, /\b(?:struct|enum|trait)\s+([A-Za-z_]\w*)/],
+  rust: [
+    /^\s*(?:pub(?:\([^)]*\))?\s+)?(?:(?:const|async|unsafe|extern(?:\s+"[^"]*")?)\s+)*fn\s+([A-Za-z_]\w*)/,
+    /^\s*(?:pub(?:\([^)]*\))?\s+)?(?:struct|enum|trait)\s+([A-Za-z_]\w*)/,
+  ],
   kotlin: [
     new RegExp(String.raw`^\s*${ANNOTATED}(?:(?:public|private|protected|internal|override|open|abstract|final|suspend|inline|operator|infix|tailrec|external|actual|expect)\s+)*fun\s+(?:<[^>]*>\s*)?(?:[\w<>?,. ]+\.)?([A-Za-z_]\w*)\s*\(`),
-    /\b(?:class|interface|object)\s+([A-Za-z_]\w*)/,
+    new RegExp(String.raw`^\s*${ANNOTATED}(?:(?:public|private|protected|internal|abstract|open|data|sealed|enum|inner|value|annotation)\s+)*(?:class|interface|object)\s+([A-Za-z_]\w*)`),
   ],
 };
 
@@ -248,18 +260,17 @@ const REUSE_FIND_MS = 500;
 // Per name, and over the whole change: enough to point at a helper, short enough to read in the reason.
 const CLOSEST_EACH = 3;
 const CLOSEST_MOST = 5;
-// One search reads every definition; django's 39,257 took about 80 ms, so past this one would outlast the stop's budget alone.
-const SEARCHED_MOST = 200_000;
+// django's 39,257 definitions zip to 634 KB and read in about 15 ms; a larger index is left to `find`, which no hook clock bounds.
+export const REUSE_INDEX_BYTES = 2 * 1024 * 1024;
 
 /**
  * The definitions the code index already lists nearest the names a change
  * declared, and the names that found them, or null where it lists none: the
  * best few for each name, the rows of the changed files left out, since they
  * are the last scan's copy of what the turn rewrote. Past `deadline` no further
- * name is asked, and an index larger than one stop can search is not asked at all.
+ * name is asked, and a search it overtakes gives up.
  */
 export function closestTo(index, files, { deadline = performance.now() + REUSE_FIND_MS } = {}) {
-  if (index.count > SEARCHED_MOST) return null;
   const changed = new Set(files.map((f) => f.path));
   const names = [...new Set(files.flatMap((f) => f.names ?? []))];
   const found = [];
@@ -267,7 +278,7 @@ export function closestTo(index, files, { deadline = performance.now() + REUSE_F
   for (const name of names) {
     if (hits.size >= CLOSEST_MOST || performance.now() > deadline) break;
     const before = hits.size;
-    for (const hit of findSymbols(index, [name], { ...RANKING, shown: CLOSEST_EACH })) {
+    for (const hit of findSymbols(index, [name], { ...RANKING, shown: CLOSEST_EACH }, { deadline })) {
       const at = `${hit.rel}:${hit.line}`;
       if (!changed.has(hit.rel) && !hits.has(at) && hits.size < CLOSEST_MOST) hits.set(at, hit);
     }
