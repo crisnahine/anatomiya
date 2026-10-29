@@ -21,7 +21,7 @@
 import { lstatSync, readdirSync, realpathSync } from "node:fs";
 import { join, relative, sep } from "node:path";
 
-import { escapes, folded } from "./paths.mjs";
+import { folded } from "./paths.mjs";
 import { HEAD_BYTES, contains, isLink, nativeUpTo, readHead, realpathOrNull, resolveInside } from "./contained.mjs";
 import { GENERATOR, PREFIX, TARGETS, areaName, isClaude, overviewName } from "./targets.mjs";
 import { isFileAt, stager } from "./store.mjs";

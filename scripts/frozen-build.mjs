@@ -95,11 +95,16 @@ function publish(building, root) {
     } catch (err) {
       if (existsSync(join(root, FROZEN_FROM))) return {};
       if (attempt > 0 || !existsSync(root)) return { error: `could not put the build at ${root}: ${err.code ?? err.message}` };
-      // Moved aside in one step rather than removed in place, so a build another freeze puts at the
-      // name meanwhile is never the one removed; a move that fails is said, not thrown.
+      // Moved aside in one step rather than removed in place, and looked at again there: what another
+      // freeze put at the name between the check and the move is a build, and goes back; only what
+      // is no build is removed. A move that fails is said, not thrown.
       const aside = join(dirname(root), `.building-stale-${process.pid}-${Date.now()}`);
       try {
         renameSync(root, aside);
+        if (existsSync(join(aside, FROZEN_FROM))) {
+          renameSync(aside, root);
+          return {};
+        }
         rmSync(aside, { recursive: true, force: true });
       } catch (moved) {
         return { error: `could not clear ${root}, which holds no build: ${moved.code ?? moved.message}` };

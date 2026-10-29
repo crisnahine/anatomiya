@@ -630,7 +630,7 @@ export async function reuseAnswer(checkouts, payload, { own = null } = {}) {
   // nothing holds the tail across the git reads below.
   let since = before?.start === 0 ? sessionStartIn(before.text) : undefined;
   before = null;
-  since ??= sessionStart(payload.transcript_path);
+  if (since === undefined) since = sessionStart(payload.transcript_path);
   if (since === null) return {};
   // One parse budget and one git deadline for the whole stop, however many checkouts it reads.
   const parsing = { deadline: null };

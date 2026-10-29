@@ -791,7 +791,10 @@ async function runRepo(name, source, scratchDir, targets) {
 
     /* 6: one file built to break a row the map stated. */
     const { facts: mapped, problem: mapProblem } = factsAt(factsFile);
-    if (mapProblem) fail(`${FACTS_PATH} was not read back: ${mapProblem.why}`);
+    if (mapProblem) {
+      fail(`${FACTS_PATH} was not read back: ${mapProblem.why}`);
+      return { row, problems, head, summary };
+    }
     const plan = probePlan(mapped);
     const probePath = plan ? plan.path : "e2e-probe.md";
     const { report: probeReport, clash } = probeOn("e2e/probe", probePath, plan ? plan.body : "e2e probe\n", "probe");

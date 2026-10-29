@@ -70,7 +70,6 @@ export async function runScan(cwd, { dryRun = false, targets = null, leaveAlone 
   return { result, plan, hook, history, indexed, summary: scanSummary(result, plan, { dryRun, hook }) };
 }
 
-// The index's line when there is none to read: one the last scan could not write, another would not either.
 /**
  * Accept the current population as the baseline (E5).
  *

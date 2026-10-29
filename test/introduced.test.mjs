@@ -6,6 +6,7 @@ import { join } from "node:path";
 import { parseSync } from "oxc-parser";
 
 import { needsRuby } from "./ruby-available.mjs";
+import { rowFacets } from "../plugins/anatomiya/lib/introduced.mjs";
 import { doublingRatio, LINEAR } from "./growth.mjs";
 import { bodyIdentity, newlyIntroduced, siteIdentity } from "../plugins/anatomiya/lib/introduced.mjs";
 import { parseRuby } from "../plugins/anatomiya/lib/ruby.mjs";
@@ -682,4 +683,11 @@ test("a base spelled relative to the nesting it is written in is the learned one
   assert.deepEqual(ask("class_base", "Api::V1::BaseController", relative), []);
   assert.equal(ask("class_base", "Api::V1::BaseController", elsewhere).length, 1, "at the top level the bare name is ::BaseController");
   assert.deepEqual(ask("module_include", "Api::Concern", mixin), []);
+});
+
+test("a prism-parsed file is handed the facets the scan's walk had, which is none, since the Ruby walk reads them off the same pass", () => {
+  const facets = { testRunner: "rspec", testCalls: true };
+  assert.equal(rowFacets("ruby", facets), null, "the scan counted the routes file, so the check must too");
+  assert.deepEqual(rowFacets("js", facets), facets, "every other engine's rows read the facets on both sides");
+  assert.equal(rowFacets("js", null), null);
 });

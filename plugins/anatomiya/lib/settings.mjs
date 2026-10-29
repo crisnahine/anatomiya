@@ -13,7 +13,6 @@
  * on this machine, not committed.
  */
 import { accessSync, constants, existsSync, unlinkSync } from "node:fs";
-import { join } from "node:path";
 
 import { SETTINGS_PATH } from "./rules.mjs";
 import { HEAD_BYTES, readHead, resolveInside } from "./contained.mjs";

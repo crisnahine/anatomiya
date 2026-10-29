@@ -3,19 +3,14 @@ import assert from "node:assert/strict";
 import { mkdirSync, rmSync, writeFileSync } from "node:fs";
 import { dirname, join } from "node:path";
 
-import { git, scratch } from "./git-worktrees.mjs";
+import { repository } from "./repository.mjs";
 import {
   addedRanges, branchChange, pendingPaths, renamesSkipped, unquotePath,
 } from "../plugins/anatomiya/lib/changeset.mjs";
 
 function repo(t) {
-  const dir = scratch(t, "anatomiya-changeset-");
-  git(dir, "init", "-q");
-  const write = (rel, body) => {
-    mkdirSync(dirname(join(dir, rel)), { recursive: true });
-    writeFileSync(join(dir, rel), body);
-  };
-  return { dir, write, git: (...a) => git(dir, ...a) };
+  const { dir, write, git } = repository(t, { prefix: "anatomiya-changeset-" });
+  return { dir, write, git };
 }
 
 test("the pending paths name every kind of uncommitted work the way the check reads it", async (t) => {

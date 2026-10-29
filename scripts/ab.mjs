@@ -39,7 +39,7 @@ async function main(argv) {
   const args = parseArgs(argv);
   if (args.error) die(`${args.error}\n\n${USAGE}`);
   // The run is the harness at that commit, binary and plugin both; this one only starts it.
-  if (args.frozen) {
+  if (args.frozen !== undefined) {
     const ran = runFrozen(args.frozen, "scripts/ab.mjs", argv);
     if (ran.error) die(ran.error);
     process.exit(ran.status);

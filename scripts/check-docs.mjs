@@ -731,6 +731,7 @@ export const READS = [
   `${REL.anatomiya}/bin/anatomiya.mjs`,
   `${REL.anatomiya}/commands`,
   `${REL.anatomiya}/lib/check.mjs`,
+  `${REL.anatomiya}/lib/verdict.mjs`,
   "docs/how-it-works.md",
   "docs/usage.md",
   "docs/why.md",

@@ -8,7 +8,7 @@
  * before it knows which verb's modules to load.
  */
 import { existsSync, readdirSync } from "node:fs";
-import { join, resolve } from "node:path";
+import { join } from "node:path";
 
 /**
  * How long a path may be before it names nothing.

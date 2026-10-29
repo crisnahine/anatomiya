@@ -6,7 +6,7 @@
  * `payload.mjs`, the echo's text is `echo.mjs`, and the settings entry an older
  * version arranged is `settings.mjs`.
  */
-import { existsSync, lstatSync, readdirSync, statSync } from "node:fs";
+import { lstatSync, readdirSync, statSync } from "node:fs";
 import { dirname, isAbsolute, join, relative, resolve, sep } from "node:path";
 
 import { isOwned, OVERVIEW_FILE, RULES_DIR } from "./rules.mjs";

@@ -2432,13 +2432,12 @@ test("a shard whose thread dies while a forked writer fills the paused stdout le
   // parent's end stops it, and an open end kept the whole process alive.
   const home = mkdtempSync(join(dir, "forked-"));
   const writer = join(home, "writer");
-  const ruby = stubRuby("forked", [
-    "cat >/dev/null",
-    READY,
-    `printf '{"fatal":{"toString":1,"valueOf":1}}\\n'`,
-    `yes '{"rel":"zz.rb","ok":false,"error":"x"}' & echo $! > '${writer}'`,
-    "wait",
-  ]);
+  // The writer records its own pid before it prints the fatal and becomes the flood, so the file is
+  // on disk before the parent can react to the fatal and end the stub: written after, by the stub,
+  // it lost a race on a slow runner and the read below found no file.
+  const forked = join(home, "forked.sh");
+  writeFileSync(forked, `#!/bin/sh\necho $$ > '${writer}'\nprintf '{"fatal":{"toString":1,"valueOf":1}}\\n'\nexec yes '{"rel":"zz.rb","ok":false,"error":"x"}'\n`, { mode: 0o755 });
+  const ruby = stubRuby("forked", ["cat >/dev/null", READY, `'${forked}' &`, "wait"]);
   const lib = new URL("../plugins/anatomiya/lib/ruby.mjs", import.meta.url).href;
   const script = `const { parseRuby } = await import(${JSON.stringify(lib)});
 const out = await parseRuby(${JSON.stringify(pair)}, { ruby: ${JSON.stringify(ruby)} });

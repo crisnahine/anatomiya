@@ -43,7 +43,7 @@ async function main(argv) {
   const args = parseScenarioArgs(argv);
   if (args.error) die(`${args.error}\n\n${SCENARIO_USAGE}`);
   // The run is the harness at that commit, binary and plugin both, and its `versionsAt` reads that checkout.
-  if (args.frozen) {
+  if (args.frozen !== undefined) {
     const ran = runFrozen(args.frozen, "scripts/ab-scenario.mjs", argv);
     if (ran.error) die(ran.error);
     process.exit(ran.status);

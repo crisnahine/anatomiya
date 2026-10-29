@@ -19,7 +19,8 @@ import { removeTree } from "./platform.mjs";
 /** `env` with these config entries after whatever `GIT_CONFIG_COUNT` it already carries, so they win. */
 export function gitEnv(env, entries) {
   const given = String(env.GIT_CONFIG_COUNT ?? "").trim();
-  const count = /^\d+$/.test(given) ? Number(given) : 0;
+  // As `git.mjs` reads it: a count git would refuse as bogus is read as none.
+  const count = /^\d+$/.test(given) && Number.isSafeInteger(Number(given)) ? Number(given) : 0;
   const out = { ...env, GIT_CONFIG_COUNT: String(count + entries.length) };
   entries.forEach(([key, value], i) => {
     out[`GIT_CONFIG_KEY_${count + i}`] = key;

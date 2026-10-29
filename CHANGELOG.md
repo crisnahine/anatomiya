@@ -22,7 +22,7 @@ reports on the three full clones, whose findings are row findings alone.
 - The Ruby parser hands a corpus to a child per 100 files rather than 500: 929 Ruby files parse in
   2.0 s where they took 5.9 s, at a peak of 371 MB where it was 236 MB (B48).
 - `find` has an entry of its own and loads none of the scan behind the other commands: 121 ms to
-  83 ms per call (A100). Each hook verb loads only its own modules, and the echo's load list is held
+  87 ms per call (A100). Each hook verb loads only its own modules, and the echo's load list is held
   by name (A100, A119).
 - The Stop hook's reuse check reads the transcript's tail before it asks git and once more after,
   and reads the head apart only past 64 MiB, where it read the head up to six times (A116).

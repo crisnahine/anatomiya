@@ -7,7 +7,7 @@ import { join } from "node:path";
 
 import { FROZEN_FROM, RESULTS_ROOT, frozenBuild, runFrozen, withoutFrozen } from "../scripts/frozen-build.mjs";
 import { REL, ROOT } from "../scripts/plugins.mjs";
-import { removeTree } from "./platform.mjs";
+import { needsPathControl, needsShebang, removeTree } from "./platform.mjs";
 import { repository } from "./repository.mjs";
 
 function scratch(t) {
@@ -86,4 +86,27 @@ test("a frozen run is the harness at the commit, out of the build, with the free
   removeTree(half);
   assert.equal(frozenBuild(sha, dir, { source: made.dir }).error, undefined);
   assert.deepEqual([existsSync(stale), existsSync(fresh)], [false, true]);
+});
+
+test("a commit whose lockfile is not the working tree's is installed from its own lockfile, through npm", { ...needsShebang, ...needsPathControl }, (t) => {
+  const made = repository(t, { prefix: "anatomiya-frozen-lock-" });
+  made.write("package-lock.json", '{ "name": "x", "lockfileVersion": 3 }\n');
+  made.write(`${REL.anatomiya}/package-lock.json`, '{ "name": "anatomiya", "lockfileVersion": 3 }\n');
+  const sha = made.commit("lock");
+  // The working tree moves on, so its install is no longer the commit's.
+  made.write("package-lock.json", '{ "name": "x", "lockfileVersion": 3, "moved": true }\n');
+  const bin = mkdtempSync(join(tmpdir(), "anatomiya-npm-stub-"));
+  const log = join(bin, "calls");
+  writeFileSync(join(bin, "npm"), `#!/bin/sh\necho "$*" >> '${log}'\n`, { mode: 0o755 });
+  const path = process.env.PATH;
+  process.env.PATH = `${bin}:${path}`;
+  t.after(() => {
+    process.env.PATH = path;
+    removeTree(bin);
+  });
+  const dir = scratch(t);
+  const build = frozenBuild(sha, dir, { source: made.dir });
+  assert.equal(build.error, undefined, build.error);
+  assert.equal(readFileSync(log, "utf8"), "ci --ignore-scripts --no-audit --no-fund\n", "the build's own install, with scripts off as every workflow installs");
+  assert.ok(existsSync(join(build.root, FROZEN_FROM)));
 });

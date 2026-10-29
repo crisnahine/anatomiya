@@ -14,7 +14,7 @@ import { ALL_DIMENSIONS, walkFor } from "./dimensions.mjs";
 import { claimFor } from "./dimensions-naming.mjs";
 import { encode } from "./encode.mjs";
 import { statedSide } from "./slot.mjs";
-import { spokenIn } from "./langs.mjs";
+import { engineOf, spokenIn } from "./langs.mjs";
 import { groupKey, isLearnedItself, reachesThrough, sameConstant } from "./reduce.mjs";
 import { lineAt, lineStarts } from "./symbols.mjs";
 import { asks, collectHits, dimensionsFor, fileContext, isFunctionLike, walk } from "./walk.mjs";
@@ -89,7 +89,7 @@ export function declaredParents({ path, lang, frameworks, capabilities, rows, he
   for (const dim of dimensionsFor(spokenIn(lang, head.facets), { frameworks, capabilities, rows: rows ?? ALL_DIMENSIONS })) {
     if (!dim.learnedClasses || dim.groupedSites) continue;
     const parents = new Map();
-    for (const hit of hitsOf(dim, head.program, fileContext({ rel: path, lang, source: head.source, comments: head.comments, facets: head.facets }))) {
+    for (const hit of hitsOf(dim, head.program, fileContext({ rel: path, lang, source: head.source, comments: head.comments, facets: rowFacets(lang, head.facets) }))) {
       if (typeof hit.self === "string" && typeof hit.class === "string" && !parents.has(hit.self)) parents.set(hit.self, hit.class);
     }
     if (parents.size) out.set(dim.key, parents);
@@ -304,6 +304,14 @@ function enforceableClass(dim, cls) {
 const isOmission = (hit) => hit.class === undefined || hit.class === null;
 
 /** One row's hits on one tree as the scan collects them. */
+/**
+ * The facets a row is handed for one file, the same ones the scan's walk handed
+ * it. The Ruby walk reads a file's facets off the pass the rows ride, so its
+ * rows see none; handed the head's facets here, a routes file whose facets said
+ * "test" was counted by the scan and passed over by the check (C73).
+ */
+export const rowFacets = (lang, facets) => (engineOf(lang) === "prism" ? null : facets);
+
 function hitsOf(dim, program, extra, { keepNode = false } = {}) {
   // A row that threw and a row that found nothing both leave no key, and both leave this file without its findings.
   return collectHits(program, [dim], extra, { walker: walkFor(dim), keepNode })[dim.key] ?? [];
@@ -370,7 +378,7 @@ function breakingSites(program, source, lang, keyPath, { polarity, copies = new 
     // file. Both sides of the comparison run the same dimensions over the same
     // shapes, so a failure that is not symmetric can only lose a finding, never
     // manufacture one. The hits are the scan's own, so the check reads what the map was counted from.
-    for (const hit of hitsOf(dim, program, fileContext({ rel, lang, source, comments, facets }), { keepNode: true })) {
+    for (const hit of hitsOf(dim, program, fileContext({ rel, lang, source, comments, facets: rowFacets(lang, facets) }), { keepNode: true })) {
       if (bodies) {
         const key = groupKey(hit, bodies.size);
         if (bodies.has(key)) bodies.get(key).push(hit);
