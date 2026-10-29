@@ -9,8 +9,9 @@ and a change that puts a body under `## [Unreleased]` is a release.
 
 The table lives in `scripts/release.mjs` and a test holds this copy of it to that one. The workflow
 fires on the tag shape and refuses a tag whose manifests disagree with it or whose changelog has no
-section of its own, naming which. What it cannot tell you is what to do about it, which is what the
-rest of this page is for.
+section of its own, naming which. Its test job runs `check:docs` and `npm run validate` before the
+suite, so a tag on a commit whose documents or manifests fail is refused before anything is released.
+What it cannot tell you is what to do about it, which is what the rest of this page is for.
 
 `v0.1.9` was released by hand four seconds before its own workflow run started, so the run went red
 on a release that already existed. Push the tag and let the workflow make the release.
@@ -47,8 +48,9 @@ on a release that already existed. Push the tag and let the workflow make the re
   one file inside it, whichever scope it is drawn around. A library file no test loads has no row in
   that record, so the gate lists `plugins/anatomiya/lib` and names such a file as under every floor;
   the three worker shells, which run only in forked children, are named as such.
-- [ ] The line-ending pass is green: `node scripts/line-endings.mjs`. It runs the suite as a
-      Windows runner checks it out:
+- [ ] The line-ending pass is green: `node scripts/line-endings.mjs`. CI's two Windows legs are this
+      pass, since a Windows runner checks out with `core.autocrlf=true`; the script is how to run it
+      before pushing. It runs the suite as a Windows runner checks it out:
       clone the checkout with `git -c core.autocrlf=true clone`, copy `node_modules` into the clone,
       write a file holding `[core]` and `autocrlf = true`, and run every test file in the clone one
       at a time with `GIT_CONFIG_SYSTEM` pointing at that file, so every `git init` a test makes

@@ -30,7 +30,7 @@ import { appendFileSync, constants, existsSync, mkdirSync, readdirSync, readFile
 import { dirname, join, resolve, sep } from "node:path";
 import { fileURLToPath } from "node:url";
 
-import { invokedAs, readArgv, selectRepos } from "./entry.mjs";
+import { corpusRepos, invokedAs, readArgv, selectRepos } from "./entry.mjs";
 import { BINARY, REL } from "./plugins.mjs";
 import { isSource } from "../plugins/anatomiya/lib/corpus.mjs";
 import { hasInstall } from "../plugins/anatomiya/lib/semantic.mjs";
@@ -39,7 +39,7 @@ import { underArea } from "../plugins/anatomiya/lib/areas.mjs";
 import { LANGUAGES, assertKeyed, familyOf, language } from "../plugins/anatomiya/lib/langs.mjs";
 import { CLASSES } from "../plugins/anatomiya/lib/stems.mjs";
 import { rowByKey } from "../plugins/anatomiya/lib/registry.mjs";
-import { FACTS_PATH, FACTS_SCHEMA, readRecord } from "../plugins/anatomiya/lib/facts.mjs";
+import { FACTS_PATH, FACTS_SCHEMA, factsAt, readRecord } from "../plugins/anatomiya/lib/facts.mjs";
 import { rendersAsDirective, statedSide } from "../plugins/anatomiya/lib/slot.mjs";
 import { PIN_PATH } from "../plugins/anatomiya/lib/baseline.mjs";
 import { MAX_LINES } from "../plugins/anatomiya/lib/render.mjs";
@@ -486,30 +486,6 @@ export function parseArgs(argv) {
   return { corpus, scratch, only: read.values.only ?? null, targets };
 }
 
-// The order both measurement documents record the corpus in.
-export const byName = (a, b) => byCode(a.name, b.name);
-
-/**
- * Every child of the corpus directory that is a git repository, or why the path
- * is not a corpus.
- *
- * A mistyped corpus threw ENOENT out of the driver as a stack trace, and by
- * then the scratch directory had been made for a run that never started.
- */
-export function corpusRepos(corpusDir) {
-  let entries;
-  try {
-    entries = readdirSync(corpusDir, { withFileTypes: true });
-  } catch (err) {
-    return { error: `the corpus directory ${corpusDir} cannot be listed: ${err.code ?? err.message}` };
-  }
-  return {
-    repos: entries
-      .filter((e) => e.isDirectory() && existsSync(join(corpusDir, e.name, ".git")))
-      .map((e) => ({ name: e.name, source: join(corpusDir, e.name) }))
-      .sort(byName),
-  };
-}
 
 const inside = (path, dir) => path.startsWith(dir.endsWith(sep) ? dir : dir + sep);
 
@@ -821,7 +797,8 @@ async function runRepo(name, source, scratchDir, targets) {
     };
 
     /* 6: one file built to break a row the map stated. */
-    const mapped = JSON.parse(readFileSync(factsFile, "utf8"));
+    const { facts: mapped, problem: mapProblem } = factsAt(factsFile);
+    if (mapProblem) fail(`${FACTS_PATH} was not read back: ${mapProblem.why}`);
     const plan = probePlan(mapped);
     const probePath = plan ? plan.path : "e2e-probe.md";
     const { report: probeReport, clash } = probeOn("e2e/probe", probePath, plan ? plan.body : "e2e probe\n", "probe");

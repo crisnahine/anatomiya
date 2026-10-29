@@ -28,7 +28,7 @@ import { repoLabel } from "./ab/label.mjs";
 import { BINARY } from "./plugins.mjs";
 import { die, invokedAs } from "./entry.mjs";
 import { isCorpusPath } from "../plugins/anatomiya/lib/corpus.mjs";
-import { FACTS_PATH } from "../plugins/anatomiya/lib/facts.mjs";
+import { FACTS_PATH, factsAt } from "../plugins/anatomiya/lib/facts.mjs";
 
 const root = join(dirname(fileURLToPath(import.meta.url)), "..");
 
@@ -43,7 +43,8 @@ async function main(argv) {
   mapAndPin(args.repo);
 
   // 2. Where the arms could differ at all.
-  const facts = JSON.parse(readFileSync(join(args.repo, FACTS_PATH), "utf8"));
+  const { facts, problem } = factsAt(join(args.repo, FACTS_PATH));
+  if (problem) die(`${FACTS_PATH} in ${args.repo} was not read: ${problem.why}`);
   // A named target measures the claim the experiment is about; the ranking is
   // the default for when the question is only "where is there headroom".
   const ranked = rankAreas(facts).filter(

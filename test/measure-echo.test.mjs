@@ -89,3 +89,10 @@ test("a store that is not a directory is refused with a line and exit 2", () => 
     assert.doesNotMatch(run.stderr, /at .*\.mjs:\d+/, "no stack trace");
   }
 });
+
+test("a flag the measurement does not know is refused with the usage and exit 2", () => {
+  const run = spawnSync(process.execPath, [SCRIPT, "--nope"], { encoding: "utf8" });
+  assert.equal(run.status, 2, run.stderr);
+  assert.match(run.stderr, /^[^\n]*--nope/);
+  assert.match(run.stderr, /\nusage: node scripts\/measure-echo\.mjs <transcriptDir>\n$/);
+});

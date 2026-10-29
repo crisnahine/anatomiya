@@ -21,7 +21,7 @@ import { lstatSync, readdirSync, readFileSync } from "node:fs";
 import { join, relative } from "node:path";
 
 import { changedSinceWorktree, filesAt, headSha, topLevel } from "../../plugins/anatomiya/lib/git.mjs";
-import { realpathOf } from "../../plugins/anatomiya/lib/rules.mjs";
+import { realpathOf } from "../../plugins/anatomiya/lib/contained.mjs";
 import { ENGINE, engineEnv, engineFor } from "./engine.mjs";
 import { ANATOMIYA } from "../plugins.mjs";
 

@@ -12,7 +12,7 @@ import { readFileSync, readdirSync, existsSync, realpathSync, statSync } from "n
 import { join, dirname, relative, resolve, sep } from "node:path";
 import { fileURLToPath } from "node:url";
 
-import { invokedAs, isFile } from "./entry.mjs";
+import { invokedAs, isFile, readArgv } from "./entry.mjs";
 import { escapes } from "../plugins/anatomiya/lib/paths.mjs";
 
 const MANIFESTS = ["plugin.json", "marketplace.json"];
@@ -691,7 +691,12 @@ function eventProblems(pluginRoot, at, block) {
 }
 
 function main() {
-  const root = process.argv[2] ? resolve(process.argv[2]) : resolve(dirname(fileURLToPath(import.meta.url)), "..");
+  const read = readArgv(process.argv.slice(2), {}, { positionals: true });
+  if (read.error || read.positionals.length > 1) {
+    console.error(`${read.error ?? `only one marketplace root may be given, and ${read.positionals[1]} was the second`}\nusage: node scripts/validate.mjs [marketplaceRoot]`);
+    process.exit(2);
+  }
+  const root = read.positionals[0] ? resolve(read.positionals[0]) : resolve(dirname(fileURLToPath(import.meta.url)), "..");
   const problems = validate(root);
   if (problems.length) {
     // A workflow reads these as annotations, and a line it cannot see is a

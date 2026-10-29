@@ -9,10 +9,10 @@
  * line, so this file never lists them.
  */
 import { execFileSync } from "node:child_process";
-import { existsSync, readdirSync, readFileSync } from "node:fs";
+import { readFileSync } from "node:fs";
 import { join, resolve } from "node:path";
 
-import { invokedAs, readArgv, realOf } from "./entry.mjs";
+import { corpusRepos, invokedAs, readArgv, realOf } from "./entry.mjs";
 import { ROOT } from "./plugins.mjs";
 import { byCode } from "../plugins/anatomiya/lib/paths.mjs";
 import { realpathOf } from "../plugins/anatomiya/lib/contained.mjs";
@@ -133,14 +133,9 @@ function copyOf(child, repo, repoRoots) {
  * cannot list, or a private name the corpus does not hold.
  */
 export function privateNames({ repo, corpus, privates, accepted = new Set() }) {
-  let children;
-  try {
-    children = readdirSync(corpus, { withFileTypes: true })
-      .filter((e) => e.isDirectory() && existsSync(join(corpus, e.name, ".git")))
-      .map((e) => e.name);
-  } catch (err) {
-    return { error: `the corpus directory ${corpus} cannot be listed: ${err.code ?? err.message}` };
-  }
+  const listed = corpusRepos(corpus);
+  if (listed.error) return { error: listed.error };
+  const children = listed.repos.map((r) => r.name);
   const absent = privates.filter((name) => !children.includes(name));
   if (absent.length) return { error: `the corpus holds no repository named ${absent.join(", ")}` };
   for (const dir of [repo, ...children.map((name) => join(corpus, name))]) {

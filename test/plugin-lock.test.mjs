@@ -231,7 +231,7 @@ test("an option this does not know is refused before anything is run or written"
     const run = spawnSync(process.execPath, [join(ROOT, "scripts", "plugin-lock.mjs"), typo, dir], { encoding: "utf8", timeout: 60_000 });
 
     assert.equal(run.status, 2, `${typo}: ${run.stdout}${run.stderr}`);
-    assert.match(run.stderr, new RegExp(`unknown option: ${typo}`));
+    assert.match(run.stderr, new RegExp(`^[^\\n]*${typo}`), "the flag is named on the first line");
   }
 });
 

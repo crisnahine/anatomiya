@@ -23,7 +23,7 @@ import { engineRan } from "./ab/engine.mjs";
 import { renderScenario } from "./ab/render.mjs";
 import { mapAndPin, probeFileIn, runTrials, verifyInjection } from "./ab.mjs";
 import { die, invokedAs } from "./entry.mjs";
-import { FACTS_PATH } from "../plugins/anatomiya/lib/facts.mjs";
+import { FACTS_PATH, factsAt } from "../plugins/anatomiya/lib/facts.mjs";
 import { ANATOMIYA } from "./plugins.mjs";
 
 const root = join(dirname(fileURLToPath(import.meta.url)), "..");
@@ -83,7 +83,8 @@ async function runFresh(args, scenario) {
   // Before any trial: read after them, a build that changed mid-run is the one recorded.
   const versions = versionsAt(root);
   mapAndPin(args.repo);
-  const facts = JSON.parse(readFileSync(join(args.repo, FACTS_PATH), "utf8"));
+  const { facts, problem } = factsAt(join(args.repo, FACTS_PATH));
+  if (problem) die(`${FACTS_PATH} in ${args.repo} was not read: ${problem.why}`);
   if (!(facts.areas ?? []).some((a) => a.path === scenario.area)) die(`the map holds no area ${scenario.area}`);
 
   // The scenario's own name for the repository, never the path it sits at here.

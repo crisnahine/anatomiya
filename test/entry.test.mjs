@@ -8,7 +8,7 @@ import { spawnSync } from "node:child_process";
 
 import { needsSymlinks, removeTree } from "./platform.mjs";
 import { REL } from "../scripts/plugins.mjs";
-import { checkOutput, invokedAs, isFile, readArgv, selectRepos } from "../scripts/entry.mjs";
+import { byName, checkOutput, corpusRepos, invokedAs, isFile, readArgv, selectRepos } from "../scripts/entry.mjs";
 
 // Resolved, because `import.meta.url` always is. That is what makes it the
 // control the symlinked spelling below is measured against.
@@ -228,4 +228,25 @@ test("a script's command line is read strictly, and a refusal names the flag", (
   refused(["--md", "-x"], "--md", "ERR_PARSE_ARGS_INVALID_OPTION_VALUE");
   refused(["--force=yes"], "--force", "ERR_PARSE_ARGS_INVALID_OPTION_VALUE");
   refused(["/corpus"], "/corpus", "ERR_PARSE_ARGS_UNEXPECTED_POSITIONAL");
+});
+
+test("a corpus path that cannot be listed is a refusal, not a stack trace", (t) => {
+  // It threw ENOENT out of the driver, after the scratch directory had already
+  // been made for a run that was never going to happen.
+  const home = mkdtempSync(join(tmpdir(), "e2e-corpus-"));
+  t.after(() => removeTree(home));
+  mkdirSync(join(home, "errbit", ".git"), { recursive: true });
+  mkdirSync(join(home, "notes"));
+
+  assert.deepEqual(corpusRepos(home).repos, [{ name: "errbit", source: join(home, "errbit") }]);
+  assert.match(corpusRepos(join(home, "nope")).error, /nope/);
+});
+
+test("the repositories run in code-unit order, so the recorded table does not follow the locale", () => {
+  // Both measurement documents list the corpus in this order, and
+  // `localeCompare` orders case by whatever ICU tables the host was built with.
+  assert.deepEqual(
+    [{ name: "foo" }, { name: "Foo" }].sort(byName).map((r) => r.name),
+    ["Foo", "foo"]
+  );
 });

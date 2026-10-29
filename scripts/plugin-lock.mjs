@@ -25,7 +25,7 @@ import { tmpdir } from "node:os";
 import { join, relative, resolve } from "node:path";
 import { spawnSync } from "node:child_process";
 
-import { invokedAs } from "./entry.mjs";
+import { invokedAs, readArgv } from "./entry.mjs";
 import { REL, ROOT } from "./plugins.mjs";
 
 /** What this writes under a given root, as a reader of the output would spell it. */
@@ -176,12 +176,12 @@ function main() {
   // `--chek` run the write the gate exists to keep off the lockfile. Asked
   // before the platform answer below, the way `shipped.mjs` asks it, because a
   // typo is a typo on every platform.
-  const typo = process.argv.slice(2).find((arg) => arg.startsWith("-") && arg !== "--check");
-  if (typo !== undefined) {
-    console.error(`${process.env.GITHUB_ACTIONS === "true" ? "::error::" : ""}unknown option: ${typo}\nusage: node scripts/plugin-lock.mjs [--check] [marketplaceRoot]`);
+  const read = readArgv(process.argv.slice(2), { check: { type: "boolean" } }, { positionals: true });
+  if (read.error) {
+    console.error(`${process.env.GITHUB_ACTIONS === "true" ? "::error::" : ""}${read.error}\nusage: node scripts/plugin-lock.mjs [--check] [marketplaceRoot]`);
     process.exit(2);
   }
-  const check = process.argv.includes("--check");
+  const check = read.values.check === true;
   if (!RUNNABLE) {
     // Said for the write as well as the check, because every refusal in here
     // names `npm run lock:plugin` as the fix and on Windows that writes
@@ -195,7 +195,7 @@ function main() {
   }
   // A root argument the way the sibling gates take one, so a case can point
   // this at a tree of its own rather than at the checkout it is running in.
-  const positional = process.argv.slice(2).filter((arg) => !arg.startsWith("-"));
+  const positional = read.positionals;
   if (positional.length > 1) refuse(`only one marketplace root may be given, and ${positional[1]} was the second`);
   const root = positional[0] ? resolve(positional[0]) : ROOT;
   const pluginRoot = join(root, REL.anatomiya);
