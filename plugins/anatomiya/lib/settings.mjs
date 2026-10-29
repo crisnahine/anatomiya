@@ -15,7 +15,8 @@
 import { accessSync, constants, existsSync, unlinkSync } from "node:fs";
 import { join } from "node:path";
 
-import { HEAD_BYTES, SETTINGS_PATH, readHead, resolveInside } from "./rules.mjs";
+import { SETTINGS_PATH } from "./rules.mjs";
+import { HEAD_BYTES, readHead, resolveInside } from "./contained.mjs";
 import { atomic } from "./store.mjs";
 
 export { SETTINGS_PATH };

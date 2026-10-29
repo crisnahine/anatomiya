@@ -10,7 +10,8 @@
 import { existsSync, mkdirSync, renameSync, statSync, unlinkSync } from "node:fs";
 import { basename, dirname, join } from "node:path";
 
-import { outsideClaude, readHead, REFRESH_STATE, resolveInside } from "./rules.mjs";
+import { REFRESH_STATE } from "./rules.mjs";
+import { outsideClaude, readHead, resolveInside } from "./contained.mjs";
 import { encodePath } from "./encode.mjs";
 import { READ_MOST, putBack, recordBytes, writeTemp } from "./store.mjs";
 import { slotRecord } from "./slot.mjs";

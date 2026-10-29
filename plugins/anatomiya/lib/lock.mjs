@@ -15,7 +15,8 @@ import { createHash, randomBytes } from "node:crypto";
 import { closeSync, linkSync, lstatSync, opendirSync, openSync, rmdirSync, unlinkSync, writeSync } from "node:fs";
 import { basename, dirname, join } from "node:path";
 
-import { namesIn, readHead, REFRESH_LOCK, REFRESH_STATE } from "./rules.mjs";
+import { COMMIT_LOCK, REFRESH_LOCK, REFRESH_STATE } from "./rules.mjs";
+import { namesIn, readHead } from "./contained.mjs";
 import { quietUnlink, writeTemp } from "./store.mjs";
 
 /**
@@ -218,14 +219,14 @@ const COMMIT_HELD_MOST_MS = 5 * 60 * 1000;
  * for one scan, and the largest measured takes about two minutes, so a lock older than half an hour
  * belongs to a worker that is not coming back, whatever its pid now names.
  */
-export const workerAge = ownerAge({ staleMs: HELD_MOST_MS });
+const workerAge = ownerAge({ staleMs: HELD_MOST_MS });
 
 /**
  * A scan's commit lock as its commit judges it: the refresh worker's judge, but a lock naming this
  * process is dead too. A commit runs to its end before another in the process starts, so such a lock
  * is one its release could not remove, as Windows refuses while an indexer holds the file open.
  */
-export const commitAge = ownerAge({ staleMs: COMMIT_HELD_MOST_MS, alive: (pid) => pid !== process.pid && processAlive(pid) });
+const commitAge = ownerAge({ staleMs: COMMIT_HELD_MOST_MS, alive: (pid) => pid !== process.pid && processAlive(pid) });
 
 // What `acquire` writes as a nonce, and so the one shape its lock tokens are named by.
 const GENERATION = /^[0-9a-f]{16}$/;
@@ -304,7 +305,7 @@ export function removeLeftTokens(lock, live) {
  * any break holds one. Nothing breaks a token's own token, so a breaker killed holding one left that lock
  * unbreakable for good. Never a live lock's, and never an entry that is not a regular file.
  */
-export function leftTokens(lock, judge) {
+function leftTokens(lock, judge) {
   const now = judge(lock);
   return tokensOf(lock)
     .filter(({ name, generation, ofToken }) => {
@@ -315,6 +316,24 @@ export function leftTokens(lock, judge) {
     })
     .map(({ name }) => name);
 }
+
+/**
+ * The store's two named locks, each with the judge it is taken and swept under
+ * (A117, A118): the refresh worker's, held for one scan, and a commit's, held
+ * for its renames. The pairing lived in three callers, the worker, the commit
+ * and the store sweep, and A118's guarantee that the sweep and the taker agree
+ * held only while all three said the same.
+ */
+const LOCKS = Object.freeze({
+  refresh: Object.freeze({ name: basename(REFRESH_LOCK), judge: workerAge }),
+  commit: Object.freeze({ name: basename(COMMIT_LOCK), judge: commitAge }),
+});
+
+/** Take one of the store's named locks in `storeDir`, as `acquire` does, under the judge that lock is judged by. */
+export const takeLock = (storeDir, which) => acquire(join(storeDir, LOCKS[which].name), LOCKS[which].judge);
+
+/** The lock tokens a breaker that died left beside either named lock in `storeDir`, each judged as its lock is (`leftTokens`). */
+export const leftLockTokens = (storeDir) => Object.values(LOCKS).flatMap(({ name, judge }) => leftTokens(join(storeDir, name), judge));
 
 /** Whether a directory holding entries sits at `path`, which no lock of this tool removes: an empty one goes with `rmdir`, and a link there is never followed. */
 export function holdsEntries(path) {

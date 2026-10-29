@@ -24,7 +24,7 @@ import { INERT_ENGINES, inertLinesOf, REUSE_PARSE_MS } from "./inert.mjs";
 import { assertKeyed, embeddedIn, engineOf, hostedBy, language } from "./langs.mjs";
 import { LINE_READ, MAX_FILE_BYTES } from "./limits.mjs";
 import { byCode } from "./paths.mjs";
-import { readHead, readTail, realpathOf } from "./rules.mjs";
+import { readHead, readTail, realpathOf } from "./contained.mjs";
 import { blankOutside, scriptBlocks } from "./script-blocks.mjs";
 import { markupCodeLines, templateInertLines, templateOf } from "./templates.mjs";
 import { sessionStartIn, toolCallsIn, transcriptTail, turnOpenersIn, turnStartIn } from "./transcript.mjs";

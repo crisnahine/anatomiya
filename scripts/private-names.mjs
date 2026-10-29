@@ -15,7 +15,7 @@ import { join, resolve } from "node:path";
 import { invokedAs, readArgv, realOf } from "./entry.mjs";
 import { ROOT } from "./plugins.mjs";
 import { byCode } from "../plugins/anatomiya/lib/paths.mjs";
-import { realpathOf } from "../plugins/anatomiya/lib/rules.mjs";
+import { realpathOf } from "../plugins/anatomiya/lib/contained.mjs";
 import { shippedBytes } from "../plugins/anatomiya/lib/tree-sitter-runtime.mjs";
 import { contains } from "../plugins/anatomiya/lib/tsconfig.mjs";
 

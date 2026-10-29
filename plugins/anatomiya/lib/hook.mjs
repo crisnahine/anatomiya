@@ -9,7 +9,8 @@
 import { existsSync, lstatSync, readdirSync, statSync } from "node:fs";
 import { dirname, isAbsolute, join, relative, resolve, sep } from "node:path";
 
-import { HEAD_BYTES, isOwned, nativeUpTo, OVERVIEW_FILE, RULES_DIR, readHead, realpathOrNull, resolveInside } from "./rules.mjs";
+import { isOwned, OVERVIEW_FILE, RULES_DIR } from "./rules.mjs";
+import { HEAD_BYTES, nativeUpTo, readHead, realpathOrNull, resolveInside } from "./contained.mjs";
 import { escapes } from "./paths.mjs";
 import { FACTS_PATH, readLayout, readRecord, schemaProblem } from "./facts.mjs";
 import { PATH_MOST } from "./payload.mjs";

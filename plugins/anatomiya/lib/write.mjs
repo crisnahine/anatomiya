@@ -5,11 +5,12 @@ import { hasFile, renderArea, renderOverview } from "./render.mjs";
 import { claimsIn } from "./cochange.mjs";
 import { FACTS_PATH, FACTS_SCHEMA, LAYOUT_PATH, readFacts, readLayout, factsJson, stampedLayout, putBackRecord, writePair } from "./facts.mjs";
 import { HISTORY_FILES } from "./history.mjs";
-import { acquire, commitAge, holdsEntries, leftTokens, processAlive, refreshBlockers, release, workerAge } from "./lock.mjs";
+import { holdsEntries, leftLockTokens, processAlive, refreshBlockers, release, takeLock } from "./lock.mjs";
 import { LOCKED, MOVE_IT, PUT_BACK, UNLOCK, isFileAt, movedAway, quietUnlink, replaceAll, stagedInStore, tooLarge, tooLargeSentence, tooLargeToPutBack, writeTemp } from "./store.mjs";
 import { byCode } from "./paths.mjs";
 import { isWholeArea } from "./slot.mjs";
-import { areaFilename, auditRules, blockedOnTheWay, COMMIT_LOCK, foldedOnto, INDEX_FILE, isGeneratedName, isMapName, leafReplaceable, outsideClaude, recordFor, REFRESH_LOCK, REFRESH_STATE, resolveInside, resolveRulesDir, resolveTargetDir, RULES_DIR, spelledOtherwise, stagedBy, STORE_DIR, targetView } from "./rules.mjs";
+import { areaFilename, auditRules, COMMIT_LOCK, foldedOnto, INDEX_FILE, isGeneratedName, isMapName, recordFor, REFRESH_LOCK, REFRESH_STATE, resolveRulesDir, resolveTargetDir, RULES_DIR, spelledOtherwise, stagedBy, STORE_DIR, targetView } from "./rules.mjs";
+import { blockedOnTheWay, leafReplaceable, outsideClaude, resolveInside } from "./contained.mjs";
 import { TARGETS, TARGET_IDS, areaName, assertTargets, isClaude, overviewName } from "./targets.mjs";
 
 /**
@@ -384,7 +385,7 @@ function leftInStore(dir) {
     const aside = LOCK_ASIDE.exec(name);
     return aside !== null && !processAlive(Number(aside[1])) && isFileAt(join(dir, name));
   });
-  const tokens = [[REFRESH_LOCK, workerAge], [COMMIT_LOCK, commitAge]].flatMap(([lock, judge]) => leftTokens(join(dir, basename(lock)), judge));
+  const tokens = leftLockTokens(dir);
   return [...staged, ...tokens, ...asides].sort();
 }
 
@@ -605,7 +606,7 @@ export function commitMap(root, plan) {
  */
 function holdCommit(storeDir, plan) {
   mkdirSync(storeDir, { recursive: true });
-  const lock = acquire(join(storeDir, basename(COMMIT_LOCK)), commitAge);
+  const lock = takeLock(storeDir, "commit");
   if (lock === null) throw staleError("another scan is writing the map now");
   if (lock.blocked) throw notAFile(COMMIT_LOCK);
   // A plan from a record another scan has since replaced removes none of that scan's files, which then load for good.

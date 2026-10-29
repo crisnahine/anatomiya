@@ -270,7 +270,7 @@ import { guardedChild } from "./child.mjs";
 import { guardsOver } from "./limits.mjs";
 import { holdsTypeSyntax } from "./langs.mjs";
 import { extOf } from "./paths.mjs";
-import { readHead } from "./rules.mjs";
+import { readHead } from "./contained.mjs";
 import { CONFIG_REFUSALS, configNameIn, insideRoot, NO_CONFIG } from "./tsconfig.mjs";
 import { fileURLToPath } from "node:url";
 import { tmpdir } from "node:os";

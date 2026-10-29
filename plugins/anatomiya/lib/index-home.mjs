@@ -8,7 +8,8 @@ import { join } from "node:path";
 import { constants as zlib, gunzipSync } from "node:zlib";
 
 import { refreshRecord } from "./facts.mjs";
-import { INDEX_FILE, resolveInside, STORE_DIR } from "./rules.mjs";
+import { INDEX_FILE, STORE_DIR } from "./rules.mjs";
+import { resolveInside } from "./contained.mjs";
 import { READ_MOST } from "./store.mjs";
 import { DOC_MOST, PARAMS_MOST, SYMBOL_KINDS } from "./symbols.mjs";
 import { mainCheckoutOf } from "./worktree.mjs";

@@ -10,7 +10,7 @@ import { join } from "node:path";
 
 import { corpusDrop, isCorpusPath } from "./corpus.mjs";
 import { ask, filesAt, gitStreamed, nameStatusReader, parsePorcelainRows, unaskedAs, GIT, RENAME_LIMIT } from "./git.mjs";
-import { isLink } from "./rules.mjs";
+import { isLink } from "./contained.mjs";
 
 const NOTHING_PENDING = Object.freeze({ present: [], deleted: [], removed: [] });
 

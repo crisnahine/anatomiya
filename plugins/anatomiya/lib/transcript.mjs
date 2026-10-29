@@ -7,7 +7,7 @@
  * transcript reads it once. `readTail`, `readTailOf` and `readHead` in
  * `rules.mjs` stay the bounded reads under them.
  */
-import { readTailOf } from "./rules.mjs";
+import { readTailOf } from "./contained.mjs";
 
 /** The last `most` bytes of a transcript, the offsets they start and end at (a start of 0 is the whole transcript), and their lines; null where it will not read. */
 export function transcriptTail(path, most) {

@@ -2,10 +2,11 @@ import { test } from "node:test";
 import assert from "node:assert/strict";
 import { existsSync, mkdirSync, mkdtempSync, readFileSync, readdirSync, statSync, utimesSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
-import { join } from "node:path";
+import { basename, join } from "node:path";
 import { execFileSync } from "node:child_process";
 
-import { createdAlone, mtimeAge, ownerAge, removeLeftTokens, takeDeadLock } from "../plugins/anatomiya/lib/lock.mjs";
+import { createdAlone, leftLockTokens, mtimeAge, ownerAge, release, removeLeftTokens, takeDeadLock, takeLock } from "../plugins/anatomiya/lib/lock.mjs";
+import { COMMIT_LOCK, REFRESH_LOCK } from "../plugins/anatomiya/lib/rules.mjs";
 import { stubbed } from "./fs-stub.mjs";
 import { removeTree } from "./platform.mjs";
 
@@ -253,4 +254,17 @@ test("a fifo at a lock's name that the system will not unlink is named as blocke
     return real(p);
   }, () => takeDeadLock(lock, DEAD_JUDGES["the worker's"], "mine")), (err) => err.code === "EPERM" && err.blocked === lock);
   assert.deepEqual(readdirSync(dir), ["lock"], "and no lock token is left");
+});
+
+test("the store's two named locks are each judged as their own: a commit lock this process left is dead to the next commit, a refresh lock this process holds is live, and the sweep names a token beside either", (t) => {
+  const store = workspace(t);
+  assert.ok(takeLock(store, "commit"));
+  assert.ok(takeLock(store, "commit"), "a commit lock naming this process is one its release could not remove");
+  const refresh = takeLock(store, "refresh");
+  assert.ok(refresh);
+  assert.equal(takeLock(store, "refresh"), null, "a live worker's lock is not taken from under it");
+  release(refresh);
+  const tokens = [`${basename(COMMIT_LOCK)}.fedcba9876543210`, `${basename(REFRESH_LOCK)}.0123456789abcdef`];
+  for (const name of tokens) writeFileSync(join(store, name), "");
+  assert.deepEqual(leftLockTokens(store).sort(), tokens);
 });

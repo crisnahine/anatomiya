@@ -6,25 +6,8 @@ import { chmodSync, existsSync, mkdirSync, mkdtempSync, readdirSync, readFileSyn
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 
-import {
-  GENERATOR,
-  HEAD_BYTES,
-  OVERVIEW_FILE,
-  PREFIX,
-  RULES_DIR,
-  auditRules,
-  foldedOnto,
-  isGeneratedName,
-  isMapName,
-  isOwned,
-  readHead,
-  resolveRulesDir,
-  resolveTargetDir,
-  spelledOtherwise,
-  targetState,
-  targetStatus,
-  targetView,
-} from "../plugins/anatomiya/lib/rules.mjs";
+import { GENERATOR, OVERVIEW_FILE, PREFIX, RULES_DIR, auditRules, foldedOnto, isGeneratedName, isMapName, isOwned, resolveRulesDir, resolveTargetDir, spelledOtherwise, targetState, targetStatus, targetView } from "../plugins/anatomiya/lib/rules.mjs";
+import { HEAD_BYTES } from "../plugins/anatomiya/lib/contained.mjs";
 import { TARGETS, areaName, overviewName } from "../plugins/anatomiya/lib/targets.mjs";
 import { doublingRatio, LINEAR } from "./growth.mjs";
 import { caseSensitiveDir, needsFoldingFilesystem, needsPosixPermissions, needsPosixSpecialFiles, needsSymlinks, needsUnreadableDirs, removeTree } from "./platform.mjs";
@@ -53,15 +36,6 @@ const repeating = (lines, close = "") => "---\n" + `generator: ${GENERATOR}\n`.r
 // LINEAR; past the head both sides do the same work and a quadratic walk reads
 // under it.
 const TIMED = Math.floor((HEAD_BYTES - 2 * "---\n".length) / `generator: ${GENERATOR}\n`.length / 2);
-
-test("a whole read takes a file of exactly the bound it is given, and only the size of one a byte past it", (t) => {
-  const dir = workspace(t);
-  put(dir, "four", "abcd");
-  put(dir, "five", "abcde");
-  assert.equal(readHead(join(dir, "four"), 4, { whole: true }).head, "abcd");
-  const over = readHead(join(dir, "five"), 4, { whole: true });
-  assert.deepEqual([over.head, over.size], [null, 5]);
-});
 
 test("an unclosed frontmatter repeating our key is answered in linear time", () => {
   // Measured: a regex whose lazy line group re-tried every line after every

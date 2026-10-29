@@ -222,6 +222,7 @@ test("the writers do not reach the pipeline that produced the record", () => {
   // learn something the record already carries.
   assert.deepEqual([...reachedFrom("check-report.mjs")].sort(), [
     "check-report.mjs",
+    "contained.mjs",
     "encode.mjs",
     "paths.mjs",
     "rules.mjs",
@@ -814,6 +815,7 @@ function armReach(verb, { lazy = false } = {}) {
 
 // Written out rather than counted, so a module joining the echo's load shows by name.
 const ECHO_LOADS = [
+  "contained.mjs",
   "encode.mjs",
   "facts.mjs",
   "gates.mjs",
@@ -846,8 +848,8 @@ test("a hook verb loads none of the scan, the check or the parser", () => {
   assert.deepEqual([...armReach("echo")].sort(), ECHO_LOADS);
   // The other arms by count, before any lazy import and with each followed (A100).
   const sizes = (opts) => Object.fromEntries(["echo", "notice", "reuse", "refresh"].map((verb) => [verb, armReach(verb, opts).size]));
-  assert.deepEqual(sizes(), { echo: 13, notice: 13, reuse: 13, refresh: 31 });
-  assert.deepEqual(sizes({ lazy: true }), { echo: 44, notice: 44, reuse: 44, refresh: 31 });
+  assert.deepEqual(sizes(), { echo: 14, notice: 14, reuse: 14, refresh: 32 });
+  assert.deepEqual(sizes({ lazy: true }), { echo: 45, notice: 45, reuse: 45, refresh: 32 });
   assert.ok(armReach("notice", { lazy: true }).has("precedent.mjs"), "the notice's lazy import was not followed");
   assert.ok(armReach("reuse", { lazy: true }).has("reuse.mjs"), "the reuse check's lazy import was not followed");
   // The find arm: the index reader and the query side, and none of the scan behind the other commands,

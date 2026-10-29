@@ -17,7 +17,7 @@ import { roster } from "./layout-scan.mjs";
 import { tally } from "./layout.mjs";
 import { extOf, extOrName } from "./paths.mjs";
 import { MANIFESTS, ownPackages } from "./own-packages.mjs";
-import { isLink, readHead } from "./rules.mjs";
+import { isLink, readHead } from "./contained.mjs";
 import { commonImports, mostImported } from "./siblings.mjs";
 import { buildIndex } from "./code-index.mjs";
 import { readIndex } from "./index-home.mjs";

@@ -15,7 +15,7 @@ import { existsSync, lstatSync, realpathSync } from "node:fs";
 import { basename, dirname, join, resolve, relative, posix, win32 } from "node:path";
 
 import { escapes } from "./paths.mjs";
-import { realpathOf, resolveInside } from "./rules.mjs";
+import { realpathOf, resolveInside } from "./contained.mjs";
 
 /**
  * Where a root keeps its compiler options, its own file first. A workspace that

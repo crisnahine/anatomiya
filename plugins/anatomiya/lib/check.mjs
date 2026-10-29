@@ -19,7 +19,8 @@ import { familyOf, language, MISSING_STRIPPER, placeTestsOf } from "./langs.mjs"
 import { isProducer, placedTests } from "./layout.mjs";
 import { areaIndex } from "./areas.mjs";
 import { droppedSlots, unexaminedPhrase, unstatedLine } from "./render.mjs";
-import { auditRules, readHead, resolveInside, targetView } from "./rules.mjs";
+import { auditRules, targetView } from "./rules.mjs";
+import { readHead, resolveInside } from "./contained.mjs";
 import { TARGETS, isClaude } from "./targets.mjs";
 import { FACTS_PATH, readFacts } from "./facts.mjs";
 import { statedSide } from "./slot.mjs";

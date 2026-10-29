@@ -2,7 +2,7 @@
 import { existsSync } from "node:fs";
 import { basename, dirname, join, resolve } from "node:path";
 
-import { readHead, realpathOrNull } from "./rules.mjs";
+import { readHead, realpathOrNull } from "./contained.mjs";
 
 /** How much of a pointer file is read: the longest path a filesystem opens. */
 const POINTER_MOST = 4096;

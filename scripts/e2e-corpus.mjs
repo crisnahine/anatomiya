@@ -43,7 +43,8 @@ import { FACTS_PATH, FACTS_SCHEMA, readRecord } from "../plugins/anatomiya/lib/f
 import { rendersAsDirective, statedSide } from "../plugins/anatomiya/lib/slot.mjs";
 import { PIN_PATH } from "../plugins/anatomiya/lib/baseline.mjs";
 import { MAX_LINES } from "../plugins/anatomiya/lib/render.mjs";
-import { isGeneratedName, nativeUpTo, OVERVIEW_FILE, RULES_DIR } from "../plugins/anatomiya/lib/rules.mjs";
+import { isGeneratedName, OVERVIEW_FILE, RULES_DIR } from "../plugins/anatomiya/lib/rules.mjs";
+import { nativeUpTo } from "../plugins/anatomiya/lib/contained.mjs";
 import { TARGETS, isClaude, overviewName, parseTargets } from "../plugins/anatomiya/lib/targets.mjs";
 import { scanLines } from "../plugins/anatomiya/lib/summary.mjs";
 import { TRUNCATED_LAYOUT } from "../plugins/anatomiya/lib/render-layout.mjs";

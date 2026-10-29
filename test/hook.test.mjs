@@ -12,7 +12,7 @@ import { fieldsIn, PAYLOAD_WAIT_MS } from "../plugins/anatomiya/lib/payload.mjs"
 import { planRemoval, commitRemoval, removeStaleHook, HOOK_COMMAND, NOTICE_COMMAND, REFRESH_COMMAND, REUSE_COMMAND, SETTINGS_PATH } from "../plugins/anatomiya/lib/settings.mjs";
 import { FACTS_PATH, FACTS_SCHEMA, LAYOUT_PATH } from "../plugins/anatomiya/lib/facts.mjs";
 import { pluginPaths } from "../scripts/validate.mjs";
-import { HEAD_BYTES } from "../plugins/anatomiya/lib/rules.mjs";
+import { HEAD_BYTES } from "../plugins/anatomiya/lib/contained.mjs";
 import { ANATOMIYA } from "../scripts/plugins.mjs";
 import { delivered, transcript } from "./transcript.mjs";
 import { echoEvent } from "../plugins/anatomiya/lib/transcript.mjs";

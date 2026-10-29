@@ -24,7 +24,8 @@ import { gunzip, gzip } from "node:zlib";
 
 import { ask, gitStreamed, unaskedAs } from "./git.mjs";
 import { buildVersion } from "./readiness.mjs";
-import { resolveInside, STORE_DIR } from "./rules.mjs";
+import { STORE_DIR } from "./rules.mjs";
+import { resolveInside } from "./contained.mjs";
 import { atomic, recordBytes } from "./store.mjs";
 
 // What opens a commit's header. No status git prints holds it, so a field that

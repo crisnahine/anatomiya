@@ -4,7 +4,7 @@ Everyone taking part here keeps to the [code of conduct](CODE_OF_CONDUCT.md). A 
 reported privately, the way [SECURITY.md](SECURITY.md#reporting-a-vulnerability) says, and never in
 a public issue.
 
-Read `DECISIONS.md` first. It is 374 numbered rows, each one a measurement or a review finding
+Read `DECISIONS.md` first. It is 375 numbered rows, each one a measurement or a review finding
 reduced to the decision it forces on the code. It is the build contract, and most questions you will
 have about why something is shaped the way it is are answered there. The file is the index: one short
 line per row, with the decision, a one-word status and a link. The measurement behind a row and what
@@ -276,7 +276,7 @@ Where the code goes:
 - `plugins/anatomiya/lib/dimensions-naming.mjs` the learned rows, and `NAMING_CORPUS`, the filename row the reducer
   composes off the corpus rather than off a tree
 
-Fifteen modules hold no row and sit under the scan, the hooks or both. A change to how a file is written, how a
+Sixteen modules hold no row and sit under the scan, the hooks or both. A change to how a file is written, how a
 lock is taken, what a transcript record says, when the echo delivers, which added lines the reuse check asks
 about or how a history walk is fed goes in the one that owns it:
 
@@ -286,9 +286,15 @@ about or how a history walk is fed goes in the one that owns it:
   `isFileAt`, the one test of a regular file at a path. It imports
   only the path encoder, so the pin and the refresh state are written through it without importing
   the record's module to write (A115)
+- `plugins/anatomiya/lib/contained.mjs` a path held inside the repository and a file read bounded by
+  what this tool may hold: `resolveInside` (lexical containment, then realpath on both sides, failing
+  closed), `readHead` and `readTail` through a typed handle under `HEAD_BYTES`, `namesIn`, `isLink` and
+  `realpathOrNull`. It knows nothing of the map; `rules.mjs`, which does, reads it (F2, F17, F30)
 - `plugins/anatomiya/lib/lock.mjs` the one lock the echo and the refresh worker take: an exclusive
   create, and a dead lock broken through a lock token. What makes a lock dead is a judge the caller
-  passes, `mtimeAge` or `ownerAge`. An entry at a lock's name that is no lock is its to tell apart:
+  passes, `mtimeAge` or `ownerAge`, and the store's two named locks sit in one table with their
+  judges, `LOCKS`, read by `takeLock` and the sweep's `leftLockTokens` both (A118). An entry at a
+  lock's name that is no lock is its to tell apart:
   an empty directory is removed, and anything else that will not go is thrown with `blocked` (A117)
 - `plugins/anatomiya/lib/transcript.mjs` what Claude Code's transcript records say, by functions
   that take text, so a hook reads the transcript once for several answers, and the one table of
