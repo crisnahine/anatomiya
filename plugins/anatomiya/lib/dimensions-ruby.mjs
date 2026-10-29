@@ -28,7 +28,7 @@ const ZONED = /^(now|today|local|parse|at)$/;
 const MODEL_BASE = /(^|::)(ApplicationRecord|ActiveRecord::Base|ApplicationRecord::Base)$/;
 
 // The class beside the method, which is what tells a new `B#run` from the `A#run` written under it.
-const where = (ctx) => [ctx.cls && ctx.cls.name, ctx.def && ctx.def.name].filter(Boolean).join("#") || null;
+const where = (ctx) => [ctx.cls && ctx.cls.name, ctx.fn && ctx.fn.name].filter(Boolean).join("#") || null;
 
 /**
  * Ruby's own exception classes, as of 3.4: everything
@@ -125,7 +125,7 @@ function inSingletonClass(ctx) {
  */
 function sidekiqBody(n, ctx) {
   if (n.t !== "call" || n.receiver || n.name !== "include") return null;
-  if (ctx.def || !ctx.cls || inSingletonClass(ctx)) return null;
+  if (ctx.fn || !ctx.cls || inSingletonClass(ctx)) return null;
   return args(n).some((arg) => SIDEKIQ_JOB.test(constName(arg) || "")) ? ctx.cls : null;
 }
 
@@ -562,7 +562,7 @@ export const RUBY_DIMENSIONS = [
           }
           if (n.t !== "call" || n.receiver) return;
           if (n.name !== "include" && n.name !== "prepend" && n.name !== "extend") return;
-          const body = ctx.def || !ctx.cls ? null : bodies.get(ctx.cls);
+          const body = ctx.fn || !ctx.cls ? null : bodies.get(ctx.cls);
           if (!body) return;
           // `class << self; include M; end` is `extend M`: a mixin declared, but
           // not one the class's instances carry, so no vote for M.
@@ -618,6 +618,8 @@ export const RUBY_DIMENSIONS = [
     tier: "syntactic",
     framework: "rails",
     learnedClasses: true,
+    // The call a parameter filter starts from, which is what a site votes with.
+    classes: ["require", "permit", "expect"],
     // Three spellings of one job, and which of them a team writes is its own:
     // the generator writes `require(...).permit`, Rails 8 adds `expect`, and a
     // controller can permit off the whole hash.

@@ -37,7 +37,7 @@ import { hasInstall } from "../plugins/anatomiya/lib/semantic.mjs";
 import { byCode } from "../plugins/anatomiya/lib/paths.mjs";
 import { underArea } from "../plugins/anatomiya/lib/areas.mjs";
 import { LANGUAGES, assertKeyed, familyOf, language } from "../plugins/anatomiya/lib/langs.mjs";
-import { CLASSES } from "../plugins/anatomiya/lib/dimensions-naming.mjs";
+import { CLASSES } from "../plugins/anatomiya/lib/stems.mjs";
 import { rowByKey } from "../plugins/anatomiya/lib/registry.mjs";
 import { FACTS_PATH, FACTS_SCHEMA, readRecord } from "../plugins/anatomiya/lib/facts.mjs";
 import { rendersAsDirective, statedSide } from "../plugins/anatomiya/lib/slot.mjs";

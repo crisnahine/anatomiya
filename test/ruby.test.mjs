@@ -16,7 +16,7 @@ import { engineOf } from "../plugins/anatomiya/lib/langs.mjs";
 import { collectHits } from "../plugins/anatomiya/lib/walk.mjs";
 import { siteIdentity } from "../plugins/anatomiya/lib/introduced.mjs";
 import { readiness } from "../plugins/anatomiya/lib/readiness.mjs";
-import { isTestFile } from "../plugins/anatomiya/lib/layout.mjs";
+import { isTestFile } from "../plugins/anatomiya/lib/test-shape.mjs";
 import { hitsOf } from "./hits.mjs";
 
 const dir = mkdtempSync(join(tmpdir(), "anatomiya-ruby-"));
@@ -1164,7 +1164,7 @@ test("broken syntax is reported as unread, not counted from the recovery", needs
 test("scope attribution resolves to the innermost declaration, not the block", needsRuby, () => {
   let where = "unset";
   walkRuby(programs.get("scopes").program, (n, ctx) => {
-    if (n.t === "call" && n.name === "now") where = [ctx.def && ctx.def.name, ctx.cls && ctx.cls.name];
+    if (n.t === "call" && n.name === "now") where = [ctx.fn && ctx.fn.name, ctx.cls && ctx.cls.name];
   });
   assert.deepEqual(where, ["run", "Outer"], "a block does not shadow the method it sits in");
 });
@@ -1184,7 +1184,7 @@ test("leaving a declaration hands its context back to the one around it", () => 
     ],
   };
   walkRuby(tree, (n, ctx) => {
-    if (n.t === "call") seen[n.name] = [ctx.def?.name ?? null, ctx.cls?.name ?? null, ctx.enclosing?.t ?? null, ctx.stack.length];
+    if (n.t === "call") seen[n.name] = [ctx.fn?.name ?? null, ctx.cls?.name ?? null, ctx.enclosing?.t ?? null, ctx.stack.length];
   });
   assert.deepEqual(seen, {
     inDef: ["run", "Outer", "def", 2],

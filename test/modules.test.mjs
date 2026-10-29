@@ -306,6 +306,44 @@ test("every field a reader takes off a site crossed the worker boundary, or is t
 
 // The check and the row tests took raw hits while the scan took what crossed, so a field the
 // boundary dropped worked in both and was missing from the map.
+// The oxc bridge handed a row three fields, the prism bridge one, the tree bridge four and the check four, so a
+// row reading `facets` counted in the check and saw `undefined` in the scan, with no error either side. Every
+// caller builds the context through the one table now, and this reads each call's third argument.
+test("every bridge and the check hand a row its file context through fileContext", () => {
+  const thirdArgOf = (src, call) => {
+    const args = [];
+    let depth = 0;
+    let at = src.indexOf("(", call) + 1;
+    let start = at;
+    for (; at < src.length; at++) {
+      const c = src[at];
+      if (c === "(" || c === "[" || c === "{") depth++;
+      else if (c === ")" || c === "]" || c === "}") {
+        if (depth === 0) break;
+        depth--;
+      } else if (c === "," && depth === 0) {
+        args.push(src.slice(start, at).trim());
+        start = at + 1;
+      }
+    }
+    args.push(src.slice(start, at).trim());
+    return args[2] ?? null;
+  };
+  const wrong = [];
+  let calls = 0;
+  for (const file of readdirSync(LIB).filter((f) => f.endsWith(".mjs") && f !== "walk.mjs")) {
+    const src = scan(readFileSync(join(LIB, file), "utf8"));
+    for (const m of src.matchAll(/\b(?:collectHits|hitsOf)\(/g)) {
+      calls++;
+      const extra = thirdArgOf(src, m.index);
+      // `introduced.mjs`'s own `hitsOf` hands its `extra` on; the semantic job's rows read no file context.
+      if (extra !== null && extra !== "extra" && !extra.startsWith("fileContext(")) wrong.push(`${file}: ${extra.slice(0, 60)}`);
+    }
+  }
+  assert.ok(calls >= 6, `read ${calls} calls`);
+  assert.deepEqual(wrong, []);
+});
+
 test("a row is run through hit collection alone, by the scan, the check and the tests", () => {
   const lib = readdirSync(LIB).filter((f) => f.endsWith(".mjs") && /\.run\(/.test(scan(readFileSync(join(LIB, f), "utf8"))));
   assert.deepEqual(lib, ["walk.mjs"]);

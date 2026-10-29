@@ -72,7 +72,7 @@ const LEAVE = Symbol("leave");
 
 /**
  * One walk over a plain tree. `visit(node, ctx)` receives what `walkRuby`'s
- * visitor does, with `fn` where that has `def`:
+ * visitor does:
  *   ctx.stack     enclosing functions and class bodies, outermost first
  *   ctx.enclosing innermost of those, or null at file level
  *   ctx.fn        innermost enclosing function or method, or null

@@ -20,6 +20,8 @@ import {
   grammarFor,
   langHas,
   assertRegistry,
+  declaresPackage,
+  reachesOf,
   familyOf,
   embeddedIn,
   placeTestsOf,
@@ -472,4 +474,15 @@ test("a table keyed by language is refused where it leaves out a language it is 
   assert.throws(() => assertKeyed("T", { php: 2 }, [], ["go", "rust"]), /T holds php/);
   // An inherited name is no entry: `RUNNERS.constructor` is not a language.
   assert.throws(() => assertKeyed("T", {}, ["constructor"]), /T has no entry for constructor/);
+});
+
+test("a declaration says which families a reference may reach and whether a file declares its package, and the resolver reads it there", () => {
+  assert.deepEqual(reachesOf("kotlin"), ["kotlin", "java"]);
+  assert.deepEqual(reachesOf("java"), ["java", "kotlin"]);
+  for (const id of ["js", "jsx", "vue", "ruby", "python", "php", "go", "csharp", "rust"]) assert.deepEqual(reachesOf(id), [declOf(id).family], id);
+  for (const id of ["java", "kotlin", "php"]) assert.equal(declaresPackage(id), true, id);
+  for (const id of ["js", "ruby", "python", "go", "csharp", "rust"]) assert.equal(declaresPackage(id), false, id);
+  assert.throws(() => assertRegistry(LANGUAGES.map((l) => (l.id === "kotlin" ? { ...l, reaches: ["jvm"] } : l))), /kotlin reaches \["jvm"\]/);
+  assert.throws(() => assertRegistry(LANGUAGES.map((l) => (l.id === "kotlin" ? { ...l, reaches: [] } : l))), /kotlin reaches/);
+  assert.throws(() => assertRegistry(LANGUAGES.map((l) => (l.id === "php" ? { ...l, declaresPackage: "yes" } : l))), /php does not say whether its files declare the package/);
 });

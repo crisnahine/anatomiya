@@ -4,7 +4,7 @@ Everyone taking part here keeps to the [code of conduct](CODE_OF_CONDUCT.md). A 
 reported privately, the way [SECURITY.md](SECURITY.md#reporting-a-vulnerability) says, and never in
 a public issue.
 
-Read `DECISIONS.md` first. It is 370 numbered rows, each one a measurement or a review finding
+Read `DECISIONS.md` first. It is 373 numbered rows, each one a measurement or a review finding
 reduced to the decision it forces on the code. It is the build contract, and most questions you will
 have about why something is shaped the way it is are answered there. The file is the index: one short
 line per row, with the decision, a one-word status and a link. The measurement behind a row and what
@@ -360,6 +360,12 @@ The shape:
   },
 }
 ```
+
+A row that asks nothing of a test file declares `outsideTests: true`, and `outsideTestTrees: true` on
+top where a whole test tree stands in for the code under test, as a route row's does; the walk then
+hands it no node of such a file, by the one rule in `test-shape.mjs`, and the file stays eligible
+(C73). A row that learns its class from a closed vocabulary declares `classes`, the values its sites
+vote with, which the check enforces inside and a model default is held to (C74).
 
 A row is a visitor of the one walk its engine takes over each file (B49): `walk` for JavaScript,
 `walkRuby` for Ruby, `walkTree` for a tree-sitter tree. Its file declares `visitor` and nothing else: `dimensions.mjs` gives every

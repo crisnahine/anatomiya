@@ -13,7 +13,7 @@ import { EXTRA_DIMENSIONS } from "./dimensions-extra.mjs";
 import { JSX_DIMENSIONS } from "./dimensions-jsx.mjs";
 import { NAMING_AST } from "./dimensions-naming.mjs";
 import { CAPABILITY_DIMENSIONS } from "./dimensions-capability.mjs";
-import { asks, collectHits, dimensionsFor } from "./walk.mjs";
+import { asks, collectHits, dimensionsFor, fileContext } from "./walk.mjs";
 import { jsFacets } from "./facets.mjs";
 import { rawTransferAllowed } from "./limits.mjs";
 import { ENGINES, embeddedIn, grammarFor, mayHoldFlow, mayBeCommonJS, spokenIn } from "./langs.mjs";
@@ -245,7 +245,7 @@ function record(tree, facets, { source, parsedSource, rel, lang, stripped, withP
   const payload = {
     rel,
     ok: true,
-    hits: collectHits(tree.program, dims, { comments: tree.comments ?? [], source: parsedSource, rel }),
+    hits: collectHits(tree.program, dims, fileContext({ rel, lang, source: parsedSource, comments: tree.comments ?? [], facets })),
     facets,
     errors: 0,
     stripped,

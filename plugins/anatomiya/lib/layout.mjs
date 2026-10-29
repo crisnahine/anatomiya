@@ -11,11 +11,12 @@
  */
 
 import { namesakeCompanions, namesakeIndex } from "./companions.mjs";
-import { embeddedIn, familyOf, langHas, language, placeTestsOf } from "./langs.mjs";
+import { familyOf, isComponent, language, placeTestsOf } from "./langs.mjs";
 import { baseOf, dirOf, extOf, stemOf, withoutExtension, byCode } from "./paths.mjs";
 import { PRECEDENT_FLOOR } from "./principles.mjs";
 import {
   FAMILY_TEST_NAMES,
+  isTestFile,
   TEST_DIRS,
   TEST_ROOTS,
   UNNAMED_RUNNER,
@@ -115,7 +116,6 @@ export function placedTests(files) {
 // A component with no script still holds its markup, which is the file.
 const holdsNothing = (facets) => facets?.empty === true && !facets.embedded;
 
-const isComponent = (lang) => Boolean(lang) && embeddedIn(lang) !== null;
 
 // A component in a `__tests__` directory is what the tests there mount, so no test is owed it.
 const isFixture = (f) => isComponent(f.lang) && dirOf(f.rel).split("/").some((seg) => TEST_DIRS.has(seg));
@@ -192,62 +192,6 @@ export function printedExtensions(own, mirrored = null) {
   return { exts, counted: [first, other] };
 }
 
-/**
- * A test file is one the parse saw import a runner or call `describe`, one
- * whose own name says so, or, unless the parse read it as support, one
- * sitting in a `__tests__` directory or mirroring a source file from inside a
- * test tree. Four claims about the file;
- * where a repository files it is not one of them. A file the parse read and
- * found empty is none of them, whatever it is called.
- *
- * The last three carry the repositories whose runner this tool has never heard
- * of, so the roster prints `test files` rather than counting a spec as source.
- * They are the fallback, and a plain `under a spec directory` was too wide: a
- * `spec/` tree holds the factories and the support code beside the specs, and
- * charging those to the runner is the roster's own denominator going wrong.
- *
- * `mirrored` is the set `mirroredTests` built over the whole corpus, absent
- * where the caller has no corpus to build it from.
- *
- * A file in no language this tool parses is never one of them. Twenty
- * screenshots under `cypress/` are not twenty specs, and counting them made the
- * tests line the roster exists to be a denominator read 24 over 4.
- *
- * Neither is a component, which no runner collects: vitepress keeps its e2e
- * site's 5 theme components under `__tests__`.
- */
-export function isTestFile({ rel, lang, facets }, mirrored = null) {
-  if (!lang || isComponent(lang)) return false;
-  if (facets?.testRunner || facets?.testCalls) return true;
-  // A file the parse read and found no statement in declares nothing at all, so
-  // there is nothing in it for a runner to collect and the three claims below
-  // are about its name or its address rather than about the file.
-  // a measured Rails API commented one spec out top to bottom and it still made
-  // the service beside it read as covered.
-  //
-  // The empty program is the whole test, not the absence of a case: a spec that
-  // holds code declares its cases in whatever vocabulary its runner spells them,
-  // and reading that absence as "not a test" costs vscode 1,864 of its 2,366
-  // (`test` nested inside `suite`) and this client's whole Cypress suite.
-  if (facets?.empty === true) return false;
-  // The name answers first, read as a reader holding the parse reads it. A
-  // language with a test name of its own answers by it or by the mirror, and
-  // by nothing written for another: no dotted form, no `__tests__`.
-  const family = familyOf(lang);
-  const named = namesATestFile(rel, family, { parseAsked: true });
-  if (named || FAMILY_TEST_NAMES[family]) return named || mirrored?.has(rel) === true;
-  const dir = dirOf(rel);
-  // Past its name, a read file is a test by its address only where nothing in
-  // it says otherwise. One that exports is what the tests import: 328 of the
-  // 645 files the two claims below took across 60 repositories, every one a
-  // fixture, helper, mock or config, and none of eslint's 294 mirrored rule
-  // tests. A language with no import graph has no export to show, and where its
-  // parse names every runner, a file it read with no case is support: 11 of 11,
-  // page objects, factories and helpers.
-  if (facets && !facets.unread && (!langHas(lang, "importGraph") || facets.exports?.length > 0)) return false;
-  if (mirrored?.has(rel)) return true;
-  return dir !== "" && dir.split("/").some((seg) => TEST_DIRS.has(seg));
-}
 
 // Component Story Format's own filename convention. Dotted and plural, so a
 // file that merely mentions "stories" in passing is not this: storybook's own

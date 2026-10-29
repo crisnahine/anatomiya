@@ -11,14 +11,14 @@
 import { templateMountsByName } from "./langs.mjs";
 import { componentProps, isFunctionLike } from "./walk.mjs";
 import { attrName, jsxElementNames, jsxName, makesComponent, typedAsComponent, yieldsJsx } from "./dimensions-jsx.mjs";
-import { addPathSites, classifyWord, fileStem, namesWellKnown } from "./stems.mjs";
+import { addPathSites, CLASSES, classifyWord, fileStem, namesWellKnown } from "./stems.mjs";
 import { encode } from "./encode.mjs";
-import { namesATestFile, underTestTree } from "./test-shape.mjs";
 import { dirOf } from "./paths.mjs";
 
 const NAMESPACE = new Set(["TSModuleDeclaration"]);
 
-export const CLASSES = ["camelCase", "PascalCase", "kebab-case", "snake_case"];
+/** The classes a prefix row learns: the letters anyone writes as a prefix, and the absence of one. */
+const PREFIX_CLASSES = ["I", "T", "E", "none"];
 
 /**
  * One spelling of the template fill, shared by the reducer and the check.
@@ -81,7 +81,7 @@ export function prefixClass(name) {
  * which is the C35 rule for a name that cannot say. The acronym has to end
  * where the word does, so `IDocument` is still `I` on `Document`.
  */
-const PREFIX_LETTERS = new Set(["I", "T", "E"]);
+const PREFIX_LETTERS = new Set(PREFIX_CLASSES.filter((c) => c !== "none"));
 const ACRONYM_OPENING = /^(?:IDs|IPs|IPv\d*|IOs|ETags?|TVs)(?![a-z])/;
 
 const DECLARATION_FILE = /\.d\.[cm]?ts$/;
@@ -218,6 +218,7 @@ export const NAMING_CORPUS = [
     kind: "corpus",
     tier: "syntactic",
     learnedClasses: true,
+    classes: CLASSES,
     claim: "files here are named <style>",
     splitClaim: {
       jsx: "files here that hold JSX are named <style>",
@@ -419,9 +420,11 @@ export const NAMING_AST = [
     },
     // A component's script answers only the route objects it declares.
     langs: ["js", "jsx", "vue", "svelte"],
+    // A test's routes, and a mock server's or a fixture's beside it, stand in for URLs the code under test names.
+    outsideTests: true,
+    outsideTestTrees: true,
+    classes: CLASSES,
     visitor(program, add, { rel } = {}) {
-      // A test's routes, and a mock server's or a fixture's beside it, stand in for URLs the code under test names.
-      if (namesATestFile(rel ?? "", "js") || underTestTree(dirOf(rel ?? ""), "js")) return { node() {} };
       const router = importsRouter(program) || ROUTES_MODULE.test(rel ?? "");
       return {
         node(n, ctx) {
@@ -455,6 +458,7 @@ export const NAMING_AST = [
     key: "function_naming_case",
     tier: "syntactic",
     learnedClasses: true,
+    classes: CLASSES,
     claim: "functions are named <style>",
     splitClaim: {
       jsx: "functions in files that hold JSX are named <style>",
@@ -527,6 +531,7 @@ export const NAMING_AST = [
     key: "exported_symbol_case",
     tier: "syntactic",
     learnedClasses: true,
+    classes: CLASSES,
     claim: "exported names are <style>",
     splitClaim: {
       jsx: "exported names in files that hold JSX are <style>",
@@ -576,6 +581,7 @@ export const NAMING_AST = [
     key: "exported_class_case",
     tier: "syntactic",
     learnedClasses: true,
+    classes: CLASSES,
     claim: "exported classes are named <style>",
     counterClaim: null,
     precision: "precise",
@@ -596,6 +602,7 @@ export const NAMING_AST = [
     key: "exported_type_case",
     tier: "syntactic",
     learnedClasses: true,
+    classes: CLASSES,
     claim: "exported types are named <style>",
     counterClaim: null,
     // An interface, a type alias and an enum are pure type syntax: the Flow
@@ -650,6 +657,7 @@ export const NAMING_AST = [
     key: "interface_prefix",
     tier: "syntactic",
     learnedClasses: true,
+    classes: PREFIX_CLASSES,
     claim: "interfaces are named with a <style> prefix",
     noneClaim: "interfaces carry no prefix",
     counterClaim: null, // the other side is another prefix, or none, and both are classes the learning picks
@@ -690,6 +698,7 @@ export const NAMING_AST = [
     key: "type_alias_prefix",
     tier: "syntactic",
     learnedClasses: true,
+    classes: PREFIX_CLASSES,
     claim: "type aliases are named with a <style> prefix",
     noneClaim: "type aliases carry no prefix",
     counterClaim: null, // the other side is another prefix, or none, and both are classes the learning picks

@@ -84,3 +84,12 @@ test("a class outside the closed vocabulary refuses to load", () => {
   const table = new Map([["function_naming_case", entry({ class: "camelcase" })]]);
   assert.throws(() => assertModelDefaults(table, new Set(["function_naming_case"])), /camelcase/);
 });
+
+test("a learned row's default class is held to the row's own vocabulary, and none is accepted on every learned row", () => {
+  const entry = (cls) => new Map([["interface_prefix", { default: "none", class: cls, provenance: { method: "seed" } }]]);
+  assert.throws(() => assertModelDefaults(entry("camelCase"), REGISTRY_KEYS), /interface_prefix declares class "camelCase", not one of I, T, E, none/);
+  assert.doesNotThrow(() => assertModelDefaults(entry("I"), REGISTRY_KEYS));
+  assert.doesNotThrow(() => assertModelDefaults(new Map([["strong_params_style", { default: "none", class: "permit", provenance: { method: "seed" } }]]), REGISTRY_KEYS));
+  assert.doesNotThrow(() => assertModelDefaults(new Map([["exported_symbol_case", { default: "none", class: "none", provenance: { method: "seed" } }]]), REGISTRY_KEYS));
+  assert.throws(() => assertModelDefaults(new Map([["exported_symbol_case", { default: "none", class: "I", provenance: { method: "seed" } }]]), REGISTRY_KEYS), /not one of camelCase, PascalCase, kebab-case, snake_case, none/);
+});

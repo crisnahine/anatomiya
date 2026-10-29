@@ -1,11 +1,11 @@
 import { guardedChild, absentInterpreter, signalChild } from "./child.mjs";
-import { collectHits } from "./walk.mjs";
+import { collectHits, fileContext } from "./walk.mjs";
 import { walkRuby } from "./ruby-walk.mjs";
 import { rubyFacets } from "./facets.mjs";
 import { guardsOver, MAX_FILE_BYTES, RUBY_STRING_CAP } from "./limits.mjs";
 import { firstLine } from "./encode.mjs";
 import { olderThan } from "./version.mjs";
-import { ENGINES } from "./langs.mjs";
+import { ENGINES, language } from "./langs.mjs";
 import { defaultPoolSize } from "./pool.mjs";
 import { execFile, spawn } from "node:child_process";
 import { stat } from "node:fs/promises";
@@ -870,7 +870,8 @@ function take(out, onResult, seen, line, dimensions, attempt, paths) {
     // The file's own path where the caller keyed it by a label: minitest collects by the directory.
     const path = paths.get(result.rel) ?? result.rel;
     const facets = rubyFacets(program, path);
-    const hits = collectHits(program, dimensions, { rel: result.rel }, { walker: walkRuby, also: [facets] });
+    // No source and no facets yet: the child keeps the text (B5), and the facets ride this walk.
+    const hits = collectHits(program, dimensions, fileContext({ rel: result.rel, lang: language(path) }), { walker: walkRuby, also: [facets] });
     try {
       result.facets = facets.done();
     } catch {

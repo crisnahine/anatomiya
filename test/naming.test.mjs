@@ -2018,3 +2018,20 @@ test("an engine's routes.draw block is read, an interpolated hash key names no p
   // The joined path is past the cap, but each string the tree kept is whole.
   assert.deepEqual(records.get("config/routes.rb").hits.route_segment_case.map((h) => h.where), ["last-part", "next-part"]);
 });
+
+test("the classes a word may spell are the ones the rows declare: every answer of classifyWord is in CLASSES, and every class has a word", async () => {
+  const { classifyWord, CLASSES } = await import("../plugins/anatomiya/lib/stems.mjs");
+  const { REGISTRY } = await import("../plugins/anatomiya/lib/registry.mjs");
+  const answered = new Set();
+  for (const word of ["fooBar", "FooBar", "foo-bar", "foo_bar", "FOO", "foo", "Foo1bar", "f1_b2", "caféBar", "x-1"]) {
+    const cls = classifyWord(word);
+    assert.ok(cls === null || CLASSES.includes(cls), `${word}: ${cls}`);
+    if (cls !== null) answered.add(cls);
+  }
+  assert.deepEqual([...answered].sort(), [...CLASSES].sort());
+  // Every learned row with a closed vocabulary declares one, and a row voting with a word's class declares these four.
+  for (const row of REGISTRY.filter((r) => r.learnedClasses && !r.learnedFromSource)) {
+    assert.ok(Array.isArray(row.classes) && row.classes.length > 0, row.key);
+    if (/_case$/.test(row.key)) assert.deepEqual(row.classes, CLASSES, row.key);
+  }
+});

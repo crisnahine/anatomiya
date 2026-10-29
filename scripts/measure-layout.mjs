@@ -28,7 +28,6 @@ import { collect, frameworksIn } from "../plugins/anatomiya/lib/corpus.mjs";
 import {
   isProducer,
   isStoryFile,
-  isTestFile,
   layoutIndexes,
   majorityDir,
   mirroredTests,
@@ -37,6 +36,7 @@ import {
   runnerOf,
   tally,
 } from "../plugins/anatomiya/lib/layout.mjs";
+import { isTestFile } from "../plugins/anatomiya/lib/test-shape.mjs";
 import { parseAll } from "../plugins/anatomiya/lib/parse.mjs";
 import { SEMANTIC_DIMENSIONS } from "../plugins/anatomiya/lib/dimensions-semantic.mjs";
 import { baseOf, byCode, dirOf, extOf, stemOf } from "../plugins/anatomiya/lib/paths.mjs";

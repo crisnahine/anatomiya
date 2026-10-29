@@ -30,7 +30,7 @@ import { remedyForMissing } from "./readiness.mjs";
 import { resolve as resolveBaseline } from "./baseline.mjs";
 import { pairingsFor, pairingViolations } from "./pairing.mjs";
 import { isTestPath, precedentFindings } from "./precedent.mjs";
-import { claimFor, CLASSES } from "./dimensions-naming.mjs";
+import { claimFor } from "./dimensions-naming.mjs";
 import { rowsOfKind } from "./registry.mjs";
 import { couldSignal } from "./frameworks.mjs";
 import { Unasked, ask, commitAt, resolveBaseRef, mergeBase, filesAt, isSha, unaskedAs, BASE_REFS, GIT } from "./git.mjs";
@@ -1247,7 +1247,7 @@ function droppedOf(droppedIn, area, key) {
 function filenameFinding(row, job, area, capped, { dropped = false, facets = null, from = null } = {}) {
   const path = job.file.path;
   const nameDim = area && (area.dimensions || []).find((d) => d.key === row.key);
-  if (!nameDim || typeof nameDim.learned !== "string" || !CLASSES.includes(nameDim.learned)) return null;
+  if (!nameDim || typeof nameDim.learned !== "string" || !row.classes.includes(nameDim.learned)) return null;
   if (outsideScope(nameDim, path)) return null;
   // The class was learned over one kind of file, so the other kind expressed no
   // opinion about it. A file this run could not read carries no facets, and its

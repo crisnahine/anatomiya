@@ -1,6 +1,7 @@
 import { createRequire } from "node:module";
 
 import { exportLetIsProp, holdsTypeSyntax, spokenIn } from "./langs.mjs";
+import { outsideTests } from "./test-shape.mjs";
 
 /**
  * One walk over an oxc program that yields, for every node, the chain of
@@ -336,6 +337,25 @@ export const HIT_FIELDS = [
   ["section", (hit) => (typeof hit.section === "string" ? hit.section : undefined)],
 ];
 
+/**
+ * What a row is handed beside the tree, the file's own side channel, in one
+ * shape for every bridge and for the check: `rel`, the path the file was read
+ * from; `lang`, its language; `source`, the exact string the tree was parsed
+ * from, never the disk buffer (B5), or null where the bridge holds no text (the
+ * prism child keeps the file); `comments`, the parser's; `facets`, what the
+ * bridge read off the tree before the rows, or null where they ride the rows'
+ * own walk (prism). Every field is present, null where a bridge has none, so a
+ * row cannot read a field in one engine's scan and `undefined` in its check:
+ * the oxc bridge handed three fields, the prism bridge one, the tree bridge
+ * four and the check four, and a row reading `facets` counted in the check and
+ * not in the scan.
+ */
+export const FILE_FIELDS = ["rel", "lang", "source", "comments", "facets"];
+
+export function fileContext({ rel, lang, source = null, comments = [], facets = null }) {
+  return { rel, lang, source, comments, facets };
+}
+
 /** The site a hit becomes on the far side of the worker boundary. */
 function crossing(hit) {
   const site = {};
@@ -351,7 +371,7 @@ function crossing(hit) {
  *
  * Here rather than beside the registry it walks, because `dimensions-ruby.mjs`
  * takes the Ruby AST helpers from `ruby.mjs`, so a Ruby bridge that imported
- * the registry back would close a cycle. This module imports nothing of ours,
+ * the registry back would close a cycle. This module imports only leaves of ours,
  * which is what lets both bridges reach it.
  *
  * One copy, because both parser bridges ran this loop and its one guarantee has
@@ -378,6 +398,8 @@ export function collectHits(program, dimensions, extra = {}, { walker = walk, al
   const site = keepNode ? (hit) => (hit.node === undefined ? crossing(hit) : { ...crossing(hit), node: hit.node }) : crossing;
   for (let i = 0; i < dimensions.length; i++) {
     const dim = dimensions[i];
+    // A row that asks nothing of a test file is handed none of its nodes, by the one rule in `test-shape.mjs`.
+    if (dim.outsideTests && outsideTests(dim, extra)) continue;
     const sites = [];
     const add = (hit) => sites.push(site(hit));
     try {

@@ -744,6 +744,17 @@ test("the newest fields are held to shape at load", () => {
   assert.throws(() => assertRegistryRows([probeRow({ groupedSites: true })]), /learning a class/);
   assert.throws(() => assertRegistryRows([probeRow({ capability: "telemetry" })]), /telemetry/);
   assert.throws(() => assertRegistryRows([probeRow({ framework: "django" })]), /django/);
+  assert.throws(() => assertRegistryRows([probeRow({ outsideTests: "yes" })]), /outsideTests as "yes"/);
+  assert.throws(() => assertRegistryRows([probeRow({ outsideTestTrees: true })]), /outsideTestTrees without outsideTests/);
+  assert.doesNotThrow(() => assertRegistryRows([probeRow({ outsideTests: true, outsideTestTrees: true })]));
+  assert.throws(() => assertRegistryRows([probeRow({ classes: ["camelCase"] })]), /declares classes and learns none/);
+  const learned = { learnedClasses: true, claim: "widgets here are <style>" };
+  assert.throws(() => assertRegistryRows([probeRow({ ...learned })]), /learns a class and declares no classes/);
+  assert.throws(() => assertRegistryRows([probeRow({ ...learned, classes: [] })]), /declares no classes/);
+  assert.throws(() => assertRegistryRows([probeRow({ ...learned, classes: ["camelCase", ""] })]), /declares no classes/);
+  assert.doesNotThrow(() => assertRegistryRows([probeRow({ ...learned, classes: ["camelCase", "PascalCase"] })]));
+  assert.doesNotThrow(() => assertRegistryRows([probeRow({ ...learned, learnedFromSource: true })]), "a name out of the source has no vocabulary to declare");
+  assert.throws(() => assertRegistryRows([probeRow({ ...learned, learnedFromSource: true, classes: ["A"] })]), /learns a name out of the source/);
 });
 
 test("a framework row loads on any language, whichever engine reads it", () => {
@@ -887,8 +898,8 @@ test("splitBy is refused off a row that learns no class", () => {
   });
 
   assert.throws(() => assertRegistryRows([probe({ splitBy: () => "module" })]), /splitBy without learning a class/);
-  assert.throws(() => assertRegistryRows([probe({ learnedClasses: true, splitBy: "jsx" })]), /splitBy without learning a class/);
-  const split = { learnedClasses: true, splitBy: () => "module" };
+  assert.throws(() => assertRegistryRows([probe({ learnedClasses: true, classes: ["camelCase"], splitBy: "jsx" })]), /splitBy without learning a class/);
+  const split = { learnedClasses: true, classes: ["camelCase"], splitBy: () => "module" };
   const both = { a: "probes here of a are named <style>", b: "probes here of b are named <style>" };
   assert.doesNotThrow(() => assertRegistryRows([probe({ ...split, splitClaim: both })]));
 });

@@ -420,7 +420,7 @@ test("a row is handed the walk, the source and the path, and its sites cross as 
   // The middle one sits inside a function, which only this engine's own walk knows is one.
   assert.deepEqual(r.hits, { probe: [{ conforming: true, where: "def" }, { conforming: false, where: "def" }, { conforming: true, where: "def" }] });
   // The facets too, read once for the record and handed over, so no row walks the tree again to ask what file this is.
-  assert.deepEqual(seen, [{ comments: [], source, rel: "src/a.py", facets: r.facets }]);
+  assert.deepEqual(seen, [{ rel: "src/a.py", lang: "python", source, comments: [], facets: r.facets }], "the one file context every bridge builds");
   assert.equal(seen[0].facets, r.facets);
 });
 

@@ -12,7 +12,7 @@
 import { join } from "node:path";
 
 import { TREE_DIMENSIONS } from "./dimensions-tree.mjs";
-import { collectHits, dimensionsFor } from "./walk.mjs";
+import { collectHits, dimensionsFor, fileContext } from "./walk.mjs";
 import { withOneBranch } from "./csharp-directives.mjs";
 import { ENGINES, declOf, grammarFor, hostedBy, mayHoldDirectives } from "./langs.mjs";
 import { treeFacets } from "./tree-facets.mjs";
@@ -122,7 +122,7 @@ export async function parseTreeFile(source, rel, lang, { withProgram = false, pl
   const payload = {
     rel,
     ok: true,
-    hits: collectHits(program, dimensionsFor([lang], { rows: rows ?? TREE_DIMENSIONS }), { comments: [], source: parsed, rel, facets }, { walker: walkTree }),
+    hits: collectHits(program, dimensionsFor([lang], { rows: rows ?? TREE_DIMENSIONS }), fileContext({ rel, lang, source: parsed, facets }), { walker: walkTree }),
     facets,
     errors: 0,
     // The source's, never the root's span: a file that opens with blank lines has a root that starts past them.

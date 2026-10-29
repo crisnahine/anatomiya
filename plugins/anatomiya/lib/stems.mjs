@@ -46,6 +46,9 @@ export const fileStem = (rel) => {
  * its exports. It spells the SCREAMING case none of the four classes is, the
  * way `MAX_DEBUG` already does.
  */
+/** The four naming classes a word may spell, which is every class `classifyWord` answers; a row that learns one declares this list. */
+export const CLASSES = ["camelCase", "PascalCase", "kebab-case", "snake_case"];
+
 export function classifyWord(word) {
   if (/^[\p{Ll}\p{Lo}\d]+(-[\p{Ll}\p{Lo}\d]+)+$/u.test(word)) return "kebab-case";
   if (/^[\p{Ll}\p{Lo}\d]+(_[\p{Ll}\p{Lo}\d]+)+$/u.test(word)) return "snake_case";

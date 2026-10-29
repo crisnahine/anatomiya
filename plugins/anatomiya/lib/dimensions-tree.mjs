@@ -1,11 +1,8 @@
 // Rows over a tree-sitter tree. No row spells a node type: each asks `SHAPES` what its language calls the thing.
-import { addPathSites, namesWellKnown } from "./stems.mjs";
+import { addPathSites, CLASSES, namesWellKnown } from "./stems.mjs";
 import { implementsCapability } from "./dimensions-capability.mjs";
-import { assertKeyed, familyOf } from "./langs.mjs";
-import { isTestFile } from "./layout.mjs";
-import { dirOf, escapeRe } from "./paths.mjs";
-import { underTestTree } from "./test-shape.mjs";
-import { treeFacets } from "./tree-facets.mjs";
+import { assertKeyed } from "./langs.mjs";
+import { escapeRe } from "./paths.mjs";
 import { SHAPES } from "./tree-shapes.mjs";
 import { fieldOf, lastLeaf, nameOf, site } from "./tree-walk.mjs";
 
@@ -30,10 +27,6 @@ function placeAmong(parent, child) {
   if (!places) PLACES.set(parent, (places = new Map(parent.children.map((node, i) => [node, i]))));
   return places.get(child);
 }
-
-/** Whether a runner collects this file, off the facets the caller already read where it hands them over. */
-const inTestFile = (program, { rel = "", facets } = {}) =>
-  isTestFile({ rel, lang: program.lang, facets: facets ?? treeFacets(program, program.lang, rel) });
 
 /** An annotation's own name, past its package and without its arguments. */
 function annotationName(node, args) {
@@ -580,8 +573,8 @@ export const TREE_DIMENSIONS = [
       blind: `whether the module or the class around a function is itself public is not read, so a function in a private module, under a non-public class or left out of \`__all__\` counts as public. Rust code inside a macro call is not in the tree, so a function written there is not counted`,
     },
     langs: ["python", "php", "go", "java", "csharp", "rust", "kotlin"],
+    outsideTests: true,
     visitor(program, add, extra = {}) {
-      if (inTestFile(program, extra)) return IDLE;
       const { source = "" } = extra;
       const lang = program.lang;
       const shapes = SHAPES[lang];
@@ -618,8 +611,8 @@ export const TREE_DIMENSIONS = [
       blind: null,
     },
     langs: ["python", "php"],
+    outsideTests: true,
     visitor(program, add, extra) {
-      if (inTestFile(program, extra)) return IDLE;
       const shapes = SHAPES[program.lang];
       const sets = SETS.get(program.lang);
       const untyped = UNTYPED[program.lang];
@@ -647,8 +640,10 @@ export const TREE_DIMENSIONS = [
       blind: "a path built at run time, from an interpolated string (an f-string with a field), a concatenation, a constant or a helper call, or written with an escape, as a C# verbatim or raw string or a Rust raw string, names segments this never reads, a `.well-known` group held in a variable or chained ahead of the call does not reach the routes under it, and Starlette's `Route`, `Mount` and `WebSocketRoute` and ASP.NET's conventional `MapControllerRoute` and `MapRoute` are not read at all",
     },
     langs: ["python", "java", "csharp", "rust"],
+    outsideTests: true,
+    outsideTestTrees: true,
+    classes: CLASSES,
     visitor(program, add, extra = {}) {
-      if (inTestFile(program, extra) || underTestTree(dirOf(extra.rel ?? ""), familyOf(program.lang))) return IDLE;
       const shapes = SHAPES[program.lang];
       const sets = SETS.get(program.lang);
       const testItem = TEST_ITEMS[program.lang];
@@ -709,8 +704,8 @@ export const TREE_DIMENSIONS = [
       blind: "an import that renames the base is read under the name written here, and a C# base class named like an interface is taken for one and passed over",
     },
     langs: ["python", "php", "java", "csharp", "kotlin"],
+    outsideTests: true,
     visitor(program, add, extra = {}) {
-      if (inTestFile(program, extra)) return IDLE;
       const lang = program.lang;
       const shapes = SHAPES[lang];
       const sets = SETS.get(lang);
@@ -737,8 +732,9 @@ export const TREE_DIMENSIONS = [
       blind: "output behind a helper, a logger under another name, and a command-line tool that writes to stdout on purpose look the same from here; Go's `fmt.Fprint` to `os.Stdout` or `os.Stderr` is not counted, since it writes to any writer",
     },
     langs: ["python", "php", "java", "csharp", "rust", "kotlin", "go"],
+    outsideTests: true,
     visitor(program, add, extra = {}) {
-      if (inTestFile(program, extra) || implementsCapability(extra.rel, "logging")) return IDLE;
+      if (implementsCapability(extra.rel, "logging")) return IDLE;
       const lang = program.lang;
       const shapes = SHAPES[lang];
       const sets = SETS.get(lang);

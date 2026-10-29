@@ -11,13 +11,13 @@
 import { createHash } from "node:crypto";
 
 import { ALL_DIMENSIONS, walkFor } from "./dimensions.mjs";
-import { CLASSES, claimFor } from "./dimensions-naming.mjs";
+import { claimFor } from "./dimensions-naming.mjs";
 import { encode } from "./encode.mjs";
 import { statedSide } from "./slot.mjs";
 import { spokenIn } from "./langs.mjs";
 import { groupKey, isLearnedItself, reachesThrough, sameConstant } from "./reduce.mjs";
 import { lineAt, lineStarts } from "./symbols.mjs";
-import { asks, collectHits, dimensionsFor, isFunctionLike, walk } from "./walk.mjs";
+import { asks, collectHits, dimensionsFor, fileContext, isFunctionLike, walk } from "./walk.mjs";
 
 /**
  * The sites `head` holds that the branch introduced, judged against `base` or
@@ -89,7 +89,7 @@ export function declaredParents({ path, lang, frameworks, capabilities, rows, he
   for (const dim of dimensionsFor(spokenIn(lang, head.facets), { frameworks, capabilities, rows: rows ?? ALL_DIMENSIONS })) {
     if (!dim.learnedClasses || dim.groupedSites) continue;
     const parents = new Map();
-    for (const hit of hitsOf(dim, head.program, { comments: head.comments, source: head.source, rel: path, facets: head.facets })) {
+    for (const hit of hitsOf(dim, head.program, fileContext({ rel: path, lang, source: head.source, comments: head.comments, facets: head.facets }))) {
       if (typeof hit.self === "string" && typeof hit.class === "string" && !parents.has(hit.self)) parents.set(hit.self, hit.class);
     }
     if (parents.size) out.set(dim.key, parents);
@@ -286,9 +286,9 @@ function sidesFor(area, ancestorsOf = () => []) {
 function enforceableClass(dim, cls) {
   if (typeof cls !== "string") return false;
   if (dim.learnedFromSource) return encode(cls) !== "";
-  // A row that can learn an absence is a prefix row: its vocabulary is one
-  // capital or none at all. The rest vote for one of the four naming classes.
-  return typeof dim.noneClaim === "string" ? /^(?:[A-Z]|none)$/.test(cls) : CLASSES.includes(cls);
+  // The row's own vocabulary, which is what the fold can learn: a prefix row's
+  // letters and the absence of one, a naming row's four classes, a filter's calls.
+  return dim.classes.includes(cls);
 }
 
 /**
@@ -370,7 +370,7 @@ function breakingSites(program, source, lang, keyPath, { polarity, copies = new 
     // file. Both sides of the comparison run the same dimensions over the same
     // shapes, so a failure that is not symmetric can only lose a finding, never
     // manufacture one. The hits are the scan's own, so the check reads what the map was counted from.
-    for (const hit of hitsOf(dim, program, { comments, source, rel, facets }, { keepNode: true })) {
+    for (const hit of hitsOf(dim, program, fileContext({ rel, lang, source, comments, facets }), { keepNode: true })) {
       if (bodies) {
         const key = groupKey(hit, bodies.size);
         if (bodies.has(key)) bodies.get(key).push(hit);

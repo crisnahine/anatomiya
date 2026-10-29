@@ -20,6 +20,7 @@ import {
   namesATest,
   namesATestFile,
   isTestTree,
+  outsideTests,
   pairedWith,
 } from "../plugins/anatomiya/lib/test-shape.mjs";
 import { PAIRINGS } from "../plugins/anatomiya/lib/pairing.mjs";
@@ -349,4 +350,16 @@ test("a Ruby spec outside a test tree is a test by its name until its parse was 
 test("a directory named like a test is no test", () => {
   assert.equal(namesATestFile("a.test.d/x.js", "js"), false);
   assert.equal(namesATestFile("src/__tests__/helper.js", "js"), false);
+});
+
+test("whether a row is handed a file is one answer: a test by what was read of it, or under a tree where the row keeps off trees", () => {
+  const file = { outsideTests: true };
+  const tree = { outsideTests: true, outsideTestTrees: true };
+  assert.equal(outsideTests(file, { rel: "src/routes.js", lang: "js", facets: { testRunner: "vitest", testCalls: true } }), true, "a runner's cases, whatever the name");
+  assert.equal(outsideTests(file, { rel: "src/routes.js", lang: "js", facets: { exports: ["a"] } }), false);
+  assert.equal(outsideTests(file, { rel: "tests/helpers/routes.py", lang: "python", facets: { exports: [] } }), false, "a helper under a tree is source to a row about files");
+  assert.equal(outsideTests(tree, { rel: "tests/helpers/routes.py", lang: "python", facets: { exports: [] } }), true, "and a test's stand-in to a row about trees");
+  assert.equal(outsideTests(tree, { rel: "config/routes.rb", lang: "ruby" }), false, "no facets: the path answers");
+  assert.equal(outsideTests(tree, { rel: "spec/dummy/config/routes.rb", lang: "ruby" }), true);
+  assert.equal(outsideTests(tree, { rel: "a.test.js", lang: null }), false, "no language, no rule");
 });

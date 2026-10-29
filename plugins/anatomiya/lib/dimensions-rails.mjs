@@ -1,7 +1,6 @@
 import { walkRuby, constName, ownDef, site, args, options } from "./ruby-walk.mjs";
-import { addPathSites, namesWellKnown } from "./stems.mjs";
+import { addPathSites, CLASSES, namesWellKnown } from "./stems.mjs";
 import { RUBY_STRING_CAP } from "./limits.mjs";
-import { underTestTree } from "./test-shape.mjs";
 import { dirOf } from "./paths.mjs";
 
 /**
@@ -343,7 +342,7 @@ function foreignKeys(cls) {
  * a constant is somebody else's method.
  */
 const isRollback = (ctx) =>
-  ctx.def?.name === "down" ||
+  ctx.fn?.name === "down" ||
   ctx.ancestors.some((a) => a.t === "call" && a.name === "down" && a.block && isBlockParam(a.receiver, ctx));
 
 // Whether a key covers this reference's column: the one it names outright, or
@@ -803,9 +802,11 @@ export const RAILS_DIMENSIONS = [
       blind: "a path built at run time, from an interpolated string, a constant or a method call, and a route declared through a helper this does not read, name segments this never sees",
     },
     langs: ["ruby"],
+    // An engine's dummy app under `spec` or `test` stands in for the application that mounts it.
+    outsideTests: true,
+    outsideTestTrees: true,
+    classes: CLASSES,
     visitor(ast, add, { rel } = {}) {
-      // An engine's dummy app under `spec` or `test` stands in for the application that mounts it.
-      if (underTestTree(dirOf(rel ?? ""), "ruby")) return { node() {} };
       const file = ROUTES_FILE.test(rel ?? "");
       return {
         node(n, ctx) {
