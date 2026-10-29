@@ -879,7 +879,8 @@ export function checkDocs() {
   // that severity. Read from the source because the reasons are built inline.
   // A `${...}` in a reason is any placeholder the row spells, such as N or <area>.
   const walkthroughLines = read("docs/how-it-works.md").split(/\r?\n/);
-  const checkSource = read(`${REL.anatomiya}/lib/check.mjs`);
+  // The ladders sit in `verdict.mjs` and the unread-file reasons in `check.mjs`.
+  const checkSource = `${read(`${REL.anatomiya}/lib/verdict.mjs`)}\n${read(`${REL.anatomiya}/lib/check.mjs`)}`;
   const reasons = checkSource.matchAll(
     /severity: "(NIT|FIX|MUST-FIX)",\s*reason: (?:"([^"]*)"|`([^`]*)`)/g
   );
@@ -899,11 +900,11 @@ export function checkDocs() {
     );
   }
   // A pattern that matches nothing passes every reason it never read.
-  claim(`${REL.anatomiya}/lib/check.mjs`, reasonsRead > 0, "no severity reason was read: the pattern that finds them matched nothing");
+  claim(`${REL.anatomiya}/lib/verdict.mjs`, reasonsRead > 0, "no severity reason was read: the pattern that finds them matched nothing");
   // A reason held in a constant is one the table is never checked against.
   const reasonSites = checkSource.match(/severity: "(?:NIT|FIX|MUST-FIX)",\s*reason:/g)?.length ?? 0;
   claim(
-    `${REL.anatomiya}/lib/check.mjs`,
+    `${REL.anatomiya}/lib/verdict.mjs`,
     reasonsRead === reasonSites,
     `severity reasons this cannot read, not written as a literal: ${reasonSites - reasonsRead} of ${reasonSites}`
   );

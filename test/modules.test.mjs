@@ -847,7 +847,7 @@ test("a hook verb loads none of the scan, the check or the parser", () => {
   // The other arms by count, before any lazy import and with each followed (A100).
   const sizes = (opts) => Object.fromEntries(["echo", "notice", "reuse", "refresh"].map((verb) => [verb, armReach(verb, opts).size]));
   assert.deepEqual(sizes(), { echo: 13, notice: 13, reuse: 13, refresh: 31 });
-  assert.deepEqual(sizes({ lazy: true }), { echo: 42, notice: 42, reuse: 42, refresh: 31 });
+  assert.deepEqual(sizes({ lazy: true }), { echo: 44, notice: 44, reuse: 44, refresh: 31 });
   assert.ok(armReach("notice", { lazy: true }).has("precedent.mjs"), "the notice's lazy import was not followed");
   assert.ok(armReach("reuse", { lazy: true }).has("reuse.mjs"), "the reuse check's lazy import was not followed");
   // The find arm: the index reader and the query side, and none of the scan behind the other commands,

@@ -12,7 +12,8 @@ import { addWorktree, git, scratch } from "./git-worktrees.mjs";
 import { scriptGit } from "./git-script.mjs";
 
 import { needsRuby } from "./ruby-available.mjs";
-import { check, severityFor, unreadReason, unreadCode } from "../plugins/anatomiya/lib/check.mjs";
+import { check, unreadReason, unreadCode } from "../plugins/anatomiya/lib/check.mjs";
+import { severityFor } from "../plugins/anatomiya/lib/verdict.mjs";
 import { Unasked } from "../plugins/anatomiya/lib/git.mjs";
 import { formatReport, formatReportGithub, formatReportJson, CAVEATS } from "../plugins/anatomiya/lib/check-report.mjs";
 import { scan } from "../plugins/anatomiya/lib/scan.mjs";

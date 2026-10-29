@@ -16,6 +16,7 @@ import { namesakeClause, pathText, testsParts } from "./render-layout.mjs";
 import { encode, locator } from "./encode.mjs";
 import { PRECEDENT_FLOOR } from "./principles.mjs";
 import { claimsFor, noticeLine } from "./cochange.mjs";
+import { findingOf } from "./verdict.mjs";
 
 /** Whether a root pairs enough of its files with tests to call that its habit. */
 function pairsTests(r) {
@@ -251,26 +252,25 @@ export function precedentFindings(arrived, roots, { fresh = true, holdsTest = ()
     // namesakes, where "no precedent" would be the false half of a true count.
     if (testFilesHeld(covered) >= PRECEDENT_FLOOR) continue;
     const counts = countsLine(dirOf(rel), covered);
-    found.push({
-      severity: fresh ? "FIX" : "NIT",
-      reason: fresh ? counts : `${counts}; this run could not establish which files the change added`,
-      companion: null,
-      path: rel,
-      oldPath: typeof file === "string" ? null : (file.oldPath ?? null),
-      // The site is the path, so there is no line to point at.
-      line: 1,
-      // The source root, which is a layout directory rather than one of the
-      // areas the counted rows name: nothing else answers for a file whose own
-      // directory the change invented, and the roster path is the one a reader
-      // can go and look at.
-      area: covered.path,
-      dimension: PRECEDENT_KEY,
-      claim: PRECEDENT_CLAIM,
-      precision: "precise",
-      where: null,
-      snippet: null,
-      turnsOn,
-    });
+    found.push(
+      findingOf({
+        severity: fresh ? "FIX" : "NIT",
+        reason: fresh ? counts : `${counts}; this run could not establish which files the change added`,
+        path: rel,
+        oldPath: typeof file === "string" ? null : (file.oldPath ?? null),
+        // The site is the path, so there is no line to point at.
+        line: 1,
+        // The source root, which is a layout directory rather than one of the
+        // areas the counted rows name: nothing else answers for a file whose own
+        // directory the change invented, and the roster path is the one a reader
+        // can go and look at.
+        area: covered.path,
+        dimension: PRECEDENT_KEY,
+        claim: PRECEDENT_CLAIM,
+        precision: "precise",
+        turnsOn,
+      })
+    );
   }
   return found;
 }

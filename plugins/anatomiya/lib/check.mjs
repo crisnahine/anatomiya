@@ -5,7 +5,6 @@ import { dirname } from "node:path/posix";
 import { parseAll } from "./parse.mjs";
 import { ALL_DIMENSIONS } from "./dimensions.mjs";
 import { dimensionsFor } from "./walk.mjs";
-import { GATES, wilsonLower } from "./gates.mjs";
 import {
   collect as collectCorpus,
   frameworksIn,
@@ -18,14 +17,13 @@ import {
 } from "./corpus.mjs";
 import { familyOf, language, MISSING_STRIPPER, placeTestsOf } from "./langs.mjs";
 import { isProducer, placedTests } from "./layout.mjs";
-import { areaIndex, areaLabel, globsReach, underArea } from "./areas.mjs";
+import { areaIndex } from "./areas.mjs";
 import { droppedSlots, unexaminedPhrase, unstatedLine } from "./render.mjs";
 import { auditRules, readHead, recordFor, resolveInside, targetStatus, turningOff } from "./rules.mjs";
 import { TARGETS, isClaude } from "./targets.mjs";
 import { FACTS_PATH, readFacts } from "./facts.mjs";
-import { scopeOf, statedSide } from "./slot.mjs";
+import { statedSide } from "./slot.mjs";
 import { MAX_FILE_BYTES } from "./limits.mjs";
-import { nameText, sanitisePath } from "./encode.mjs";
 import { remedyForMissing } from "./readiness.mjs";
 import { resolve as resolveBaseline } from "./baseline.mjs";
 import { pairingsFor, pairingViolations } from "./pairing.mjs";
@@ -39,8 +37,9 @@ import { readAtRevision } from "./revision.mjs";
 import { CAVEATS } from "./check-report.mjs";
 import { mainCheckoutOf } from "./worktree.mjs";
 import { declaredParents, newlyIntroduced } from "./introduced.mjs";
-import { baseOf, byCode, dirOf, extOrName, folded } from "./paths.mjs";
-import { CHANGE_MOST, claimKey, claimSentence, claimsIn, owedBy, statedClaims } from "./cochange.mjs";
+import { cochangeSeverity, deliveredOr, findingOf, outsideScope, slotFor, verdictFor } from "./verdict.mjs";
+import { baseOf, byCode, dirOf, folded } from "./paths.mjs";
+import { claimKey, claimSentence, claimsIn, owedBy, statedClaims } from "./cochange.mjs";
 
 /**
  * The check phase: which of the conventions the map stated did this branch
@@ -899,15 +898,14 @@ async function collect(root, run) {
         // The same fallback the tree rows get: an area with no slot for the
         // filename claim is one where nothing classified, not one that declined
         // the convention, and the nearest enclosing area that states one
-        // measured a population this directory sits inside.
-        const own = area && (area.dimensions || []).find((d) => d.key === row.key);
-        const up = !own && area ? ancestorSlot(ancestorsOf, area, row.key) : null;
-        const named = filenameFinding(row, job, up ? { ...area, dimensions: [up.dim] } : area, capped, {
+        // measured a population this directory sits inside (`slotFor`).
+        const slot = slotFor(area, row.key, ancestorsOf);
+        const named = filenameFinding(row, job, slot?.from ? { ...area, dimensions: [slot.dim] } : area, capped, {
           dropped: droppedOf(droppedIn, area, row.key),
           // Null where the file went unread, which is a kind a narrowed row
           // declines to guess. The caveat below says the file went unread.
           facets: headParse?.facets ?? null,
-          from: up ? up.from : null,
+          from: slot?.from ?? null,
         });
         if (named) findings.push(named);
       }
@@ -949,53 +947,28 @@ async function collect(root, run) {
       });
 
       for (const f of introduced) {
-        const own = area && (area.dimensions || []).find((d) => d.key === f.dimension);
-        // A slot the area does not hold is a construct its baseline never saw,
-        // not a convention the map measured and said nothing about. The nearest
-        // enclosing area that states one measured a population this directory
-        // sits inside, so its sentence is the one to ask. Outside every area
-        // nothing was measured at all, which is what the NIT is for.
-        const up = !own && area ? ancestorSlot(ancestorsOf, area, f.dimension) : null;
-        const dim = own ?? up?.dim;
-        if (area && !dim) continue;
-        if (dim && outsideScope(dim, path)) continue;
-        // Capped at FIX, whatever the ancestor's own baseline says. MUST-FIX
-        // means the map told this file's author and they are the first to break
-        // it; the ancestor's area file is not delivered to this directory, so
-        // the map did not tell. Same ladder position staleness and partial
-        // precision already occupy.
-        // The owning area's own file can miss this path the same way: ownership
-        // is the directory prefix and delivery is the glob, so an area listing
-        // only its own files owns a new subdirectory under it and delivers
-        // nothing there. A cap rather than a verdict: replacing it raised a slot
-        // the gates suppressed from NIT to FIX, on a claim the area file prints
-        // as "no convention" and never delivered here either.
-        const away = own && area && !globsReach(area.globs, path);
-        const verdict = up
-          ? { severity: "FIX", reason: `counted in ${areaName(up.from)}, which this directory sits inside` }
-          : cappedAway(
-              severityFor(
-                { path, oldPath: job.file.from },
-                { dim, capped, dropped: droppedOf(droppedIn, area, f.dimension) }
-              ),
-              away,
-              area,
-              path
-            );
-        findings.push({
-          severity: verdict.severity,
-          reason: verdict.reason,
-          path,
-          oldPath: job.file.from === path ? null : job.file.from,
-          line: f.line,
-          area: area ? area.path : null,
-          dimension: f.dimension,
-          ...(own ? spokenClaim(f.claim, area, own) : { claim: f.claim }),
-          precision: f.precision,
-          where: f.where,
-          companion: null,
-          snippet: f.text,
-        });
+        // The area's own slot, or the nearest enclosing area's that states one,
+        // and outside every area nothing was measured at all, which is what the
+        // NIT is for. Which slot speaks and how far it is trusted are
+        // `verdict.mjs`'s (H24, H46).
+        const slot = slotFor(area, f.dimension, ancestorsOf);
+        if (area && !slot) continue;
+        if (slot && outsideScope(slot.dim, path)) continue;
+        const verdict = verdictFor({ path, oldPath: job.file.from }, slot, { area, capped, dropped: droppedOf(droppedIn, area, f.dimension) });
+        findings.push(
+          findingOf({
+            ...verdict,
+            path,
+            oldPath: job.file.from === path ? null : job.file.from,
+            line: f.line,
+            area: area ? area.path : null,
+            dimension: f.dimension,
+            ...(slot && !slot.from ? spokenClaim(f.claim, area, slot.dim) : { claim: f.claim }),
+            precision: f.precision,
+            where: f.where,
+            snippet: f.text,
+          })
+        );
       }
 
     }
@@ -1088,37 +1061,28 @@ async function addPairingFindings(root, findings, { examined, areas, base, cappe
       const dim = area && (area.dimensions || []).find((d) => d.key === pairing.key);
       // Same rule as every other finding: the check enforces what the map
       // stated, and a dimension the map measured and said nothing about is not
-      // a finding.
-      if (!dim || !dim.directive) continue;
+      // a finding. The area's own slot alone: an obligation's companion root is
+      // learned per area (C9), so no enclosing area's slot speaks for it.
+      if (!dim || statedSide(dim).states === null) continue;
       // The third producer, capped on the same rule as the other two: an area
       // that owns a path by prefix and delivers no glob to it never handed this
       // file's author the obligation.
-      const verdict = cappedAway(
-        severityFor(
-          { path, oldPath: null },
-          { dim, capped, dropped: droppedOf(droppedIn, area, pairing.key) }
-        ),
-        area && !globsReach(area.globs, path),
-        area,
-        path
+      const verdict = verdictFor({ path, oldPath: null }, { dim, from: null }, { area, capped, dropped: droppedOf(droppedIn, area, pairing.key) });
+      findings.push(
+        findingOf({
+          ...verdict,
+          // A field of its own, so the one encoder pass over the record reaches
+          // it and each writer places it in the shape that writer needs.
+          companion,
+          path,
+          // The site is the file, so there is no line to point at.
+          line: 1,
+          area: area ? area.path : null,
+          dimension: pairing.key,
+          claim: pairing.claim,
+          precision: pairing.precision,
+        })
       );
-      findings.push({
-        severity: verdict.severity,
-        reason: verdict.reason,
-        // A field of its own, so the one encoder pass over the record reaches
-        // it and each writer places it in the shape that writer needs.
-        companion,
-        path,
-        oldPath: null,
-        // The site is the file, so there is no line to point at.
-        line: 1,
-        area: area ? area.path : null,
-        dimension: pairing.key,
-        claim: pairing.claim,
-        precision: pairing.precision,
-        where: null,
-        snippet: null,
-      });
     }
   }
 }
@@ -1157,44 +1121,9 @@ function addCochangeFindings(root, findings, { rows = [], pending, areas, capped
     if (path === undefined) continue;
     const area = claim.area === null ? null : areas.find((a) => a?.path === claim.area) ?? null;
     const dropped = area ? droppedOf(droppedIn, area, claimKey(claim)) : false;
-    const verdict = cappedAway(cochangeSeverity(claim, { from: cochange.from, area, dropped, capped, size: touched.size }), area && !globsReach(area.globs, path), area, path);
-    findings.push({
-      severity: verdict.severity,
-      reason: verdict.reason,
-      companion: claim.companion.path,
-      path,
-      oldPath: null,
-      line: 1,
-      area: claim.area,
-      dimension: "cochange",
-      claim: claimSentence(claim),
-      precision: "precise",
-      where: null,
-      snippet: null,
-    });
+    const verdict = deliveredOr(cochangeSeverity(claim, { from: cochange.from, area, dropped, capped, size: touched.size }), area, path);
+    findings.push(findingOf({ ...verdict, companion: claim.companion.path, path, line: 1, area: claim.area, dimension: "cochange", claim: claimSentence(claim), precision: "precise" }));
   }
-}
-
-/**
- * A co-change claim's place on the ladder. MUST-FIX only off a pinned tip, since
- * off the base or HEAD the agent's own merged work is in the count it is graded
- * by, and only for a record no change the claim was counted over contradicts.
- */
-function cochangeSeverity(claim, { from, area, dropped, capped, size }) {
-  if (from !== "pin") return { severity: "FIX", reason: "no baseline population recorded" };
-  if (area === null) return { severity: "FIX", reason: "no area file carries this claim" };
-  const rung = cappedRung({ dropped });
-  if (rung) return rung;
-  if (size > CHANGE_MOST) {
-    return { severity: "FIX", reason: `this branch touches ${size} files, more than any change this claim was counted over` };
-  }
-  const run = cappedRung({ capped });
-  if (run) return run;
-  // Spelled out rather than built, so the documents gate reads both reasons.
-  if (claim.conforming !== claim.candidates) {
-    return { severity: "FIX", reason: `${claim.conforming} of the last ${claim.candidates} changes that added one` };
-  }
-  return { severity: "MUST-FIX", reason: `all ${claim.candidates} of the last ${claim.candidates} changes that added one` };
 }
 
 // The rows whose site is the filename, found by kind rather than by key, so a
@@ -1202,36 +1131,10 @@ function cochangeSeverity(claim, { from, area, dropped, capped, size }) {
 // the map and enforcing nothing (the H12 asymmetry, structurally closed).
 const CORPUS_ROWS = rowsOfKind("corpus");
 
-/**
- * MUST-FIX withheld from a path the area's own globs never deliver to, and
- * every other verdict left alone. MUST-FIX means the map told this file's
- * author and they are the first to break it; here the map did not tell.
- */
-function cappedAway(verdict, away, area, path) {
-  if (!away || verdict.severity !== "MUST-FIX") return verdict;
-  // Which of the two the globs missed, asked by moving the file's own name up
-  // to the area's directory: reached there, the directory is what they do not
-  // cover; missed there too, the name is. One sentence for both told a `.tsx`
-  // sitting in the area's own directory that it sat inside that directory.
-  const name = path.slice(path.lastIndexOf("/") + 1);
-  if (globsReach(area.globs, underArea(area.path, name))) {
-    return { severity: "FIX", reason: `counted in ${areaName(area.path)}, which this directory sits inside` };
-  }
-  const type = name.lastIndexOf(".") > 0 ? `${name.slice(name.lastIndexOf("."))} files` : name;
-  return { severity: "FIX", reason: `the area file for ${areaName(area.path)} does not reach ${type}, so this claim was never delivered here` };
-}
-
-// An area as the map names it, quoted where the map quotes it.
-const areaName = (path) => areaLabel(path, (p) => nameText(sanitisePath(p)));
-
 // A slot no gate stated speaks as the count its area file prints for it: the majority's sentence alone reads as advice.
 // That line ends on the gate, so its finding carries `toldInClaim` and no writer repeats the NIT's reason under it.
 const spokenClaim = (claim, area, dim) =>
   statedSide(dim).states === null ? { claim: unstatedLine(area, dim, claim), toldInClaim: true } : { claim };
-
-// A slot whose scope names the kinds it was counted over was never counted over
-// a file of another kind, so it raises nothing there at any severity.
-const outsideScope = (dim, path) => scopeOf(dim)?.includes(extOrName(path)) === false;
 
 /** How an area's file dropped this slot, `named` or `unnamed`, or false where it printed it. */
 function droppedOf(droppedIn, area, key) {
@@ -1281,13 +1184,9 @@ function filenameFinding(row, job, area, capped, { dropped = false, facets = nul
   const oldPath = renamedFrom && renamedFrom !== path ? renamedFrom : null;
   // Capped at FIX where the sentence came from an area above: that area's file
   // is not delivered here, so the map did not tell this file's author.
-  const away = !from && !globsReach(area.globs, path);
-  const verdict = from
-    ? { severity: "FIX", reason: `counted in ${areaName(from)}, which this directory sits inside` }
-    : cappedAway(severityFor({ path, oldPath }, { dim: nameDim, capped, dropped }), away, area, path);
-  return {
-    severity: verdict.severity,
-    reason: verdict.reason,
+  const verdict = verdictFor({ path, oldPath }, { dim: nameDim, from }, { area, capped, dropped });
+  return findingOf({
+    ...verdict,
     path,
     oldPath,
     line: 1,
@@ -1297,10 +1196,8 @@ function filenameFinding(row, job, area, capped, { dropped = false, facets = nul
     // out and the two rules the template alone cannot carry.
     ...spokenClaim(claimFor(row, nameDim.learned, nameDim.narrowed === true ? nameDim.learnedKind : undefined), area, nameDim),
     precision: nameDim.precision ?? "precise",
-    where: null,
-    companion: null,
     snippet: path.slice(path.lastIndexOf("/") + 1),
-  };
+  });
 }
 
 /**
@@ -1337,105 +1234,6 @@ export function unreadCode(parse) {
 }
 
 /* --- severity --- */
-
-/**
- * Severity, and every branch here repairs a reviewed defect.
- *
- * The counts come from the baseline population and never from the current one,
- * or the agent's own accumulated output raises the bar it is judged against. A
- * dimension a gate suppressed cannot reach the top severity, because the check
- * may only enforce what the map actually told the agent. A file the map named
- * as an exception is not held to the convention it is exempt from. And a stale
- * map caps severity rather than stopping the run.
- */
-export function severityFor(file, { dim, capped = null, dropped = false }) {
-  if (!dim) return { severity: "NIT", reason: "no convention counted here" };
-  const side = statedSide(dim);
-  if (side.states === null) {
-    return { severity: "NIT", reason: `no convention stated here (${side.gate || dim.gate || "suppressed"})` };
-  }
-  // The gates stated it and the file had no room for its block, so the agent
-  // got at most the sentence under the notice, with no counts to weigh it by.
-  // MUST-FIX means the map told them and they are the first to break it. Same
-  // ladder position staleness and a partial predicate already occupy.
-  const rung = cappedRung({ dropped, capped });
-  if (rung) return rung;
-  if (dim.precision !== "precise") {
-    return { severity: "FIX", reason: "partial predicate: some sites are not visible statically" };
-  }
-  if (isException(dim, side, file)) {
-    return { severity: "FIX", reason: "the map already names this file as an exception" };
-  }
-
-  const base = baselineSide(dim, side);
-  if (!base) return { severity: "FIX", reason: "no baseline population recorded" };
-  // A claim the map stated on the rest of the repository's confidence rather
-  // than on this area's own sample. It is a real claim and it is enforced, but
-  // not at the severity that means "this branch is the first violation in this
-  // area's history", which is a statement about this area's sample alone.
-  if (side.borrowed) {
-    return {
-      severity: "FIX",
-      reason: `${base.conforming} of ${base.candidates} baseline sites here, on a claim the rest of the repository carries`,
-    };
-  }
-  // The same bound the scan states a directive on, or the check would enforce
-  // at top severity a claim the scan considered too thin to make.
-  if (wilsonLower(base.conforming, base.candidates) < GATES.minRatio) {
-    return {
-      severity: "FIX",
-      reason: `${base.conforming} of ${base.candidates} baseline sites is thin`,
-    };
-  }
-  if (base.conforming !== base.candidates) {
-    return {
-      severity: "FIX",
-      reason: `${base.conforming} of ${base.candidates} baseline sites conform`,
-    };
-  }
-  return {
-    severity: "MUST-FIX",
-    reason: `all ${base.candidates} baseline sites conform`,
-  };
-}
-
-/**
- * The rungs every finding shares above its own counts: the area file had no
- * room for its claim, or this run could not answer for its comparison.
- */
-function cappedRung({ dropped = false, capped = null }) {
-  if (dropped === "named") return { severity: "FIX", reason: "the area file names this claim without its counts" };
-  if (dropped) return { severity: "FIX", reason: "the area file had no room to state this claim" };
-  if (capped) return { severity: "FIX", reason: `capped by this run: ${capped}` };
-  return null;
-}
-
-/**
- * The baseline counts for the side the map actually stated. Reading the stored
- * pair on a counter area would measure the sentence the agent was never given,
- * and an area at 1 of 200 would come back as the strongest possible evidence
- * for the claim it suppressed.
- */
-function baselineSide(dim, side) {
-  const base = dim.baseline;
-  if (!base) return null;
-  if (side.side !== "counter") return base;
-  const candidates = base.candidates ?? 0;
-  return {
-    candidates,
-    conforming: candidates - (base.conforming ?? 0),
-    exceptions: base.counterExceptions || [],
-  };
-}
-
-function isException(dim, side, file) {
-  const base = dim.baseline;
-  const fromBaseline = side.side === "counter"
-    ? (base && base.counterExceptions) || []
-    : (base && base.exceptions) || [];
-  const listed = [...(side.exceptions || []), ...fromBaseline];
-  return listed.some((e) => e && (e.path === file.path || e.path === file.oldPath));
-}
 
 /**
  * Staleness caps severity at FIX. A stale map never stops the check: one that
@@ -1510,15 +1308,6 @@ function ancestorsIndex(areas = []) {
     up.set(a.path, above);
   }
   return (area) => (area ? up.get(area.path) ?? [] : []);
-}
-
-/** The nearest enclosing area that states this dimension, and where it was counted. */
-function ancestorSlot(ancestorsOf, area, key) {
-  for (const up of ancestorsOf(area)) {
-    const d = (up.dimensions || []).find((x) => x.key === key);
-    if (d && statedSide(d).states !== null) return { dim: d, from: up.path };
-  }
-  return null;
 }
 
 /**
