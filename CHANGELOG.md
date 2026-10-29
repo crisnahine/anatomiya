@@ -7,6 +7,73 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and
 
 ## [Unreleased]
 
+Every module the review named as doing two jobs does one: the check decides a finding's slot,
+severity and shape in one module, reads a change the way the co-change walk does, collects the
+corpus once and names its comparison stage; the hooks load only their own modules and read the Stop
+hook's transcript as one tail; a row takes one file context, one test-file rule and its own class
+vocabulary on every engine; the rules module keeps map ownership and hands the containment and bounded
+reads to a module of their own. A Ruby corpus parses on a child per 100 files, the docs gate reads
+each document once, the release runs its gates at the tag, and the three harnesses can run a build
+frozen at one commit. Byte-identical maps and check reports on the twelve-repository corpus.
+
+### Changed
+
+- The Ruby parser hands a corpus to a child per 100 files rather than 500: 929 Ruby files parse in
+  2.0 s where they took 5.9 s, at a peak of 371 MB where it was 236 MB (B48).
+- `find` has an entry of its own and loads none of the scan behind the other commands: 121 ms to
+  83 ms per call (A100). Each hook verb loads only its own modules, and the echo's load list is held
+  by name (A100, A119).
+- The Stop hook's reuse check reads the transcript once, as one tail, before it asks git, where it
+  read the head up to six times (A116).
+- The check decides which slot speaks for a path, how far a finding is trusted and the one shape
+  every finding has in `verdict.mjs` (H62), reads what a change added and touched the way the
+  co-change walk does (C55, F27), collects the corpus once however many fields ask (E14), and names
+  the base, the commit the change is read from and the mode as one stage, `comparison` (F29, H46).
+- The placement rule's check half runs on paths alone in `precedent.mjs`, with the merge base's
+  listing the one git read between its two halves (H38, C33).
+- Every row takes one file context (B83), one test-file rule, `outsideTests` and
+  `outsideTestTrees` (C73), and names the classes a learned row may vote for, `classes` (C74); the
+  resolver reads a language's reach and package facts off its declaration (B21); the Ruby walk says
+  `fn` where the other walks do.
+- `rules.mjs` keeps what the map is called and who owns a file in it; the containment and the bounded
+  reads every reader shares are `contained.mjs` (F30). The store's two locks sit in one table with
+  their judges, which the taker and the sweep both read (A117, A118). "Is this target on" is composed
+  once, `targetView` (A104).
+- The D8 pooled prior and every area's verdict are built in the fold, and a scan and a pin partition
+  their files through one call (D8, A111).
+- The docs gate reads each document once and runs its claims as a table of fourteen rules, so a rule
+  can be tested over two strings: 2,885 reads of 985 files per run to 990 (G20).
+- The release workflow's test job runs `check:docs` and `npm run validate` before the suite, so a
+  tag on a commit whose documents or manifests fail is refused before anything is released (A39).
+- Scripts read a facts record through `factsAt`, the reader behind `readFacts` (C10); the corpus
+  selection sits beside the strict argv reader, and `plugin-lock`, `measure-cochange`,
+  `measure-echo` and `validate` read their command line through it (A94).
+- Tests make their git repository through `test/repository.mjs`: `main`, signing off and the native
+  temp path decided once (G22).
+
+### Added
+
+- `--frozen <sha>` on `scripts/e2e-corpus.mjs`, `scripts/ab.mjs` and `scripts/ab-scenario.mjs`:
+  the binary built at that commit, so the checkout may change while a run is in flight and a rerun
+  names the build by its commit (G21).
+- `plugins/anatomiya/lib/payload.mjs`, `settings.mjs` and `find-command.mjs`: the hook contract on
+  the wire, the settings entry an older version arranged, and the `find` command (A24, A45, A100).
+
+### Fixed
+
+- `check` never enforced `strong_params_style`: the row named no classes a site could be judged by,
+  so every site of it fell to the model default (C60).
+- Two git readers carried on without an answer, as if git had said no; each now catches only an
+  `Unasked` and rethrows the rest (F29).
+- A finding's keys print in the order the producers wrote them, so the JSON report of 0.21.0 and
+  this build are the same bytes on the corpus.
+
+### Removed
+
+- The side-by-side parse of the engines, built and measured: mastodon 2.4 s to 2.05 s for a peak
+  of 930 MB where it was 754 MB, which B50's bar refuses (B48).
+- `test/hold-fake-claude.mjs`, referenced by nothing since 88f1f3fc.
+
 ## [0.21.0] - 2026-10-29
 
 The end-of-turn reuse check now hands its subagent the definitions the code index already lists

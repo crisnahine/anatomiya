@@ -1,7 +1,7 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
 
-import { noticeFor, precedentFindings } from "../plugins/anatomiya/lib/precedent.mjs";
+import { noticeFor, placementDecided, placementFindings, precedentFindings } from "../plugins/anatomiya/lib/precedent.mjs";
 import { PRECEDENT_FLOOR, principleKeys } from "../plugins/anatomiya/lib/principles.mjs";
 import { LEVEL_ONLY_LABEL } from "../plugins/anatomiya/lib/layout.mjs";
 
@@ -701,4 +701,38 @@ test("a precedent finding and a co-change claim share one notice under one heade
   assert.equal(said.match(/^anatomiya: /gm).length, 1);
   assert.match(said, /app\/mailers: 0 of 4/);
   assert.match(said, /A _spec\.rb file added here ships with an edit to "spec\/support\/mailers\.rb"/);
+});
+
+test("the check's half of the rule runs on paths alone: what arrived, what the change itself brought, and which directories a finding turns on", () => {
+  const roots = [
+    root("app/mailers", { files: 4, companions: { with: 0, of: 4, root: null } }),
+    root("app/services", { files: 6, companions: { with: 6, of: 6, root: "spec/services" } }),
+    root("spec/services", { files: 6, testRoot: true }),
+  ];
+  const examined = [
+    { path: "spec/mailers/invoice_mailer_spec.rb", status: "A", from: null },
+    // A rename within its own directory arrives nowhere, so the renamed file is not an arrival either.
+    { path: "spec/services/dispatch_spec.rb", status: "R", from: "spec/services/dispatcher_spec.rb" },
+    // A relocation is an arrival, read off `from`.
+    { path: "spec/mailers/moved_spec.rb", status: "M", from: "spec/old/moved_spec.rb" },
+  ];
+  const tracked = ["spec/services/dispatch_spec.rb", "spec/mailers/invoice_mailer_spec.rb", "spec/mailers/moved_spec.rb"];
+  const placement = placementFindings(examined, { roots, tracked, headFacets: new Map(), placed: new Set(), fresh: true });
+  // Both tests the change brought into spec/mailers are findings: neither excuses the other, since both are subtracted.
+  assert.deepEqual(placement.stated.map(({ finding }) => [finding.path, finding.oldPath, finding.severity]), [
+    ["spec/mailers/invoice_mailer_spec.rb", null, "FIX"],
+    ["spec/mailers/moved_spec.rb", "spec/old/moved_spec.rb", "FIX"],
+  ]);
+  assert.deepEqual(placement.asks, [], "no source arrived under a directory a finding turns on, so the merge base is asked nothing");
+  assert.deepEqual(placementDecided(placement.stated, new Set()).findings.length, 2);
+
+  // A test already tracked beside the arrival, which the change did not bring, excuses it.
+  const beside = placementFindings(examined.slice(0, 1), { roots, tracked: ["spec/mailers/other_spec.rb"], headFacets: new Map(), placed: new Set(), fresh: true });
+  assert.deepEqual(beside.stated, []);
+
+  // A listing git refused says nothing of any directory: a finding turning on one is declined, the rest stand.
+  const stated = [{ finding: { path: "a" }, under: ["lib/x"] }, { finding: { path: "b" }, under: [] }];
+  assert.deepEqual(placementDecided(stated, null), { findings: [{ path: "b" }], declined: 1 });
+  assert.deepEqual(placementDecided(stated, new Set(["lib/x"])).findings.length, 1, "a directory the merge base lacked is one the change made and put source under, so the finding on it does not stand");
+  assert.deepEqual(placementDecided(stated, new Set()).findings.length, 2, "a directory the merge base held was there before the change, so the finding stands");
 });

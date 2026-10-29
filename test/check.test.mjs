@@ -1,6 +1,7 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import { needsBatchZ, needsPathControl, needsPosixPaths, needsPosixPermissions, needsPosixSpecialFiles, needsShebang, needsSymlinks, needsUnreadableDirs, removeTree } from "./platform.mjs";
+import { repository } from "./repository.mjs";
 import fs, { chmodSync, mkdtempSync, mkdirSync, readdirSync, writeFileSync, readFileSync, realpathSync, symlinkSync, rmSync, existsSync } from "node:fs";
 import { syncBuiltinESMExports } from "node:module";
 import { tmpdir } from "node:os";
@@ -12,7 +13,7 @@ import { addWorktree, git, scratch } from "./git-worktrees.mjs";
 import { scriptGit } from "./git-script.mjs";
 
 import { needsRuby } from "./ruby-available.mjs";
-import { check, unreadReason, unreadCode } from "../plugins/anatomiya/lib/check.mjs";
+import { cappedBy, check, comparison, unreadReason, unreadCode } from "../plugins/anatomiya/lib/check.mjs";
 import { severityFor } from "../plugins/anatomiya/lib/verdict.mjs";
 import { Unasked } from "../plugins/anatomiya/lib/git.mjs";
 import { formatReport, formatReportGithub, formatReportJson, CAVEATS } from "../plugins/anatomiya/lib/check-report.mjs";
@@ -38,28 +39,9 @@ const glob = (dir) => ({ negated: false, dir, tail: "**/*.ts" });
  * temporary repository behind.
  */
 function repo(t, build) {
-  const dir = mkdtempSync(join(tmpdir(), "anatomiya-check-"));
-  t.after(() => removeTree(dir));
-
-  const git = (...a) => execFileSync("git", a, { cwd: dir, stdio: "pipe" });
-  git("init", "-q");
-  git("config", "user.email", "t@t.test");
-  git("config", "user.name", "T");
-  git("checkout", "-q", "-b", "main");
-
-  const write = (rel, body) => {
-    const abs = join(dir, rel);
-    mkdirSync(dirname(abs), { recursive: true });
-    writeFileSync(abs, body);
-  };
-  const commit = (msg) => {
-    git("add", "-A");
-    git("commit", "-qm", msg);
-  };
-  const read = (rel) => readFileSync(join(dir, rel), "utf8");
-
-  build({ dir, git, write, commit, read });
-  return dir;
+  const made = repository(t, { prefix: "anatomiya-check-" });
+  build(made);
+  return made.dir;
 }
 
 const swallow = (n) =>
@@ -6856,4 +6838,46 @@ test("a route a Python branch adds against the area's learned URL spelling is a 
 
   const found = forKey(await check(dir), "endpoint_segment_case");
   assert.deepEqual(found.map((f) => [f.path, f.line, f.where, f.claim]), [["src/views.py", 14, "support_tickets", "URL path segments here are kebab-case"]]);
+});
+
+test("the comparison stage names the base, the commit the change is read from and the mode, on each of its three paths", async (t) => {
+  // compare: a branch off main, read from their merge base.
+  const branched = repo(t, ({ write, commit, git }) => {
+    write("a.ts", "export const a = 1\n");
+    commit("init");
+    git("checkout", "-q", "-b", "feat");
+    write("b.ts", "export const b = 1\n");
+    commit("feat");
+  });
+  const said = [];
+  const compared = await comparison(branched, "main", said);
+  assert.equal(compared.mode, "compare");
+  assert.equal(compared.base.ref, "main");
+  assert.equal(compared.from, compared.base.mergeBase);
+  assert.deepEqual(said, []);
+
+  // added-lines: a trunk under a name no candidate spells, so there is no base and the oldest commit stands in.
+  const unnamed = repository(t, { prefix: "anatomiya-check-", branch: "trunk" });
+  unnamed.write("a.ts", "export const a = 1\n");
+  const oldest = unnamed.commit("init");
+  unnamed.write("b.ts", "export const b = 1\n");
+  unnamed.commit("more");
+  const degraded = [];
+  const limited = await comparison(unnamed.dir, null, degraded);
+  assert.equal(limited.mode, "added-lines");
+  assert.equal(limited.from, oldest);
+  assert.deepEqual(degraded.map((c) => c.code), [CAVEATS.NO_BASE_REF, CAVEATS.NO_MERGE_BASE]);
+
+  // none: no commit at all.
+  const empty = repo(t, () => {});
+  const nothing = [];
+  const none = await comparison(empty, null, nothing);
+  assert.equal(none.mode, "none");
+  assert.equal(none.from, null);
+  assert.ok(nothing.some((c) => c.code === CAVEATS.NOTHING_EXAMINED), nothing.map((c) => c.code).join(","));
+
+  // The cap names each cause, and only a fresh comparison with a fresh map carries none.
+  assert.equal(cappedBy("compare", { reason: null }), null);
+  assert.equal(cappedBy("added-lines", { reason: null }), "no merge base");
+  assert.equal(cappedBy("added-lines", { reason: "no baseline pinned" }), "no baseline pinned; no merge base");
 });

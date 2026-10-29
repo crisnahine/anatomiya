@@ -28,7 +28,7 @@ import { MAX_FILE_BYTES } from "./limits.mjs";
 import { remedyForMissing } from "./readiness.mjs";
 import { resolve as resolveBaseline } from "./baseline.mjs";
 import { pairingsFor, pairingViolations } from "./pairing.mjs";
-import { isTestPath, precedentFindings } from "./precedent.mjs";
+import { isTestPath, placementDecided, placementFindings } from "./precedent.mjs";
 import { claimFor } from "./dimensions-naming.mjs";
 import { rowsOfKind } from "./registry.mjs";
 import { couldSignal } from "./frameworks.mjs";
@@ -112,25 +112,7 @@ export async function check(cwd, { baseRef = null } = {}) {
     .flatMap((a) => a.dimensions ?? [])
     .filter((d) => d.tier === "semantic" && d.directive).length;
 
-  const base = await resolveBase(root, baseRef, caveats);
-  const from = base.mergeBase || base.boundary;
-  const mode = base.mergeBase ? "compare" : base.boundary ? "added-lines" : "none";
-
-  if (mode === "added-lines") {
-    caveat(
-      caveats,
-      CAVEATS.NO_MERGE_BASE,
-      "no merge base, so findings are limited to lines added since the oldest " +
-        "commit this clone holds and are not compared against the base"
-    );
-  }
-  if (mode === "none") {
-    caveat(
-      caveats,
-      CAVEATS.NOTHING_EXAMINED,
-      "no merge base and no earlier commit to compare against, so nothing was examined"
-    );
-  }
+  const { base, from, mode } = await comparison(root, baseRef, caveats);
 
   // None of these reads needs another's answer, so they run side by side. Each
   // still reports its own failure below, in the order a reader has always seen.
@@ -225,73 +207,21 @@ export async function check(cwd, { baseRef = null } = {}) {
     // Every row of the committed diff, corpus or not, and what the map says ships together.
     rows: change.rows,
     cochange: facts?.layout?.cochange ?? null,
-    // Only the two-run comparison establishes that a site is newly introduced,
-    // so the degraded mode caps severity for the same reason a stale map does.
-    // Named per cause: one sentence for all of them told a run with no pin that
-    // its map was stale or had no merge base.
-    capped: [stale.reason, mode === "compare" ? null : "no merge base"].filter(Boolean).join("; ") || null,
+    capped: cappedBy(mode, stale),
     caveats,
   });
 
   // Last, and outside the dimension collection above: this one asks about the
   // path rather than the contents, so it reads the diff instead of a parse
-  // (H38).
-  // What "already" means here is not what it means for the hook: a change that
-  // invents a directory and fills it with four specs must not have three of
-  // them excused by the first, so everything it brought is subtracted.
-  // A relocation is an arrival too: moving a test into a directory whose
-  // siblings have none is the same deviation as writing it there. Read off
-  // `from` rather than the status letter, which spells the same move two ways:
-  // `R` from the diff, and `M` with an `orig` from a working tree where it is
-  // staged and not yet committed.
-  // A rename within its own directory arrives nowhere: the file was already
-  // there under another name. Counted as an arrival, it was also subtracted as
-  // one, and a directory whose only test had been renamed read as holding none.
-  const arrived = examined
-    .filter((c) => c.status === "A" || (c.from && c.from !== c.path && dirname(c.from) !== dirname(c.path)))
-    .map((c) => ({ path: c.path, oldPath: c.from === c.path ? null : c.from }));
-  const brought = new Set(arrived.map((c) => c.path));
-  // Answered from what git tracks rather than off the disk, which is the
-  // population every other reader here counts: one ignored `scratch_spec.rb`
-  // sitting in a directory read as a test habit and silenced the rule for every
-  // file in it. The hook cannot ask this, since a `git ls-files` per write is a
-  // subprocess per write, so it reads the directory and is quieter where a
-  // stray file sits there; this run catches what that one let past.
-  const testDirs = tracked && new Set(tracked.filter((rel) => !brought.has(rel)).map(dirname));
-  const holdsTest = (dir) => tracked === null || testDirs.has(dir || ".");
-
-  const roots = facts?.layout?.roots ?? [];
+  // (H38). The rule's two halves sit in `precedent.mjs`; what stays here is
+  // the one git read between them, which the merge base alone can answer.
   // The comparison alone is what says a file arrived; a stale map does not
   // bear on that, and it caps at FIX anyway, which is this rule's ceiling.
-  const asked = { fresh: mode === "compare", holdsTest };
-  // A directory holding only the tests the change wrote is not one it made
-  // for source, and is the directory this rule asks about. Neither is one
-  // holding a test and a file no test could be written for, which is the
-  // layout's own question: an empty index, a declaration file, a story, the
-  // file a runner loads. Read by its path where this run parsed no head of it.
-  // Every directory above each such file, with its family: asked once for each finding and each directory it turns on.
-  const sourced = new Set();
-  for (const { path } of arrived) {
-    const lang = language(path);
-    if (!isProducer({ rel: path, lang, facets: headFacets.get(path) ?? null }, placed)) continue;
-    for (let dir = dirname(path); dir !== "."; dir = dirname(dir)) sourced.add(`${familyOf(lang)}\0${dir}`);
-  }
-  const broughtSource = (dir, family) => sourced.has(`${family}\0${dir}`);
-  // A finding does not stand where the change made a directory its test is
-  // under and put source there, which the merge base says: one listing, and
-  // none where no finding was about to be stated or the change put no source
-  // under any of them.
-  const stated = precedentFindings(arrived, roots, asked).map(({ turnsOn, ...finding }) => ({
-    finding,
-    under: turnsOn.filter(({ dir, family }) => broughtSource(dir, family)).map(({ dir }) => dir),
-  }));
-  const absent = await absentAt(root, base.mergeBase, [...new Set(stated.flatMap(({ under }) => under))]);
-  // A listing that failed says nothing of any directory, so a finding that turns on one is declined, and said (C33).
-  let declined = 0;
-  for (const { finding, under } of stated) {
-    if (absent === null && under.length > 0) declined += 1;
-    else if (!under.some((dir) => absent.has(dir))) findings.push(finding);
-  }
+  const { stated, asks } = placementFindings(examined, { roots: facts?.layout?.roots ?? [], tracked, headFacets, placed, fresh: mode === "compare" });
+  const absent = await absentAt(root, base.mergeBase, asks);
+  const decided = placementDecided(stated, absent);
+  findings.push(...decided.findings);
+  const { declined } = decided;
   if (declined > 0) {
     caveat(
       caveats,
@@ -417,6 +347,45 @@ async function storedOrCollected(corpus, facts, field, derive, caveats, code, re
 }
 
 /* --- base resolution, including the shallow case --- */
+
+/**
+ * What this run compares the branch against: the base (`resolveBase`), the
+ * commit the change is read from, and the mode the two allow: `compare` off a
+ * merge base, `added-lines` off the oldest commit this clone holds, or `none`.
+ * The two degraded modes are said as caveats here, once, so the report and the
+ * cap below agree on why. Exported for its tests, which run the three modes on
+ * a repository of two commits rather than through the whole check.
+ */
+export async function comparison(root, baseRef, caveats) {
+  const base = await resolveBase(root, baseRef, caveats);
+  const from = base.mergeBase || base.boundary;
+  const mode = base.mergeBase ? "compare" : base.boundary ? "added-lines" : "none";
+  if (mode === "added-lines") {
+    caveat(
+      caveats,
+      CAVEATS.NO_MERGE_BASE,
+      "no merge base, so findings are limited to lines added since the oldest " +
+        "commit this clone holds and are not compared against the base"
+    );
+  }
+  if (mode === "none") {
+    caveat(
+      caveats,
+      CAVEATS.NOTHING_EXAMINED,
+      "no merge base and no earlier commit to compare against, so nothing was examined"
+    );
+  }
+  return { base, from, mode };
+}
+
+/**
+ * The cap every finding's severity carries for how far the comparison is
+ * trusted. Only the two-run comparison establishes that a site is newly
+ * introduced, so the degraded mode caps severity for the same reason a stale
+ * map does. Named per cause: one sentence for all of them told a run with no
+ * pin that its map was stale or had no merge base.
+ */
+export const cappedBy = (mode, stale) => [stale.reason, mode === "compare" ? null : "no merge base"].filter(Boolean).join("; ") || null;
 
 /**
  * Resolve the base ref, fetching exactly one commit on a shallow clone.
