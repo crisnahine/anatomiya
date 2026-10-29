@@ -19,3 +19,6 @@ Thumbs.db
 .cursor/rules/anatomiya-*.mdc
 .github/instructions/anatomiya-*.instructions.md
 .claude/settings.local.json
+
+# The website build, written by scripts/site.mjs.
+_site/

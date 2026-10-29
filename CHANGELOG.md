@@ -12,6 +12,10 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and
 - Each release carries the plugin as `npm pack` reads it, `anatomiya-<version>.tgz`, with its
   SHA-256, the Sigstore bundle and an in-toto provenance file the release workflow signs with its
   own identity; `gh attestation verify <tarball> --repo crisnahine/anatomiya` checks one (G23).
+- A website, built from `site/` by `scripts/site.mjs` and deployed to GitHub Pages from `main` by
+  `.github/workflows/pages.yml`: the README's examples and measured results, filled in at build time,
+  and a live `find` that runs the plugin's own `find.mjs` in the browser over this repository's code
+  index (G24).
 
 ## [0.22.0] - 2026-10-29
 

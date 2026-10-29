@@ -147,3 +147,7 @@ request adds. `audit the installed tree` stays advisory: it audits the whole tre
 advisory against a dependency already here would fail every pull request after it, including ones
 that touch no dependency. It still runs on every push to `main` and weekly, which is where a red
 audit gets seen. `openssf scorecard` never runs on a pull request, so it has no context to require.
+
+`.github/workflows/pages.yml` is not required either. On a pull request its `build the site` job runs
+only where the pull request touches the site, so requiring it would leave every other pull request
+waiting on a check that never starts, and `deploy` runs from `main` alone.

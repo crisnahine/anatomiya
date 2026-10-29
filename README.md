@@ -23,6 +23,7 @@
 </p>
 
 <p align="center">
+  <a href="https://crisnahine.github.io/anatomiya/">Website</a> ·
   <a href="#try-it-in-your-repository">Quick start</a> ·
   <a href="#what-it-does">What it does</a> ·
   <a href="#how-it-works">How it works</a> ·
@@ -571,10 +572,12 @@ that fixes land on `main` only: anatomiya is pre-1.0, with no backports.
 
 ## Learn more
 
+- [The website](https://crisnahine.github.io/anatomiya/): the short tour, with a live `find` that runs the
+  plugin's own ranking code in your browser over this repository's code index.
 - [docs/usage.md](docs/usage.md): the full guide.
 - [docs/why.md](docs/why.md): why it is built this way, and the designs the measurements replaced.
 - [docs/how-it-works.md](docs/how-it-works.md): the mechanics, close enough to predict a scan's output.
-- [DECISIONS.md](DECISIONS.md): 380 numbered decisions, each with the measurement or review finding
+- [DECISIONS.md](DECISIONS.md): 381 numbered decisions, each with the measurement or review finding
   that forced it.
 - [CONTEXT.md](CONTEXT.md): the glossary, so a word in a map or a document means one thing.
 - [docs/measurements/corpus.md](docs/measurements/corpus.md): every repository a measurement ran on,

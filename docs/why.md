@@ -192,5 +192,5 @@ producing nothing.
 
 ## Further reading
 
-[`DECISIONS.md`](../DECISIONS.md) is the build contract: 380 numbered decisions, each linking to a
+[`DECISIONS.md`](../DECISIONS.md) is the build contract: 381 numbered decisions, each linking to a
 file under [`decisions/`](decisions) with the finding behind it. [`how-it-works.md`](how-it-works.md) is the mechanical walkthrough.

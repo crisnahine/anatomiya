@@ -4,7 +4,7 @@ Everyone taking part here keeps to the [code of conduct](CODE_OF_CONDUCT.md). A 
 reported privately, the way [SECURITY.md](SECURITY.md#reporting-a-vulnerability) says, and never in
 a public issue.
 
-Read `DECISIONS.md` first. It is 380 numbered rows, each one a measurement or a review finding
+Read `DECISIONS.md` first. It is 381 numbered rows, each one a measurement or a review finding
 reduced to the decision it forces on the code. It is the build contract, and most questions you will
 have about why something is shaped the way it is are answered there. The file is the index: one short
 line per row, with the decision, a one-word status and a link. The measurement behind a row and what
@@ -750,3 +750,22 @@ byte offset into a build and any other home directory but the `/Users/me` placeh
 `docs/releasing.md` is the list. Work it top to bottom rather than from memory: a plugin carries its
 own tag shape, its own manifests and its own changelog, and the tag is what actually releases. `v0.1.9` was released by hand four seconds before its own
 workflow run started, and the run went red on a release that already existed.
+
+## The website
+
+`site/` is the page at <https://crisnahine.github.io/anatomiya/>, and `scripts/site.mjs` fills it in
+from the repository: the README's examples and reuse tables, the registry's dimension count, the
+number of rows in `DECISIONS.md`, and the code index a scan of the checkout writes for the live `find`
+(G24). Change the words in `site/index.html` and the facts where they live. To see it before pushing:
+
+```sh
+node scripts/site.mjs _site
+python3 -m http.server 8000 -d _site
+```
+
+Any static file server will do, and a server it has to be: a browser loads no module script from a
+`file://` page. The script scans the checkout first, and it writes only into a new directory or one it
+wrote before. A heading the page quotes a block from, the README's reuse tables, or an import
+`find.mjs` gains from outside its own directory stops the build, and `test/site.test.mjs` names which.
+`.github/workflows/pages.yml` builds the site on a pull request that touches it and deploys it from
+`main`, where the repository's Pages source has to be GitHub Actions.
