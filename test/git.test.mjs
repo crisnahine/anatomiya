@@ -305,7 +305,7 @@ test("a listing whose git exits as its clock runs out is no answer, however it e
   const { dir } = repo(t);
   const bin = scratch(t, "anatomiya-git-bin-");
   const real = execFileSync("sh", ["-c", "command -v git"]).toString().trim();
-  writeFileSync(join(bin, "git"), `#!/bin/sh\ncase "$1" in ls-files) printf 'a\\000'; sleep 0.2; printf 'b\\000c\\000'; exit 0;; esac\nexec '${real}' "$@"\n`, { mode: 0o755 });
+  writeFileSync(join(bin, "git"), `#!/bin/sh\ncase "$1" in config) exit 1;; ls-files) printf 'a\\000'; sleep 0.2; printf 'b\\000c\\000'; exit 0;; esac\nexec '${real}' "$@"\n`, { mode: 0o755 });
   const env = { ...process.env, PATH: `${bin}:${process.env.PATH}` };
   const seen = [];
   const held = new Int32Array(new SharedArrayBuffer(4));
@@ -334,14 +334,14 @@ for (const exit of [0, 1]) {
     // The rest of the listing waits for this test's word, so no machine is fast enough to finish it first.
     writeFileSync(
       join(bin, "git"),
-      `#!/bin/sh\ncase "$1" in ls-files) : > '${started}'; printf 'a\\000'; while [ ! -e '${go}' ]; do sleep 0.05; done; printf 'b\\000c\\000'; exit ${exit};; esac\nexec '${real}' "$@"\n`,
+      `#!/bin/sh\ncase "$1" in config) exit 1;; ls-files) : > '${started}'; printf 'a\\000'; while [ ! -e '${go}' ]; do sleep 0.05; done; printf 'b\\000c\\000'; exit ${exit};; esac\nexec '${real}' "$@"\n`,
       { mode: 0o755 }
     );
     const env = { ...process.env, PATH: `${bin}:${process.env.PATH}` };
     const cell = new Int32Array(new SharedArrayBuffer(4));
 
     const reading = gitBuffered(dir, ["ls-files", "-z", "--"], { timeout: 3000, env });
-    await until(t, () => existsSync(started));
+    await startedBefore(t, started, reading);
     // Held past the clock and past git's own exit, and from the loop's check phase, so the loop turns to its
     // timers, the clock among them, before it reads the pipe again. The word is given once the loop is held,
     // so a loaded machine cannot read git's exit before the clock is due.
@@ -378,7 +378,7 @@ for (const exit of [0, 1]) {
     const cell = new Int32Array(new SharedArrayBuffer(4));
 
     const reading = gitBuffered(dir, ["ls-files", "-z", "--"], { timeout: 3000, env });
-    await until(t, () => existsSync(started));
+    await startedBefore(t, started, reading);
     // The word is given once the loop is held, as above.
     await new Promise((done) => {
       setImmediate(() => {
@@ -437,7 +437,7 @@ function behindLauncher(t, listing) {
   const real = execFileSync("sh", ["-c", "command -v git"]).toString().trim();
   writeFileSync(
     join(bin, "git"),
-    `#!/bin/sh\ncase "$1" in ls-files) sh -c 'echo $$ > "$0"; ${listing}' '${behind}' & wait; exit;; esac\nexec '${real}' "$@"\n`,
+    `#!/bin/sh\ncase "$1" in config) exit 1;; ls-files) sh -c 'echo $$ > "$0"; ${listing}' '${behind}' & wait; exit;; esac\nexec '${real}' "$@"\n`,
     { mode: 0o755 }
   );
   return { behind, env: { ...process.env, PATH: `${bin}:${process.env.PATH}` } };
@@ -1834,6 +1834,16 @@ test("a batch reader given a timeout that is no whole number of milliseconds ask
 // Stops with the test, so a wait that never ends cannot outlive a timeout.
 async function until(t, seen) {
   while (!seen()) await wait(20, undefined, { signal: t.signal });
+}
+
+/** Until the stand-in marks that it started; a read that settles first, its clock run out before git did, fails here rather than waiting out the test. */
+async function startedBefore(t, mark, reading) {
+  let settled;
+  reading.then((r) => (settled = r), (err) => (settled = err));
+  while (!existsSync(mark)) {
+    if (settled !== undefined) assert.fail(`the read settled before git started: ${JSON.stringify(settled)}`);
+    await wait(20, undefined, { signal: t.signal });
+  }
 }
 
 function gone(pidFile) {
