@@ -2,6 +2,7 @@ import { test } from "node:test";
 import assert from "node:assert/strict";
 import { scriptGit, unaskedWhere } from "./git-script.mjs";
 import { needsPathControl, needsShebang, removeTree } from "./platform.mjs";
+import { repository } from "./repository.mjs";
 import { chmodSync, mkdtempSync, mkdirSync, writeFileSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join, dirname } from "node:path";
@@ -19,27 +20,9 @@ import {
 import { gitStreamed } from "../plugins/anatomiya/lib/git.mjs";
 
 function repo(t, build) {
-  const dir = mkdtempSync(join(tmpdir(), "anatomiya-cochange-"));
-  t.after(() => removeTree(dir));
-  const git = (...a) => execFileSync("git", a, { cwd: dir, stdio: "pipe" }).toString();
-  git("init", "-q", "-b", "main");
-  author("a@t.test");
-  build({ dir, git, write, author, commit });
-  return dir;
-
-  function write(rel, body = `${rel}\n`) {
-    const abs = join(dir, rel);
-    mkdirSync(dirname(abs), { recursive: true });
-    writeFileSync(abs, body);
-  }
-  function author(email) {
-    git("config", "user.email", email);
-    git("config", "user.name", email.split("@")[0]);
-  }
-  function commit(message) {
-    git("add", "-A");
-    git("commit", "-qm", message);
-  }
+  const made = repository(t, { prefix: "anatomiya-cochange-", email: "a@t.test", name: "a" });
+  build(made);
+  return made.dir;
 }
 
 const sha = (dir, ref = "HEAD") => execFileSync("git", ["rev-parse", ref], { cwd: dir, encoding: "utf8" }).trim();

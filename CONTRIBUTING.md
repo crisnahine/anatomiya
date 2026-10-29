@@ -4,7 +4,7 @@ Everyone taking part here keeps to the [code of conduct](CODE_OF_CONDUCT.md). A 
 reported privately, the way [SECURITY.md](SECURITY.md#reporting-a-vulnerability) says, and never in
 a public issue.
 
-Read `DECISIONS.md` first. It is 377 numbered rows, each one a measurement or a review finding
+Read `DECISIONS.md` first. It is 378 numbered rows, each one a measurement or a review finding
 reduced to the decision it forces on the code. It is the build contract, and most questions you will
 have about why something is shaped the way it is are answered there. The file is the index: one short
 line per row, with the decision, a one-word status and a link. The measurement behind a row and what
@@ -70,7 +70,8 @@ is run, so a new grammar release is something to look for by hand.
 
 No test framework, no mocks, no fixtures generated at runtime. `node:test` and `node:assert` only.
 Tests that need a repository build one in a temp directory with real `git init` and real commits,
-because half the behaviour under test is git behaviour. A failure no real repository or disk can
+because half the behaviour under test is git behaviour, through `test/repository.mjs`, the one place the
+branch, the identity, signing and the temp path are decided (G22). A failure no real repository or disk can
 produce, such as a git ended by a signal or refusing one question, is stood in for that one call, and
 every other call still reaches the real thing: `test/git-script.mjs` scripts git's answer inside the
 test's own process, `test/git-stub.mjs` puts a stub git ahead on `PATH` for a child process the test

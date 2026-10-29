@@ -2,6 +2,7 @@ import { test } from "node:test";
 import assert from "node:assert/strict";
 import { asksById, scriptGit, unaskedWhere } from "./git-script.mjs";
 import { needsPosixPaths, needsPosixPermissions, needsPosixSpecialFiles, removeTree } from "./platform.mjs";
+import { repository } from "./repository.mjs";
 import { chmodSync, mkdtempSync, mkdirSync, writeFileSync, readFileSync, readdirSync, existsSync, symlinkSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
@@ -20,29 +21,9 @@ import {
 // the end of the body: a failing assertion throws, and a cleanup line below it
 // never runs.
 function repo(t, build) {
-  const dir = mkdtempSync(join(tmpdir(), "anatomiya-baseline-test-"));
-  t.after(() => removeTree(dir));
-  const git = (...a) => execFileSync("git", a, { cwd: dir, stdio: "pipe" }).toString();
-  git("init", "-q", "-b", "main");
-  git("config", "user.email", "t@t.test");
-  git("config", "user.name", "T");
-  git("config", "commit.gpgsign", "false");
-  build(dir, { git, write, head, commit });
+  const { dir, git, write, commit } = repository(t, { prefix: "anatomiya-baseline-test-" });
+  build(dir, { git, write, head: () => git("rev-parse", "HEAD").trim(), commit });
   return dir;
-
-  function write(rel, body) {
-    const abs = join(dir, rel);
-    mkdirSync(join(abs, ".."), { recursive: true });
-    writeFileSync(abs, body);
-  }
-  function commit(msg) {
-    git("add", "-A");
-    git("commit", "-qm", msg);
-    return head();
-  }
-  function head() {
-    return git("rev-parse", "HEAD").trim();
-  }
 }
 
 // The dimension stands in for any real one: a site is a file, and a file that

@@ -8,6 +8,7 @@ import { execFileSync } from "node:child_process";
 
 import { asksById, exitsWhere, scriptGit, unaskedOn, unaskedWhere } from "./git-script.mjs";
 import { needsPosixPermissions, needsShebang, needsSymlinks, removeTree } from "./platform.mjs";
+import { repository } from "./repository.mjs";
 import { installWithoutDependencies } from "./plugin-install.mjs";
 import { scratch } from "./git-worktrees.mjs";
 import { runCheck, runDoctor, runPin, runScan, runSetup } from "../plugins/anatomiya/lib/commands.mjs";
@@ -30,20 +31,10 @@ const needsTs = (await loadTypeScript()) ? {} : { skip: "typescript is not insta
 
 /** A committed repository with one area's worth of source in it. */
 function repo(t, files = 8) {
-  const dir = mkdtempSync(join(tmpdir(), "anatomiya-commands-"));
-  t.after(() => removeTree(dir));
-
-  mkdirSync(join(dir, "src"), { recursive: true });
-  for (let i = 0; i < files; i++) {
-    writeFileSync(join(dir, "src", `f${i}.ts`), `const a${i} = 1\nexport { a${i} }\n`);
-  }
-  const git = (...a) => execFileSync("git", a, { cwd: dir, stdio: "pipe" });
-  git("init", "-q");
-  git("config", "user.email", "t@t.test");
-  git("config", "user.name", "T");
-  git("add", "-A");
-  git("commit", "-qm", "init");
-  return dir;
+  const made = repository(t, { prefix: "anatomiya-commands-" });
+  for (let i = 0; i < files; i++) made.write(`src/f${i}.ts`, `const a${i} = 1\nexport { a${i} }\n`);
+  made.commit("init");
+  return made.dir;
 }
 
 /** A branch off the base with one added file, which is what a check examines. */
@@ -64,40 +55,22 @@ function repoWithBranch(t) {
  * repository is written in Ruby.
  */
 function repoWithGemfile(t) {
-  const dir = mkdtempSync(join(tmpdir(), "anatomiya-commands-gemfile-"));
-  t.after(() => removeTree(dir));
-
-  for (const sub of ["utils", "components"]) mkdirSync(join(dir, "src", sub), { recursive: true });
+  const made = repository(t, { prefix: "anatomiya-commands-gemfile-" });
   for (let i = 0; i < 6; i++) {
-    writeFileSync(join(dir, "src", "utils", `u${i}.ts`), `export function f${i}(a: number) {\n  try { return a + 1 } catch (e) { throw e }\n}\n`);
-    writeFileSync(join(dir, "src", "components", `C${i}.tsx`), `export const C${i} = () => <div className="x">hi</div>\n`);
+    made.write(`src/utils/u${i}.ts`, `export function f${i}(a: number) {\n  try { return a + 1 } catch (e) { throw e }\n}\n`);
+    made.write(`src/components/C${i}.tsx`, `export const C${i} = () => <div className="x">hi</div>\n`);
   }
-  writeFileSync(join(dir, "Gemfile"), 'source "https://rubygems.org"\ngem "cocoapods", "~> 1.13"\n');
-  const git = (...a) => execFileSync("git", a, { cwd: dir, stdio: "pipe" });
-  git("init", "-q", "-b", "main");
-  git("config", "user.email", "t@t.test");
-  git("config", "user.name", "T");
-  git("add", "-A");
-  git("commit", "-qm", "init");
-  return dir;
+  made.write("Gemfile", 'source "https://rubygems.org"\ngem "cocoapods", "~> 1.13"\n');
+  made.commit("init");
+  return made.dir;
 }
 
 /** A repository written in Ruby and nothing else, so no file of it can be read without an interpreter. */
 function repoOnlyRuby(t) {
-  const dir = mkdtempSync(join(tmpdir(), "anatomiya-commands-ruby-"));
-  t.after(() => removeTree(dir));
-
-  mkdirSync(join(dir, "app", "models"), { recursive: true });
-  for (let i = 0; i < 8; i++) {
-    writeFileSync(join(dir, "app", "models", `m${i}.rb`), `class M${i}\n  def b\n    1\n  end\nend\n`);
-  }
-  const git = (...a) => execFileSync("git", a, { cwd: dir, stdio: "pipe" });
-  git("init", "-q");
-  git("config", "user.email", "t@t.test");
-  git("config", "user.name", "T");
-  git("add", "-A");
-  git("commit", "-qm", "init");
-  return dir;
+  const made = repository(t, { prefix: "anatomiya-commands-ruby-" });
+  for (let i = 0; i < 8; i++) made.write(`app/models/m${i}.rb`, `class M${i}\n  def b\n    1\n  end\nend\n`);
+  made.commit("init");
+  return made.dir;
 }
 
 /**

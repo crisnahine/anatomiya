@@ -1,6 +1,7 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import { needsCaseSensitiveFilesystem, needsFoldingFilesystem, needsPosixPaths, needsPosixSpecialFiles, needsSymlinks, removeTree } from "./platform.mjs";
+import { repository } from "./repository.mjs";
 import { chmodSync, existsSync, mkdtempSync, mkdirSync, readFileSync, writeFileSync, symlinkSync, rmSync, realpathSync, unlinkSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { basename, join, isAbsolute, sep } from "node:path";
@@ -29,22 +30,9 @@ function tmp(t) {
 }
 
 function repo(t, build = () => {}) {
-  const dir = tmp(t);
-  const git = (...a) => execFileSync("git", a, { cwd: dir, stdio: "pipe" });
-  git("init", "-q");
-  git("config", "user.email", "t@t.test");
-  git("config", "user.name", "T");
-  build(dir, { git, write, mkdir });
+  const { dir, git, write } = repository(t, { prefix: "anatomiya-", body: () => "export const x = 1\n" });
+  build(dir, { git, write, mkdir: (rel) => mkdirSync(join(dir, rel), { recursive: true }) });
   return dir;
-
-  function write(rel, body = "export const x = 1\n") {
-    const abs = join(dir, rel);
-    mkdirSync(join(abs, ".."), { recursive: true });
-    writeFileSync(abs, body);
-  }
-  function mkdir(rel) {
-    mkdirSync(join(dir, rel), { recursive: true });
-  }
 }
 
 /** Files as `discover` wants them, one per generated path. */

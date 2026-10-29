@@ -9,6 +9,7 @@ import { execFileSync, spawnSync } from "node:child_process";
 
 import { scriptGit } from "./git-script.mjs";
 import { needsPathControl, needsPosixPaths, needsPosixSpecialFiles, needsShebang, needsSymlinks, removeTree } from "./platform.mjs";
+import { repository } from "./repository.mjs";
 import { snapshot, transcript } from "./transcript.mjs";
 import { usableIndex } from "../plugins/anatomiya/lib/index-home.mjs";
 import { findSymbols, RANKING } from "../plugins/anatomiya/lib/find.mjs";
@@ -28,21 +29,11 @@ import { corpusDrop } from "../plugins/anatomiya/lib/corpus.mjs";
  * a fixture cannot say which lines a change added.
  */
 function repo(t, { scanned = true, commit = true, refFormat = null, at = null } = {}) {
-  const dir = at ?? mkdtempSync(join(tmpdir(), "anatomiya-reuse-"));
-  if (at === null) t.after(() => removeTree(dir));
-  else mkdirSync(dir);
-  const git = (...a) => execFileSync("git", a, { cwd: dir, stdio: "pipe" });
-  git("init", "-q", ...(refFormat ? [`--ref-format=${refFormat}`] : []));
-  git("config", "user.email", "t@t.test");
-  git("config", "user.name", "T");
-  const write = (rel, body) => {
-    mkdirSync(dirname(join(dir, rel)), { recursive: true });
-    writeFileSync(join(dir, rel), body);
-  };
+  const made = repository(t, { prefix: "anatomiya-reuse-", at, init: refFormat ? [`--ref-format=${refFormat}`] : [] });
+  const { dir, git, write } = made;
   if (commit) {
     write("src/a.ts", "export const one = 1;\nexport const two = 2;\n");
-    git("add", "-A");
-    git("commit", "-qm", "init");
+    made.commit("init");
   }
   if (scanned) write(FACTS_PATH, JSON.stringify({ schema: FACTS_SCHEMA, areas: [], layout: { tests: [], roots: [] } }));
   return { dir, git, write };

@@ -1,6 +1,7 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import { needsPosixPaths, removeTree } from "./platform.mjs";
+import { repository } from "./repository.mjs";
 import { appendFileSync, mkdtempSync, mkdirSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join, dirname } from "node:path";
@@ -27,28 +28,9 @@ function repo(t, build) {
   // The context is taken rather than left to the caller: a `rmSync` per call
   // site is one somebody forgets, and two here did, which is where the 915
   // directories one machine had piled up came from.
-  const dir = mkdtempSync(join(tmpdir(), "anatomiya-authors-"));
-  t.after(() => removeTree(dir));
-  const git = (...a) => execFileSync("git", a, { cwd: dir, stdio: "pipe" }).toString();
-  git("init", "-q", "-b", "main");
-  git("config", "user.email", "first@t.test");
-  git("config", "user.name", "first");
-  build(dir, { git, write, author, commit });
-  return dir;
-
-  function write(rel, body) {
-    const abs = join(dir, rel);
-    mkdirSync(dirname(abs), { recursive: true });
-    writeFileSync(abs, body);
-  }
-  function author(email) {
-    git("config", "user.email", email);
-    git("config", "user.name", email.split("@")[0]);
-  }
-  function commit(message) {
-    git("add", "-A");
-    git("commit", "-qm", message);
-  }
+  const made = repository(t, { prefix: "anatomiya-authors-", email: "first@t.test", name: "first" });
+  build(made.dir, made);
+  return made.dir;
 }
 
 /** The per-file `git log` D5 replaces, kept here as the thing to agree with. */
