@@ -17,7 +17,7 @@
 import { GATES, wilsonLower } from "./gates.mjs";
 import { isPerson } from "./authors.mjs";
 import { CHANGE_MOST, CLAIMS_MOST, classesOf, classParts, companionKey, keyCompanion } from "./cochange.mjs";
-import { commitAt, filesAt, isSha, resolveBaseRef } from "./git.mjs";
+import { commitAt, filesAt, isSha, resolveBaseRef, unaskedAs } from "./git.mjs";
 import { SEP, historyFields } from "./history.mjs";
 import { ownOutput } from "./corpus.mjs";
 import { familyOf, language } from "./langs.mjs";
@@ -191,7 +191,7 @@ export async function startCochange(root, state, { signal, history = null } = {}
   }
   if (at === null) return none(null);
   // A tree git could not be asked for is null like one it refused: the record then says the tree could not be read.
-  const [walk, tree] = await Promise.all([walkCochange(root, at.tip, { signal, history }), filesAt(root, at.tip, { signal }).catch(() => null)]);
+  const [walk, tree] = await Promise.all([walkCochange(root, at.tip, { signal, history }), filesAt(root, at.tip, { signal }).catch(unaskedAs(null))]);
   return { ...at, walk, tree };
 }
 

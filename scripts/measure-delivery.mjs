@@ -21,7 +21,7 @@ import { createInterface } from "node:readline";
 import { join, resolve } from "node:path";
 
 import { checkOutput, invokedAs, readArgv } from "./entry.mjs";
-import { isCompaction, mayBeCompaction } from "../plugins/anatomiya/lib/transcript.mjs";
+import { isCompaction, mayBeCompaction, parsed } from "../plugins/anatomiya/lib/transcript.mjs";
 
 // What Claude Code calls the channel. A rule file and a nested CLAUDE.md arrive
 // through the same one, which is why this counts both and splits them by whether
@@ -150,14 +150,10 @@ export async function eventsIn(file, match) {
   const out = [];
   for await (const line of reader) {
     if (!isCandidate(line)) continue;
-    let entry = null;
-    try {
-      entry = JSON.parse(line);
-    } catch {
-      // A transcript is appended to while a session runs, so the last line of a
-      // live one is routinely half-written. Skipping it costs one event.
-      continue;
-    }
+    // A transcript is appended to while a session runs, so the last line of a
+    // live one is routinely half-written. Skipping it costs one event.
+    const entry = parsed(line);
+    if (entry === null) continue;
     const event = eventOf(entry);
     if (event === null) continue;
     if (event.kind === "delivery" && match !== null && !event.path.includes(match)) continue;

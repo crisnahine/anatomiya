@@ -2,7 +2,7 @@ import { encode, encodePath, nameText, sanitisePath } from "./encode.mjs";
 import { embeddedIn, MISSING_STRIPPER } from "./langs.mjs";
 import { unreadReasons } from "./readiness.mjs";
 import { kindsLine, plural, renderLayout } from "./render-layout.mjs";
-import { scopeOf, statedSide } from "./slot.mjs";
+import { rendersAsDirective, scopeOf, statedSide } from "./slot.mjs";
 import { areaLabel, globText } from "./areas.mjs";
 import { listSome, LISTED, PREFIX } from "./rules.mjs";
 import { REGISTRY } from "./registry.mjs";
@@ -476,8 +476,8 @@ function areaBlocks(area, cochange = []) {
   // A stated side the model writes unprompted is real and enforced, and it is
   // exactly what the model would do here anyway, so it rides with the counts:
   // the directive lines are for what this repository does differently.
-  const directives = sides.filter(([d, side]) => side.states !== null && d.matchesDefault !== true);
-  const counts = sides.filter(([d, side]) => side.states === null || d.matchesDefault === true);
+  const directives = sides.filter(([d]) => rendersAsDirective(d));
+  const counts = sides.filter(([d]) => !rendersAsDirective(d));
 
   // Each block's lines, and with them:
   // `key`, the dimension it states, or null for a block that states nothing. A
@@ -954,7 +954,7 @@ function areaListing(areas, unfiled, budget, target, cochange) {
   // The same partition the area file makes: a slot the model writes by default
   // is a counts line there, so it must not earn the area a name here.
   const stated = (a) =>
-    a.dimensions.filter((d) => statedSide(d).states !== null && d.matchesDefault !== true).length + claimsIn(cochange, a.path).length;
+    a.dimensions.filter(rendersAsDirective).length + claimsIn(cochange, a.path).length;
   const eligible = areas.filter((a) => stated(a) > 0);
 
   // A trailing count is owed unless every area is named, and an area the budget

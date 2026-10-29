@@ -150,7 +150,9 @@ const UNASKED_HANDLED = {
   "changeset.mjs addedRanges": ["SAYS SO", "null, which the check words as ranges that could not be read and the stop hook reads as nothing to ask"],
   "changeset.mjs changedFiles": ["SAYS SO", "not readable, and the check says the diff could not be read"],
   "changeset.mjs pendingPaths": ["SAYS SO", "null, which the check words as pending edits it could not list and the stop hook reads as nothing to ask"],
+  "cochange-walk.mjs startCochange": ["SAYS SO", "a null tree beside the walk, which the record states as a tree that could not be read"],
   "check.mjs absentAt": ["SAYS SO", "null, and the placement finding is declined with a caveat"],
+  "check.mjs addPairingFindings": ["SAYS SO", "null, and the caveat says the file list at HEAD could not be read, so no obligation was checked"],
   "check.mjs remoteSha": ["SAYS SO", "no commit to fetch, then the caveat that the base could not be fetched"],
   "check.mjs resolveBase": ["SAYS SO", "the shallow fetch: not fetched is the next candidate, then the same caveat"],
   "check.mjs trackedFiles": ["STOP", "passes the could-not-ask on; a listing git refused is read as a test being there and declines the placement"],
@@ -194,6 +196,22 @@ test("outside git.mjs git is asked by the kind of question, and what carries on 
     assert.ok(["SAYS SO", "NOTHING DONE", "STOP", "OPEN"].includes(verdict) && why.length > 0, site);
   }
   assert.deepEqual(Object.keys(UNASKED_HANDLED).filter((site) => UNASKED_HANDLED[site][0] === "OPEN"), [], "no place joins the list unruled");
+});
+
+// `.catch(() => null)` on a git reader took a `TypeError` along with `Unasked`
+// and worded it as a listing git could not make, and the guard above could not
+// see it: nothing on the line said `unaskedAs`. A rejection a git reader hands
+// on is caught by the kind of error, never whole.
+test("a git reader's rejection is caught by its kind, never whole", () => {
+  const readers = [...readFileSync(join(LIB, "git.mjs"), "utf8").matchAll(/^export (?:async )?function (\w+)\(/gm)].map((m) => m[1]);
+  assert.ok(readers.length >= 10, `read ${readers.length} git readers`);
+  const call = new RegExp(`\\b(?:${readers.join("|")})\\([^;]*?\\)\\s*\\.catch\\(\\(\\)\\s*=>`, "g");
+  const whole = [];
+  for (const file of readdirSync(LIB).filter((name) => name.endsWith(".mjs") && name !== "git.mjs")) {
+    const src = scan(readFileSync(join(LIB, file), "utf8"));
+    for (const m of src.matchAll(call)) whole.push(`${file}:${src.slice(0, m.index).split("\n").length}`);
+  }
+  assert.deepEqual(whole, [], "catch with unaskedAs(value), which rethrows what is not an Unasked (F29)");
 });
 
 test("the writers do not reach the pipeline that produced the record", () => {

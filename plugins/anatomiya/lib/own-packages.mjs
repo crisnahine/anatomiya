@@ -10,7 +10,15 @@
 import { posix } from "node:path";
 
 import { claim, dirOf, escapeRe, withoutExtension } from "./paths.mjs";
-import { parsed } from "./transcript.mjs";
+
+/** A manifest's JSON as its value, or null for text that is not JSON. */
+const parsed = (text) => {
+  try {
+    return JSON.parse(text);
+  } catch {
+    return null;
+  }
+};
 
 /** The files that name a repository's own packages: npm's and its workspaces', Rush's and Go's. */
 export const MANIFESTS = new Set(["package.json", "pnpm-workspace.yaml", "lerna.json", "rush.json", "go.mod"]);

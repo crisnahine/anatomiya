@@ -1,6 +1,5 @@
 import { constants } from "node:fs";
 import { open } from "node:fs/promises";
-import { join } from "node:path";
 import { dirname } from "node:path/posix";
 
 import { parseAll } from "./parse.mjs";
@@ -749,7 +748,7 @@ function placedAmong(examined, tracked) {
 const heldSource = (file) => Boolean(file.from) && isSource(file.from);
 
 async function collect(root, run) {
-  const { examined, placed, areas, base, mode, added, capped, caveats, frameworks, capabilities, pending, cochange } = run;
+  const { examined, placed, areas, base, mode, added, capped, caveats, frameworks, capabilities, cochange } = run;
   const areaFor = areaIndex(areas);
   const ancestorsOf = ancestorsIndex(areas);
   // Which directives each area's file had no room to state, recomputed from the
@@ -1065,7 +1064,7 @@ async function addPairingFindings(root, findings, { examined, areas, base, cappe
   const tree = await filesAt(root, base.head, {
     timeout: GIT.checkTimeoutMs,
     maxFieldBytes: GIT.checkMaxBytes,
-  }).catch(() => null);
+  }).catch(unaskedAs(null));
   if (tree === null) {
     caveat(
       caveats,

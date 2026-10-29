@@ -2169,7 +2169,7 @@ times in the name, twice in its class, once in its doc sentence or path. The sum
 1.35 for 4 importers, 1.65 for 19, 2.2 for 252, and halved in a test file, since a test is named for
 what it tests and matched every word of django's `get_object_or_404` ahead of the function itself.
 It prints the best 6 on one line each:
-`name(params)  path:line  kind, N files import it  - doc`. A word only the path holds finds nothing,
+`name(params)  path:line  kind of container, N files import it, in a test file  - doc`, where `of container` prints only for a definition inside a class, module or namespace, the importers only above zero and as `1 file imports it` for one, and `in a test file` only for a test. A word only the path holds finds nothing,
 since every definition in that file would tie. `/anatomiya:find` runs it for a session, and the reuse
 check's reason names it with the absolute path of the bin that ran the hook, so the subagent's first
 search is one call (A124). The weights are `RANKING` in `find.mjs`, the module the hook loads for the

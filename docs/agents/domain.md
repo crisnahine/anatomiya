@@ -91,12 +91,15 @@ honours **is** a defect, and worth surfacing.
 When your output names a domain concept (in an issue title, a refactor proposal, a hypothesis, a test
 name), use the term as `CONTEXT.md` defines it, and not a word on its `_Avoid_` line.
 
-Two terms in the code are known to disagree with the glossary, so read them with care:
+Three terms in the code are known to disagree with the glossary, so read them with care:
 
 - `directive` in the code sometimes means the claim side alone. In the glossary it is either stated
   sentence, which is what every doc, the README and the CLI mean by it.
 - `baseline` appears at three levels of one result tree. The glossary splits it: **Pin** is what a human
   accepted, **Population** is one area's slice of it, **Baseline** is the counts measured there.
+- `symbol` in the code (`symbols.mjs`, the `symbols` facet, `findSymbols`, `SYMBOL_KINDS`) is what the
+  glossary calls a definition the **Code index** holds; the word the glossary avoids for the index is
+  on that entry's `_Avoid_` line.
 
 If the concept you need is in neither file, that's a signal. Either you're inventing language the project
 does not use (reconsider), or there's a real gap (note it for `/domain-modeling`).

@@ -18,8 +18,9 @@ the runtime for the grammars under `plugins/anatomiya/grammars/`. Ruby
 dimensions need `prism` 1.x, a default gem on Ruby 3.4 and up, so a system Ruby is
 usually enough. If you do not have Ruby, the Ruby tests skip and the rest still run.
 The dev dependency `ignore` is the package Claude Code matches a rule's `paths` with, so the
-tests read a rendered `paths` list through it. The other seven dev dependencies are the grammar
-packages the vendored `.wasm` files are copied from.
+tests read a rendered `paths` list through it. `fast-check` drives the fuzz cases in `test/fuzz.js`
+(B78). The other seven dev dependencies are the grammar packages the vendored `.wasm` files are
+copied from.
 
 ```sh
 npm install --ignore-scripts

@@ -56,7 +56,7 @@ import {
   TRUNCATED_LAYOUT,
 } from "../plugins/anatomiya/lib/render-layout.mjs";
 import { writeFacts } from "../plugins/anatomiya/lib/facts.mjs";
-import { statedSide } from "../plugins/anatomiya/lib/slot.mjs";
+import { rendersAsDirective, statedSide } from "../plugins/anatomiya/lib/slot.mjs";
 import { OVERVIEW_FILE } from "../plugins/anatomiya/lib/rules.mjs";
 import { planMap } from "../plugins/anatomiya/lib/write.mjs";
 import { encodePath } from "../plugins/anatomiya/lib/encode.mjs";
@@ -509,7 +509,7 @@ const statedCount = (areas, key) =>
     (n, a) =>
       n +
       a.dimensions.filter(
-        (d) => d.key === key && statedSide(d).states !== null && d.matchesDefault !== true
+        (d) => d.key === key && rendersAsDirective(d)
       ).length,
     0
   );

@@ -1,7 +1,7 @@
 import { degradedSemanticSentence, ORPHAN_CAUSES, truncatedHistoryLine, unexaminedLines, untrackedSentence } from "./render.mjs";
 import { layoutSummary, plural } from "./render-layout.mjs";
 import { oversizedSentence } from "./facts.mjs";
-import { statedSide } from "./slot.mjs";
+import { rendersAsDirective, statedSide } from "./slot.mjs";
 import { encode, encodePath, firstLine, locator } from "./encode.mjs";
 import { unreadReasons } from "./readiness.mjs";
 import { listSome, LISTED, PREFIX, RULES_DIR, SETTINGS_PATH, STORE_DIR } from "./rules.mjs";
@@ -50,7 +50,7 @@ export function scanSummary(result, plan, { dryRun = false, hook = null } = {}) 
   // Through the renderer's own partition, or the summary disagrees with the
   // map: a stated slot the model writes by default renders as a counts line.
   const authorGated = slots.filter((d) => statedSide(d).gate === "authors").length;
-  const stated = slots.filter((d) => statedSide(d).states !== null && d.matchesDefault !== true);
+  const stated = slots.filter(rendersAsDirective);
   const matching = slots.filter((d) => statedSide(d).states !== null && d.matchesDefault === true);
   // A co-change claim an area file carries is stated there; one no area file carries is said by the notice alone.
   const carried = statedClaims(result.layout?.cochange).filter((c) => c.area !== null).length;

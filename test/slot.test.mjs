@@ -7,7 +7,7 @@ import { join } from "node:path";
 
 import { runScan } from "../plugins/anatomiya/lib/commands.mjs";
 import { applyGates, reduceArea } from "../plugins/anatomiya/lib/reduce.mjs";
-import { isWholeArea, SCAN_ONLY, scopeOf, SLOT_FIELDS, slotRecord, statedSide } from "../plugins/anatomiya/lib/slot.mjs";
+import { isWholeArea, rendersAsDirective, SCAN_ONLY, scopeOf, SLOT_FIELDS, slotRecord, statedSide } from "../plugins/anatomiya/lib/slot.mjs";
 import { removeTree } from "./platform.mjs";
 
 const dim = (o) => ({
@@ -227,4 +227,12 @@ test("every field the table says the record keeps is one the record reads", () =
 test("no field is both one the record keeps and one the scan keeps for itself", () => {
   assert.deepEqual(SLOT_FIELDS.filter((f) => Object.hasOwn(SCAN_ONLY, f)), []);
   for (const [field, why] of Object.entries(SCAN_ONLY)) assert.ok(why.length > 20, `${field} says why it stays out`);
+});
+
+test("a slot renders as a directive where a side was stated and the model does not write it unprompted", () => {
+  assert.equal(rendersAsDirective(dim({})), true);
+  assert.equal(rendersAsDirective(dim({ matchesDefault: true })), false, "a stated side the model writes anyway is a counts line (A15)");
+  assert.equal(rendersAsDirective(dim({ states: null, directive: false, gate: "evidence" })), false, "a suppressed slot prints as counts");
+  // A record written before the inverse existed carries no `states`: the claim side it stated still renders.
+  assert.equal(rendersAsDirective(dim({ states: undefined, directive: true })), true);
 });

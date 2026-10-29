@@ -40,7 +40,7 @@ import { LANGUAGES, assertKeyed, familyOf, language } from "../plugins/anatomiya
 import { CLASSES } from "../plugins/anatomiya/lib/dimensions-naming.mjs";
 import { rowByKey } from "../plugins/anatomiya/lib/registry.mjs";
 import { FACTS_PATH, FACTS_SCHEMA, readRecord } from "../plugins/anatomiya/lib/facts.mjs";
-import { statedSide } from "../plugins/anatomiya/lib/slot.mjs";
+import { rendersAsDirective, statedSide } from "../plugins/anatomiya/lib/slot.mjs";
 import { PIN_PATH } from "../plugins/anatomiya/lib/baseline.mjs";
 import { MAX_LINES } from "../plugins/anatomiya/lib/render.mjs";
 import { isGeneratedName, nativeUpTo, OVERVIEW_FILE, RULES_DIR } from "../plugins/anatomiya/lib/rules.mjs";
@@ -364,7 +364,7 @@ export function probePlan(facts) {
   for (const area of facts.areas) {
     for (const key of PROBE_ROWS) {
       const d = (area.dimensions || []).find((x) => x.key === key);
-      if (!d || statedSide(d).states === null || d.matchesDefault === true) continue;
+      if (!d || !rendersAsDirective(d)) continue;
       if (typeof d.learned !== "string" || d.learned === "") continue;
       if (key === "file_naming_case" && !CLASSES.includes(d.learned)) continue;
       const ext = extFor(area, key);
@@ -406,7 +406,7 @@ function siteProbePlan(facts) {
 export function probeCell(plan, facts, named = false) {
   if (plan) return named ? `yes ${plan.dimension}` : "no";
   if (facts.areas.length === 0) return "n.a. (no area)";
-  const stated = facts.areas.some((area) => (area.dimensions || []).some((d) => statedSide(d).states !== null && d.matchesDefault !== true));
+  const stated = facts.areas.some((area) => (area.dimensions || []).some(rendersAsDirective));
   return stated ? "n.a. (no stated row one file breaks)" : "n.a. (no claim stated)";
 }
 
