@@ -2177,7 +2177,7 @@ query side, and `scripts/find-replay.mjs` scores a set of them against the recor
 
 The reason also names what the index already lists nearest the change (A126): the name each defining
 added line declares, read by one pattern per language (`def`, `function`, `fn`, `func`, a method's
-head; a name every class writes, `initialize`, `constructor`, `render`, is left out), is searched as `find` searches it, the best three per name and five in all, in the order the
+head; a name every class writes, `initialize`, `constructor`, `render`, is left out), is searched as `find` searches it among the code the added file can call, its own language, JavaScript and TypeScript with the components that embed them, or Java with Kotlin, the best three per name and five in all, in the order the
 names were added, the changed files' own rows left out, each quoted as repository text, and a search
 the stop's 500 ms overtakes gives up. An index file past 2 MiB is judged by its head and not searched
 there, and an index holding no definition names no `find`. Where the reason cannot name `find`, it names no candidate either. On the

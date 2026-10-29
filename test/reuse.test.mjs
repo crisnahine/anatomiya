@@ -1005,6 +1005,26 @@ test("a name every class has asks nothing, and the reason names only the names t
   assert.deepEqual(closest.hits.map((h) => h.name), ["format_report"]);
 });
 
+test("a candidate comes from code the added file could call: its own language, or one its runtime shares", () => {
+  const index = {
+    schema: 1,
+    count: 4,
+    files: [
+      ["app/javascript/api.ts", 0, [["getLinks", "fn", 13, null, "(response)", null, 14]]],
+      ["app/lib/tag_manager.rb", 0, [["local_url?", "method", 25, "TagManager", "(url)", null, 6]]],
+      ["src/main/java/Links.java", 0, [["linkFor", "method", 4, "Links", "(String url)", null, 3]]],
+      ["src/main/kotlin/Paths.kt", 0, [["linkOf", "fn", 2, null, "(url: String)", null, 2]]],
+    ],
+  };
+  const rb = closestTo(index, [{ path: "app/lib/link_policy.rb", names: ["local_link?", "getLinks"] }]);
+  assert.deepEqual(rb.hits.map((h) => h.rel), ["app/lib/tag_manager.rb"]);
+  assert.deepEqual(rb.names, ["local_link?"]);
+  const kt = closestTo(index, [{ path: "src/main/kotlin/New.kt", names: ["linkForUrl"] }]);
+  assert.deepEqual(kt.hits.map((h) => h.rel).sort(), ["src/main/java/Links.java", "src/main/kotlin/Paths.kt"], "Kotlin calls Java");
+  const vue = closestTo(index, [{ path: "app/javascript/Card.vue", names: ["getLinksFor"] }]);
+  assert.deepEqual(vue.hits.map((h) => h.rel), ["app/javascript/api.ts"], "a component calls the module's TypeScript");
+});
+
 test("a search past its deadline gives up rather than hand back a part of its ranking", () => {
   const index = { schema: 1, count: 1, files: [["src/url.ts", 0, [["parseUrl", "fn", 1, null, "(t)", null, 3]]]] };
   assert.deepEqual(findSymbols(index, ["parse", "url"], RANKING, { deadline: performance.now() - 1 }), []);

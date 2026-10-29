@@ -260,31 +260,49 @@ const REUSE_FIND_MS = 500;
 // Per name, and over the whole change: enough to point at a helper, short enough to read in the reason.
 const CLOSEST_EACH = 3;
 const CLOSEST_MOST = 5;
+const CLOSEST_ASKED = 30;
 // django's 39,257 definitions zip to 634 KB and read in about 15 ms; a larger index is left to `find`, which no hook clock bounds.
 export const REUSE_INDEX_BYTES = 2 * 1024 * 1024;
 
 /**
  * The definitions the code index already lists nearest the names a change
  * declared, and the names that found them, or null where it lists none: the
- * best few for each name, the rows of the changed files left out, since they
+ * best few for each name among the code the file declaring it can call, its
+ * own language or one its runtime shares, the rows of the changed files left out, since they
  * are the last scan's copy of what the turn rewrote. Past `deadline` no further
  * name is asked, and a search it overtakes gives up.
  */
 export function closestTo(index, files, { deadline = performance.now() + REUSE_FIND_MS } = {}) {
   const changed = new Set(files.map((f) => f.path));
-  const names = [...new Set(files.flatMap((f) => f.names ?? []))];
+  const asked = new Set();
   const found = [];
   const hits = new Map();
-  for (const name of names) {
-    if (hits.size >= CLOSEST_MOST || performance.now() > deadline) break;
-    const before = hits.size;
-    for (const hit of findSymbols(index, [name], { ...RANKING, shown: CLOSEST_EACH }, { deadline })) {
-      const at = `${hit.rel}:${hit.line}`;
-      if (!changed.has(hit.rel) && !hits.has(at) && hits.size < CLOSEST_MOST) hits.set(at, hit);
+  for (const file of files) {
+    const callable = runtimeOf(file.path);
+    for (const name of file.names ?? []) {
+      if (hits.size >= CLOSEST_MOST || performance.now() > deadline) break;
+      if (asked.has(name)) continue;
+      asked.add(name);
+      const before = hits.size;
+      // Searched past the hits it keeps, since a definition the added file cannot call is passed over.
+      const near = findSymbols(index, [name], { ...RANKING, shown: CLOSEST_ASKED }, { deadline }).filter((hit) => !changed.has(hit.rel) && runtimeOf(hit.rel) === callable);
+      for (const hit of near.slice(0, CLOSEST_EACH)) {
+        const at = `${hit.rel}:${hit.line}`;
+        if (!hits.has(at) && hits.size < CLOSEST_MOST) hits.set(at, hit);
+      }
+      if (hits.size > before) found.push(name);
     }
-    if (hits.size > before) found.push(name);
   }
   return hits.size ? { names: found, hits: [...hits.values()] } : null;
+}
+
+// Code a file can call: JavaScript, TypeScript and the components that embed them are one, Java and Kotlin share a runtime, and each other language is its own.
+const SHARED_RUNTIME = { java: "jvm", kotlin: "jvm" };
+function runtimeOf(rel) {
+  const lang = language(rel);
+  if (lang === null) return null;
+  const engine = engineOf(lang);
+  return engine === "tree-sitter" ? (SHARED_RUNTIME[lang] ?? lang) : engine;
 }
 
 /** What the stop after a check says, which is also what keeps those files from being asked about again. */
