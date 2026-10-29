@@ -176,6 +176,8 @@ test("an index past what a stop reads whole is judged by its head, and names fin
   assert.equal(usableIndex(dir, { readMost: 8 }), null, "an older schema is refused by its head too");
   writeIndex(dir, gzipSync(JSON.stringify({ schema: 1, count: 0, files: [] })));
   assert.equal(finderFor(usableIndex(dir, { readMost: 8 })), null, "and a head that counts no definition names no find");
+  writeIndex(dir, "not gzip, and longer than the bound");
+  assert.equal(usableIndex(dir, { readMost: 8 }), null, "a head that is no gzip reads as no index");
 });
 
 test("a stop over an index find refuses asks with the grep, through the hook itself", async (t) => {
