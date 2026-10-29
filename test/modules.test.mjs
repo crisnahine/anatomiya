@@ -265,12 +265,10 @@ test("the repository reader takes the capability stems without the walker", () =
 // A field a row adds to a hit crossed the worker boundary only if the copy in
 // `collectHits` named it, and nothing held that copy to what a reader reads:
 // `nesting` was dropped once and the base-class row stated nothing. The table
-// is one owner now, and this reads every field the two readers take off a
-// hit. Each reader names the one field that is its own: the obligation rows
-// build their sites in pairing.mjs, beside the fold, and `elsewhere` is
-// theirs; the check runs the rows in process and keeps the `node`, which never
-// crosses. The aliases are the ones each file spells, `at` being a grouped
-// site the fold builds from a hit.
+// is one owner now, and this reads every field the fold takes off a hit; the
+// check takes the same crossed hits through `collectHits`. `elsewhere` is the
+// fold's own, since the obligation rows build their sites in pairing.mjs, and
+// `at` is a grouped site the fold builds from a hit.
 test("every field a reader takes off a site crossed the worker boundary, or is that reader's own", async () => {
   const { HIT_FIELDS } = await import("../plugins/anatomiya/lib/walk.mjs");
   const crossed = new Set(HIT_FIELDS.map(([name]) => name));
@@ -278,7 +276,6 @@ test("every field a reader takes off a site crossed the worker boundary, or is t
   // matches reads as nothing to hold, and nothing passes.
   const readers = [
     ["reduce.mjs", /\b(?:h|hit|at)\.([a-zA-Z]+)\b/g, new Set(["elsewhere"]), 5],
-    ["introduced.mjs", /\b(?:h|hit)\.([a-zA-Z]+)\b/g, new Set(["node"]), 2],
   ];
   for (const [file, alias, own, floor] of readers) {
     const src = scan(readFileSync(join(LIB, file), "utf8"));
@@ -287,6 +284,20 @@ test("every field a reader takes off a site crossed the worker boundary, or is t
     assert.ok(read.size >= floor, `${file} reads only ${[...read].join(", ")}`);
     assert.deepEqual([...read].filter((f) => !crossed.has(f) && !own.has(f)).sort(), [], file);
   }
+});
+
+// The check took raw hits off a row's own `run` while the scan took what
+// crossed, so a field the boundary dropped still worked in the check and in
+// the row tests and was missing from the map.
+test("a row is run through hit collection alone, by the scan, the check and the tests", () => {
+  const lib = readdirSync(LIB).filter((f) => f.endsWith(".mjs") && /\.run\(/.test(scan(readFileSync(join(LIB, f), "utf8"))));
+  assert.deepEqual(lib, ["walk.mjs"]);
+  const TEST = join(ROOT, "test");
+  // walk.test.mjs holds the walk itself, and a row's refusal of a missing input is asserted where it throws.
+  const tests = readdirSync(TEST)
+    .filter((f) => f.endsWith(".test.mjs") && f !== "walk.test.mjs")
+    .flatMap((f) => readFileSync(join(TEST, f), "utf8").split("\n").filter((line) => /\.run\(/.test(line) && !/assert\.throws/.test(line)).map((line) => `${f}: ${line.trim()}`));
+  assert.deepEqual(tests, []);
 });
 
 // The filename row's sentence was rebuilt in the check from the template
@@ -301,6 +312,16 @@ test("the check words a learned row's claim through its owner", () => {
   assert.ok(names.includes("claimFor"), names.join(", "));
   assert.ok(!names.includes("fillClass"), "the template is filled by its owner, not here");
   assert.doesNotMatch(src, /claimTemplate/);
+});
+
+test("whether a row is asked of a file is read in one module", () => {
+  // The scan, the fold and the check each held a copy of these gates, and a
+  // copy one of them missed made the map and the check disagree with no error.
+  const readers = readdirSync(LIB)
+    .filter((f) => f.endsWith(".mjs") && /\.(?:blindWhenStripped|needsTypeSyntax)\b/.test(scan(readFileSync(join(LIB, f), "utf8"))))
+    .sort();
+  // dimensions.mjs refuses a malformed declaration at load, walk.mjs answers the question.
+  assert.deepEqual(readers, ["dimensions.mjs", "walk.mjs"]);
 });
 
 test("the parse worker does not reach the registry", () => {
@@ -773,7 +794,7 @@ test("a hook verb loads none of the scan, the check or the parser", () => {
   // The other arms by count, before any lazy import and with each followed (A100).
   const sizes = (opts) => Object.fromEntries(["echo", "notice", "reuse", "refresh"].map((verb) => [verb, armReach(verb, opts).size]));
   assert.deepEqual(sizes(), { echo: 15, notice: 15, reuse: 15, refresh: 33 });
-  assert.deepEqual(sizes({ lazy: true }), { echo: 39, notice: 39, reuse: 39, refresh: 33 });
+  assert.deepEqual(sizes({ lazy: true }), { echo: 41, notice: 41, reuse: 41, refresh: 33 });
   assert.ok(armReach("notice", { lazy: true }).has("precedent.mjs"), "the notice's lazy import was not followed");
   assert.ok(armReach("reuse", { lazy: true }).has("reuse.mjs"), "the reuse check's lazy import was not followed");
 });

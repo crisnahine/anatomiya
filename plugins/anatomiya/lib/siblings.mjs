@@ -434,6 +434,51 @@ function definedIn(ctx, file, name, seen) {
   return next === undefined ? null : definedIn(ctx, next, name, seen);
 }
 
+/** The parts of a qualified name an import or a call writes: `Role.find`, `Admin::Role`, `Role#find`. */
+const partsOf = (name) => name.split(/::|[.#]/);
+
+/**
+ * Which files other than its own import or call each of a file's `symbols`, off
+ * the names `reuseIndex` resolved to it, and which symbols each name credits. A
+ * call written `Class.method` credits the method of that class and the class;
+ * one qualified by a module or a package, `db.GetEngine`, the file's own
+ * function of that name, or the one an inline module of that name holds,
+ * `util::parse`; a bare name every symbol of that name. The one rule the code
+ * index and the area's reuse line both count by.
+ */
+export function creditOf(symbols, byName, rel) {
+  const files = symbols.map(() => new Set());
+  const names = new Map();
+  // Looked up by name: tried against every symbol, a file of thousands of definitions
+  // read each name it is reached by thousands of times.
+  const named = new Map();
+  const classes = new Map();
+  for (const [i, [name, kind]] of symbols.entries()) {
+    if (!named.has(name)) named.set(name, []);
+    named.get(name).push(i);
+    if (kind === "class" || kind === "module" || kind === "type") {
+      if (!classes.has(name)) classes.set(name, []);
+      classes.get(name).push(i);
+    }
+  }
+  const credit = (i, who) => {
+    for (const file of who) if (file !== rel) files[i].add(file);
+  };
+  for (const [name, who] of byName ?? []) {
+    const parts = partsOf(name);
+    const owner = parts.length > 1 ? parts.at(-2) : null;
+    const meant = [];
+    for (const i of named.get(parts.at(-1)) ?? []) {
+      const container = symbols[i][3];
+      if (owner === null || (classes.has(owner) ? owner === container : container === null || container === owner)) meant.push(i);
+    }
+    for (const i of meant) credit(i, who);
+    for (const part of new Set(parts)) for (const i of classes.get(part) ?? []) credit(i, who);
+    if (meant.length) names.set(name, meant);
+  }
+  return { files, names };
+}
+
 /**
  * The names the rest of the repository imports out of an area, top five.
  *
@@ -450,12 +495,19 @@ export function mostImported(areaRels, allRecords, corpusRels, own = null) {
 
   const rows = [];
   for (const file of areaRels) {
-    for (const [name, who] of byFile.get(file) ?? []) {
+    const byName = byFile.get(file);
+    if (!byName) continue;
+    // A name the code index credits to a definition counts every file that definition is credited
+    // with, so the line and `find` agree about one helper; a name no definition answers counts its own.
+    const { files: credited, names } = creditOf(allRecords.get(file)?.facets?.symbols ?? [], byName, file);
+    for (const [name, who] of byName) {
       // A namespace import names no export, so it is no name to look for: it
       // printed as an empty entry, "most imported from here:  (5 files)".
       if (name === "*") continue;
+      const reaching = new Set(who);
+      for (const i of names.get(name) ?? []) for (const rel of credited[i]) reaching.add(rel);
       let importers = 0;
-      for (const rel of who) if (!areaRels.has(rel)) importers++;
+      for (const rel of reaching) if (!areaRels.has(rel)) importers++;
       if (importers >= MIN_IMPORTERS) rows.push({ name: rowName(name, file), file, importers });
     }
   }

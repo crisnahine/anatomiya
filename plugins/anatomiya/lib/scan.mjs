@@ -19,7 +19,8 @@ import { extOf, extOrName } from "./paths.mjs";
 import { MANIFESTS, ownPackages } from "./own-packages.mjs";
 import { isLink, readHead } from "./rules.mjs";
 import { commonImports, mostImported } from "./siblings.mjs";
-import { buildIndex, readIndex } from "./code-index.mjs";
+import { buildIndex } from "./code-index.mjs";
+import { readIndex } from "./index-home.mjs";
 
 // A manifest larger than this is no manifest anybody wrote by hand, and is not read.
 const MANIFEST_MOST_BYTES = 256 * 1024;

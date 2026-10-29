@@ -5,7 +5,12 @@ import { tmpdir } from "node:os";
 import { gzipSync } from "node:zlib";
 import { join } from "node:path";
 
-import { buildIndex, findSymbols, formatHit, importersOf, queryWords, readIndex, saveIndex } from "../plugins/anatomiya/lib/code-index.mjs";
+import { buildIndex, saveIndex } from "../plugins/anatomiya/lib/code-index.mjs";
+import { findSymbols, formatHit, queryWords, RANKING } from "../plugins/anatomiya/lib/find.mjs";
+import { creditOf } from "../plugins/anatomiya/lib/siblings.mjs";
+
+const importersOf = (symbols, byName, rel) => creditOf(symbols, byName, rel).files.map((files) => files.size);
+import { readIndex } from "../plugins/anatomiya/lib/index-home.mjs";
 import { INDEX_FILE, STORE_DIR } from "../plugins/anatomiya/lib/rules.mjs";
 
 /** A parse record as the worker writes it, carrying only what the index reads. */
@@ -65,6 +70,17 @@ test("find ranks a name holding every word first, then by importers, and source 
   // And a word however it ends: a plural, `-ing`, `-ation`.
   assert.deepEqual(queryWords(["compareUrls", "URL", "comparing"]), ["compar", "url"]);
   assert.deepEqual(queryWords(["indentation", "indents"]), ["indent"]);
+});
+
+test("the ranking is find's to take: today's numbers by default, and another set reorders the same hits", () => {
+  const { files, records, corpusRels } = repository();
+  const index = buildIndex(files, records, corpusRels);
+  const names = (ranking) => findSymbols(index, ["compare", "urls"], ranking).map((h) => h.name);
+  assert.deepEqual(names(RANKING), names(undefined));
+  // A test's match weighed three times a source's ranks the fixture ahead of the helper it covers.
+  assert.deepEqual(names({ ...RANKING, test: 3 }), ["compareUrlsFixture", "compareUrls", "urlBadge"]);
+  assert.equal(findSymbols(index, ["compare", "urls"], { ...RANKING, shown: 1 }).length, 1);
+  assert.throws(() => findSymbols(index, ["url"], { ...RANKING, name: undefined }), /a ranking names every weight RANKING does/);
 });
 
 test("a rare word outweighs common ones, and a name typed run together finds the name", () => {

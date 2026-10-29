@@ -63,6 +63,11 @@ def reserve(order):
 
 class Ledger(*mixins, **options):
     pass
+
+from . import util
+from ..shop.money import format_price as fp
+
+handler = lambda event: event
 `;
 
 export const php = `<?php
@@ -151,6 +156,8 @@ final class Rate
 }
 
 $rate->cents = 1;
+use function App\\Support\\money;
+use const App\\Support\\RATE;
 ?>
 <p>Totals are in cents.</p>
 `;
@@ -285,9 +292,16 @@ class Rates {
         }
     }
 }
+
+class Ledger {
+    Ledger(int id) {
+    }
+}
 `;
 
 export const csharp = `// Billing totals.
+global using System.Text;
+using static System.Math;
 using System;
 using System.Linq;
 using Text = System.Text;
@@ -363,6 +377,20 @@ namespace Billing
 
     public record Line(string Name, decimal Price);
 }
+
+// A file holds one kind of namespace, and the grammar reads both.
+namespace Billing.Reports;
+
+public enum Kind { Sale, Refund }
+
+public delegate int Pricer(decimal price);
+
+public class Ledger
+{
+    public Ledger(int id)
+    {
+    }
+}
 `;
 
 export const rust = `#![allow(dead_code)]
@@ -419,6 +447,21 @@ pub fn describe(order: &Order) -> String {
         return USAGE.to_string();
     }
     order.to_string()
+}
+
+use crate::billing::{tax, money::round};
+
+enum Kind {
+    Sale,
+    Refund,
+}
+
+type Cents = i64;
+
+macro_rules! double {
+    ($x:expr) => {
+        $x * 2
+    };
 }
 `;
 
@@ -482,4 +525,12 @@ fun Order?.orZero(): Int {
 fun (() -> Int).twice(): Int {
     return this() + this()
 }
+
+typealias Cents = Long
+
+class Ledger(val id: Int) {
+    constructor(name: String) : this(0)
+}
+
+fun <T> first(items: List<T>): T = items[0]
 `;

@@ -21,8 +21,9 @@ import { otherEntries, pinSummary, scanSummary } from "./summary.mjs";
 import { untrackedSentence } from "./render.mjs";
 import { removeStaleHook } from "./hook.mjs";
 import { saveHistory } from "./history.mjs";
-import { findSymbols, formatHit, queryWords, readIndex, saveIndex } from "./code-index.mjs";
-import { indexHome, indexRefused } from "./index-home.mjs";
+import { saveIndex } from "./code-index.mjs";
+import { findSymbols, formatHit, queryWords } from "./find.mjs";
+import { indexRefused, usableIndex } from "./index-home.mjs";
 
 /**
  * One entry per command: the whole recipe, composed once.
@@ -69,12 +70,6 @@ export async function runScan(cwd, { dryRun = false, targets = null, leaveAlone 
   return { result, plan, hook, history, indexed, summary: scanSummary(result, plan, { dryRun, hook }) };
 }
 
-/** The code index that answers for a checkout, its own or its main checkout's, and where it lives. */
-function indexFor(root) {
-  const home = indexHome(root);
-  return { home, index: home === null ? null : readIndex(home) };
-}
-
 // The index's line when there is none to read: one the last scan could not write, another would not either.
 const noIndex = (root) => (indexRefused(root) ? "none; the last scan could not write one, past the size a scan writes" : "none; the next scan or refresh writes one");
 
@@ -85,7 +80,7 @@ const noIndex = (root) => (indexRefused(root) ? "none; the last scan could not w
  */
 export async function runFind(cwd, words) {
   const root = await gitRoot(cwd);
-  const { index } = indexFor(root);
+  const index = usableIndex(root)?.index ?? null;
   if (index === null) {
     const line = indexRefused(root)
       ? "The last scan could not write a code index: it was past the size a scan writes, and another scan would not write one either."
@@ -301,8 +296,8 @@ async function targetLines(cwd) {
   const facts = readFacts(root).facts;
   const lines = [];
   // Where a scan made a map here, or in the main checkout a linked worktree reads: elsewhere no index is missing.
-  const { home, index } = indexFor(root);
-  if (facts || home !== null) lines.push(`code index: ${index === null ? noIndex(root) : `${plural(index.count, "definition")}, as of the last scan`}`);
+  const index = usableIndex(root)?.index ?? null;
+  if (facts || index !== null) lines.push(`code index: ${index === null ? noIndex(root) : `${plural(index.count, "definition")}, as of the last scan`}`);
   const claude = auditRules(root, facts).removing.length;
   if (claude > 0) lines.push(removingLine(TARGETS.claude.dir, claude));
   for (const target of Object.values(TARGETS).filter((t) => !isClaude(t))) {

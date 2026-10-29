@@ -23,43 +23,23 @@ import { commentAbove, docLine, lineStarts, paramsText, symbol } from "./symbols
 import { SHAPES } from "./tree-shapes.mjs";
 import { fieldOf, lastLeaf, leaves, nameOf, walkTree } from "./tree-walk.mjs";
 
-const firstOfType = (node, type) => node.children.find((c) => c.type === type) ?? null;
+/** Whether a node is one of `types`, a list `SHAPES` holds or does not. */
+const is = (node, types) => node != null && types !== undefined && types.includes(node.type);
+const firstOf = (node, types) => node.children.find((c) => is(c, types)) ?? null;
 
-// The declarations past `fn` and `cls` that name something another file may use.
-const DEFINES_TOO = {
-  python: [],
-  php: [],
-  go: ["type_spec", "const_spec", "var_spec"],
-  java: [],
-  csharp: ["enum_declaration"],
-  rust: ["struct_item", "enum_item", "type_item", "const_item", "static_item"],
-  kotlin: [],
-};
+// What the code index lists beside the functions and classes the rows read, by the kind it lists each as. Held
+// apart from `fn` and `cls` because a row's own count passes over a constructor on purpose.
+const indexedKind = (node, s) =>
+  is(node, s.indexedFn) ? "fn" : is(node, s.indexedMethod) ? "method" : is(node, s.indexedType) ? "type" : null;
 
-assertKeyed("DEFINES_TOO", DEFINES_TOO, hostedBy("tree-sitter"));
-
-// What the code index lists beside the functions and classes the rows read, by the kind it lists each as. Kept
-// apart from `SHAPES` because a row's own count passes over a constructor on purpose.
-const INDEXED_TOO = {
-  python: { assignment: "fn" },
-  php: {},
-  go: {},
-  java: { constructor_declaration: "method" },
-  csharp: { constructor_declaration: "method", delegate_declaration: "type" },
-  rust: { macro_definition: "fn" },
-  kotlin: { secondary_constructor: "method", type_alias: "type" },
-};
-
-assertKeyed("INDEXED_TOO", INDEXED_TOO, hostedBy("tree-sitter"));
-
-/** The name an `INDEXED_TOO` node is listed by, or null where it is not one: Python lists an assignment only of a lambda. */
-function indexedName(node) {
-  if (node.type === "assignment") {
-    const left = fieldOf(node, "left");
-    return left?.type === "identifier" && fieldOf(node, "right")?.type === "lambda" ? left.text : null;
+/** The name an indexed node is listed by, or null where it is not one: Python lists an assignment only of a lambda. */
+function indexedName(node, s) {
+  if (is(node, s.indexedFn) && s.lambda) {
+    const left = fieldOf(node, s.lambdaTarget);
+    return is(left, s.lambdaName) && is(fieldOf(node, s.lambdaValue), s.lambda) ? left.text : null;
   }
-  if (node.type === "secondary_constructor") return "constructor";
-  if (node.type === "type_alias") return fieldOf(node, "type")?.text ?? null;
+  if (is(node, s.ctorToo)) return "constructor";
+  if (is(node, s.aliasToo)) return fieldOf(node, s.aliasName)?.text ?? null;
   return nameOf(node);
 }
 
@@ -79,62 +59,62 @@ const member = (cls, method, stems, joiner, extra = {}) => ({ name: `${cls}${joi
 // A Python module is a file, or a package's `__init__`.
 const moduleStems = (module) => [module, `${module}/__init__`];
 
-function python(node, refs, file, rel) {
-  if (node.type === "import_from_statement") {
-    const from = fieldOf(node, "module_name");
+function python(node, refs, file, rel, s) {
+  if (is(node, s.refFrom)) {
+    const from = fieldOf(node, s.refModule);
     if (from === null) return;
     let base = null;
     let path = [];
-    if (from.type === "relative_import") {
-      const dots = (firstOfType(from, "import_prefix")?.text ?? ".").length;
+    if (is(from, s.refRelative)) {
+      const dots = (firstOf(from, s.refDots)?.text ?? ".").length;
       base = above(rel, dots - 1);
       if (base === null) return;
-      const rest = firstOfType(from, "dotted_name");
+      const rest = firstOf(from, s.refDotted);
       path = rest ? leaves(rest) : [];
     } else path = leaves(from);
-    const placed = (stems) => (base === null ? { stems } : { stems: stems.map((s) => posix.join(base, s)), exact: true });
+    const placed = (stems) => (base === null ? { stems } : { stems: stems.map((stem) => posix.join(base, stem)), exact: true });
     for (const child of node.children) {
-      if (child.field !== "name") continue;
-      const named = child.type === "aliased_import" ? fieldOf(child, "name") : child;
+      if (child.field !== s.refName) continue;
+      const named = is(child, s.refAliased) ? fieldOf(child, s.refName) : child;
       if (named === null) continue;
       const name = leaves(named).join(".");
       const parent = path.join("/");
       const asModule = parent === "" ? name : `${parent}/${name}`;
       refs.push({ name, ...placed([...moduleStems(asModule), ...(parent === "" ? ["__init__"] : moduleStems(parent))]) });
       // The name may be a module, whose attributes a call then reaches.
-      const alias = child.type === "aliased_import" ? (fieldOf(child, "alias")?.text ?? name) : name;
+      const alias = is(child, s.refAliased) ? (fieldOf(child, s.refAlias)?.text ?? name) : name;
       file.modules.set(alias, placed(moduleStems(asModule)));
     }
-  } else if (node.type === "import_statement") {
+  } else if (is(node, s.refImport)) {
     for (const child of node.children) {
-      if (child.field !== "name") continue;
-      const named = child.type === "aliased_import" ? fieldOf(child, "name") : child;
+      if (child.field !== s.refName) continue;
+      const named = is(child, s.refAliased) ? fieldOf(child, s.refName) : child;
       if (named === null) continue;
       const path = leaves(named);
       const module = path.join("/");
       refs.push({ name: path.at(-1), stems: moduleStems(module) });
-      const alias = child.type === "aliased_import" ? fieldOf(child, "alias")?.text : null;
+      const alias = is(child, s.refAliased) ? fieldOf(child, s.refAlias)?.text : null;
       file.modules.set(alias ?? path.join("."), { stems: moduleStems(module) });
     }
-  } else if (node.type === "attribute") {
+  } else if (is(node, s.refAttribute)) {
     // `shop.money.format_price` after `import shop.money`, or `t.slug` after `import shop.text as t`.
-    const object = fieldOf(node, "object");
-    const attribute = fieldOf(node, "attribute");
-    const module = object && attribute?.type === "identifier" ? file.modules.get(leaves(object).join(".")) : undefined;
+    const object = fieldOf(node, s.refObject);
+    const attribute = fieldOf(node, s.refMember);
+    const module = object && is(attribute, s.refIdent) ? file.modules.get(leaves(object).join(".")) : undefined;
     if (module !== undefined) refs.push({ name: attribute.text, ...module });
   }
 }
 
-function java(node, refs, file) {
-  if (node.type === "package_declaration") {
-    const path = node.children.find((c) => c.type === "scoped_identifier" || c.type === "identifier");
+function java(node, refs, file, rel, s) {
+  if (is(node, s.refPackage)) {
+    const path = firstOf(node, s.refPathNodes);
     if (path) file.namespace = leaves(path).join(".");
-  } else if (node.type === "import_declaration") {
-    const target = node.children.find((c) => c.type === "scoped_identifier" || c.type === "identifier");
+  } else if (is(node, s.refImport)) {
+    const target = firstOf(node, s.refPathNodes);
     if (!target) return;
     const path = leaves(target);
-    const isStatic = node.tokens?.includes("static") === true;
-    if (node.children.some((c) => c.type === "asterisk")) {
+    const isStatic = node.tokens?.includes(s.refStatic.token) === true;
+    if (node.children.some((c) => is(c, s.refWildcard))) {
       // A package's classes, which the file then names bare.
       if (!isStatic) file.wildcards.push(path.join("/"));
     } else if (isStatic) {
@@ -143,10 +123,10 @@ function java(node, refs, file) {
       file.classes.set(path.at(-1), path.join("/"));
       refs.push({ name: path.at(-1), stems: [path.join("/")] });
     }
-  } else if (node.type === "method_invocation") {
-    const object = fieldOf(node, "object");
+  } else if (is(node, s.refCall)) {
+    const object = fieldOf(node, s.refObject);
     const method = nameOf(node);
-    if (object?.type !== "identifier" || !method) return;
+    if (!is(object, s.refIdent) || !method) return;
     const stem = file.classes.get(object.text);
     // A class named bare is the file's own package's before it is any wildcard's, as Java looks it up.
     const packages = file.wildcards.length ? [...(file.namespace ? [file.namespace.replaceAll(".", "/")] : []), ...file.wildcards] : [];
@@ -155,25 +135,25 @@ function java(node, refs, file) {
   }
 }
 
-function kotlin(node, refs, file) {
-  if (node.type === "package_header") {
-    const path = node.children.find((c) => c.type === "qualified_identifier" || c.type === "identifier");
+function kotlin(node, refs, file, rel, s) {
+  if (is(node, s.refPackage)) {
+    const path = firstOf(node, s.refPathNodes);
     if (path) file.namespace = leaves(path).join(".");
-  } else if (node.type === "import") {
-    const path = firstOfType(node, "qualified_identifier");
+  } else if (is(node, s.refImport)) {
+    const path = firstOf(node, s.refQualified);
     if (!path) return;
     const segments = leaves(path);
-    if (node.tokens?.some((t) => t === "*" || t === ".*")) {
+    if (node.tokens?.includes(s.refStar.token)) {
       file.wildcards.push(segments.join("/"));
       return;
     }
-    const alias = node.children.find((c) => c !== path && c.type === "identifier")?.text ?? segments.at(-1);
+    const alias = node.children.find((c) => c !== path && is(c, s.refIdent))?.text ?? segments.at(-1);
     const ref = { name: segments.at(-1), stems: [segments.join("/")], dir: segments.slice(0, -1).join("/"), lookup: segments.at(-1) };
     file.classes.set(alias, ref);
     refs.push(ref);
-  } else if (node.type === "navigation_expression") {
+  } else if (is(node, s.refNavigation)) {
     const [object, field] = node.children;
-    if (object?.type !== "identifier" || field?.type !== "identifier") return;
+    if (!is(object, s.refIdent) || !is(field, s.refIdent)) return;
     const ref = file.classes.get(object.text);
     if (ref !== undefined) refs.push(member(ref.name, field.text, ref.stems, ".", { dir: ref.dir, lookup: ref.lookup }));
     else if (/^[A-Z]/.test(object.text)) {
@@ -182,16 +162,16 @@ function kotlin(node, refs, file) {
   }
 }
 
-function go(node, refs, file) {
-  if (node.type === "import_spec") {
-    const path = leaves(fieldOf(node, "path") ?? node).join("");
-    const local = fieldOf(node, "name")?.text ?? path.slice(path.lastIndexOf("/") + 1);
+function go(node, refs, file, rel, s) {
+  if (is(node, s.refImport)) {
+    const path = leaves(fieldOf(node, s.refPath) ?? node).join("");
+    const local = fieldOf(node, s.refLocal)?.text ?? path.slice(path.lastIndexOf("/") + 1);
     // A blank import runs the package and names nothing, and a dot import names every member bare.
     if (local !== "_" && local !== "." && path.includes("/")) file.packages.set(local, path);
-  } else if (node.type === "selector_expression") {
-    const operand = fieldOf(node, "operand");
-    const path = operand?.type === "identifier" ? file.packages.get(operand.text) : undefined;
-    const field = fieldOf(node, "field")?.text;
+  } else if (is(node, s.refSelector)) {
+    const operand = fieldOf(node, s.refOperand);
+    const path = is(operand, s.refIdent) ? file.packages.get(operand.text) : undefined;
+    const field = fieldOf(node, s.refField)?.text;
     if (path !== undefined && field) refs.push({ name: `${path.slice(path.lastIndexOf("/") + 1)}.${field}`, dir: path, lookup: field });
   }
 }
@@ -200,20 +180,20 @@ function go(node, refs, file) {
  * Every leaf path a Rust use tree holds, as its segments: `a::{b, c::d}` is `a::b` and `a::c::d`,
  * and `a::{self}` is `a` itself.
  */
-function useLeaves(node, prefix, out) {
-  if (node.type === "scoped_use_list") {
-    const path = fieldOf(node, "path");
-    const list = fieldOf(node, "list");
+function useLeaves(node, prefix, out, s) {
+  if (is(node, s.refUseList)) {
+    const path = fieldOf(node, s.refPath);
+    const list = fieldOf(node, s.refList);
     const at = path ? [...prefix, ...leaves(path)] : prefix;
-    for (const child of list?.children ?? []) useLeaves(child, at, out);
-  } else if (node.type === "use_list") {
-    for (const child of node.children) useLeaves(child, prefix, out);
-  } else if (node.type === "use_as_clause") {
-    const path = fieldOf(node, "path");
+    for (const child of list?.children ?? []) useLeaves(child, at, out, s);
+  } else if (is(node, s.refUses)) {
+    for (const child of node.children) useLeaves(child, prefix, out, s);
+  } else if (is(node, s.refAs)) {
+    const path = fieldOf(node, s.refPath);
     if (path) out.push([...prefix, ...leaves(path)]);
-  } else if (node.type === "self" && prefix.length > 0) {
+  } else if (is(node, s.refSelf) && prefix.length > 0) {
     out.push(prefix);
-  } else if (node.type !== "use_wildcard" && node.type !== "line_comment" && node.type !== "block_comment") {
+  } else if (!is(node, s.refWildcard) && !is(node, s.comment)) {
     out.push([...prefix, ...leaves(node)]);
   }
 }
@@ -267,99 +247,99 @@ function rustRef(segments, rel, external) {
   return { name, stems: crates.flatMap((c) => [`${c}/src/${at}`, `${c}/src/${at}/mod`, parentAt === "" ? `${c}/src/lib` : `${c}/src/${parentAt}`]) };
 }
 
-function rust(node, refs, file, rel) {
-  if (node.type === "use_declaration") {
-    const argument = fieldOf(node, "argument");
+function rust(node, refs, file, rel, s) {
+  if (is(node, s.refUse)) {
+    const argument = fieldOf(node, s.refArgument);
     if (!argument) return;
     const paths = [];
-    useLeaves(argument, [], paths);
+    useLeaves(argument, [], paths, s);
     for (const segments of paths) {
       const ref = rustRef(segments, rel, true);
       if (ref !== null) refs.push(ref);
     }
-  } else if (node.type === "call_expression") {
+  } else if (is(node, s.refCall)) {
     // `crate::text::escape(x)` names its module with no `use`; a path into another crate is that crate's.
-    const callee = fieldOf(node, "function");
-    const segments = callee?.type === "scoped_identifier" ? leaves(callee) : null;
+    const callee = fieldOf(node, s.refCallee);
+    const segments = is(callee, s.refScoped) ? leaves(callee) : null;
     const ref = segments !== null && ANCHORS.has(segments[0]) ? rustRef(segments, rel, false) : null;
     if (ref !== null) refs.push(ref);
   }
 }
 
-function php(node, refs, file) {
-  if (node.type === "namespace_definition") {
+function php(node, refs, file, rel, s) {
+  if (is(node, s.refNamespace)) {
     // The first a file declares: a file holding two is a bundle, which no autoloader reads by its path.
-    const name = fieldOf(node, "name");
+    const name = fieldOf(node, s.refName);
     if (name && file.namespace === null) file.namespace = leaves(name).join(".");
-  } else if (node.type === "namespace_use_declaration") {
+  } else if (is(node, s.refUse)) {
     // `use function` and `use const` name what no autoloader maps to a file: a group says so once, a clause for itself.
-    const unmapped = (n) => n.tokens?.some((t) => t === "function" || t === "const") === true;
+    const unmapped = (n) => n.tokens?.some((t) => t === s.refUnmapped.token || t === s.refUnmappedConst.token) === true;
     if (unmapped(node)) return;
-    const prefix = firstOfType(node, "namespace_name");
-    const group = fieldOf(node, "body");
-    const clauses = (group ?? node).children.filter((c) => c.type === "namespace_use_clause");
+    const prefix = firstOf(node, s.refPrefix);
+    const group = fieldOf(node, s.refGroup);
+    const clauses = (group ?? node).children.filter((c) => is(c, s.refClause));
     for (const clause of clauses) {
       if (unmapped(clause)) continue;
-      const written = clause.children.find((c) => c.field !== "alias" && (c.type === "qualified_name" || c.type === "name"));
+      const written = clause.children.find((c) => c.field !== s.refAlias && is(c, s.refWritten));
       if (!written) continue;
       const segments = [...(prefix ? leaves(prefix) : []), ...leaves(written)];
-      const alias = fieldOf(clause, "alias")?.text ?? segments.at(-1);
+      const alias = fieldOf(clause, s.refAlias)?.text ?? segments.at(-1);
       // A PSR-4 prefix maps a namespace onto a directory spelled otherwise, `App\` onto `app/`: the tail past it is what a path holds.
       const stems = segments.length > 2 ? [segments.join("/"), segments.slice(1).join("/")] : [segments.join("/")];
       file.classes.set(alias, { name: segments.at(-1), stems });
       refs.push({ name: segments.at(-1), stems });
     }
-  } else if (node.type === "scoped_call_expression") {
-    const scope = fieldOf(node, "scope");
-    const ref = scope?.type === "name" ? file.classes.get(scope.text) : undefined;
+  } else if (is(node, s.refScoped)) {
+    const scope = fieldOf(node, s.refScope);
+    const ref = is(scope, s.refBare) ? file.classes.get(scope.text) : undefined;
     const method = nameOf(node);
     if (ref !== undefined && method) refs.push(member(ref.name, method, ref.stems, "::"));
-  } else if (node.type === "function_definition") {
+  } else if (is(node, s.refFunction)) {
     // A function is PHP's to load for every file, however deep the block it is declared in.
     const name = nameOf(node);
     if (name) file.globals.add(name);
-  } else if (node.type === "function_call_expression") {
+  } else if (is(node, s.refCall)) {
     // `money(2)`, or `\App\Support\money(2)`, whose namespace PHP looks the function up in first.
-    const callee = fieldOf(node, "function");
-    const name = callee?.type === "name" ? callee.text : callee?.type === "qualified_name" ? callee.children.at(-1)?.text : null;
+    const callee = fieldOf(node, s.refCallee);
+    const name = is(callee, s.refBare) ? callee.text : is(callee, s.refQualified) ? callee.children.at(-1)?.text : null;
     if (name) refs.push({ name, global: name });
   }
 }
 
-function csharp(node, refs, file) {
-  if (node.type === "using_directive") {
-    const path = node.children.find((c) => c.type === "qualified_name" || c.type === "identifier");
+function csharp(node, refs, file, rel, s) {
+  if (is(node, s.refUsing)) {
+    const path = firstOf(node, s.refPathNodes);
     // An alias names one type or namespace under another name, which nothing below reads.
-    if (!path || node.children.some((c) => c.field === "name")) return;
+    if (!path || node.children.some((c) => c.field === s.refAliasField)) return;
     const segments = leaves(path);
-    if (node.tokens?.includes("static")) refs.push({ name: segments.at(-1), type: segments.at(-1), in: segments.slice(0, -1).join(".") });
+    if (node.tokens?.includes(s.refStatic.token)) refs.push({ name: segments.at(-1), type: segments.at(-1), in: segments.slice(0, -1).join(".") });
     // A global using opens its namespace for every file of the project.
-    else if (node.tokens?.includes("global")) file.globalUsings.push(segments.join("."));
+    else if (node.tokens?.includes(s.refGlobal.token)) file.globalUsings.push(segments.join("."));
     else file.usings.push(segments.join("."));
-  } else if (node.type === "namespace_declaration" || node.type === "file_scoped_namespace_declaration") {
-    const name = fieldOf(node, "name");
+  } else if (is(node, s.refNamespace)) {
+    const name = fieldOf(node, s.refName);
     if (name) file.namespace = leaves(name).join(".");
-  } else if (node.type === "member_access_expression") {
-    const object = fieldOf(node, "expression");
-    const name = fieldOf(node, "name");
-    if (name?.type !== "identifier") return;
-    if (object?.type === "identifier" && /^[A-Z]/.test(object.text)) {
+  } else if (is(node, s.refAccess)) {
+    const object = fieldOf(node, s.refExpression);
+    const name = fieldOf(node, s.refName);
+    if (!is(name, s.refIdent)) return;
+    if (is(object, s.refIdent) && /^[A-Z]/.test(object.text)) {
       refs.push({ name: `${object.text}.${name.text}`, bare: object.text, member: name.text, type: object.text });
-    } else if (object !== null && node.field === "function") {
+    } else if (object !== null && node.field === s.refCallee) {
       // A call on a value: an extension method of that name, where the repository declares one. A call on
       // `this` or `base`, which the tree writes with no node of its own, is the class's own method.
       refs.push({ name: name.text, extension: name.text });
     }
-  } else if (node.type === "object_creation_expression") {
-    const type = fieldOf(node, "type");
-    if (type?.type === "identifier") refs.push({ name: type.text, type: type.text });
-  } else if (node.type === "base_list") {
-    for (const base of node.children) if (base.type === "identifier") refs.push({ name: base.text, type: base.text });
-  } else if (node.type === "method_declaration") {
+  } else if (is(node, s.refNew)) {
+    const type = fieldOf(node, s.refType);
+    if (is(type, s.refIdent)) refs.push({ name: type.text, type: type.text });
+  } else if (is(node, s.refBases)) {
+    for (const base of node.children) if (is(base, s.refIdent)) refs.push({ name: base.text, type: base.text });
+  } else if (is(node, s.refMethod)) {
     // `this` on the first parameter makes the method callable on any value of that parameter's type.
-    const first = firstOfType(fieldOf(node, "parameters") ?? node, "parameter");
+    const first = firstOf(fieldOf(node, s.params) ?? node, s.refParam);
     const name = nameOf(node);
-    if (name && first?.children.some((c) => c.type === "modifier" && c.text === "this")) file.extensions.add(name);
+    if (name && first?.children.some((c) => is(c, s.refModifier) && c.text === "this")) file.extensions.add(name);
   }
 }
 
@@ -367,55 +347,53 @@ const READERS = { python, java, kotlin, go, rust, php, csharp };
 
 assertKeyed("READERS", READERS, hostedBy("tree-sitter"));
 
-// The declarations past `fn` and `cls` the index lists as values; the rest it lists as types.
-const CONSTANTS = new Set(["const_spec", "var_spec", "const_item", "static_item"]);
 const HASH_COMMENTS = new Set(["python", "php"]);
-const UNNAMED_TYPES = new Set(["tuple_type", "array_type"]);
 
 /** The name a method's container is known by: its class's, an `impl`'s type's past its path and type arguments, or a Go receiver's type's. */
 function containerOf(node, ctx, shapes) {
   const typeArgs = new Set(shapes.typeArgs ?? []);
-  const receiver = fieldOf(node, "receiver");
+  const receiver = shapes.receiver === undefined ? null : fieldOf(node, shapes.receiver);
   // `(l *List[T])` names the list, past its type parameters.
   if (receiver) return lastLeaf(receiver, typeArgs);
   for (let i = ctx.stack.length - 1; i >= 0; i--) {
     const held = ctx.stack[i];
-    const typed = fieldOf(held, "type");
-    // A trait implemented for a tuple or an array names no type a method belongs to.
-    const implemented = typed && !UNNAMED_TYPES.has(typed.type) ? typed : null;
+    const typed = shapes.implType === undefined ? null : fieldOf(held, shapes.implType);
+    const implemented = typed && !is(typed, shapes.implUnnamed) ? typed : null;
     const name = nameOf(held) ?? (implemented && lastLeaf(implemented, typeArgs)) ?? null;
     if (name) return name;
   }
   return null;
 }
 
-/** A function's parameter list: the `parameters` field, or the first parameter list that is not a Go receiver. */
-const paramsOf = (node) =>
-  fieldOf(node, "parameters") ?? node.children.find((child) => /param/.test(child.type) && child.field !== "receiver") ?? null;
+/** A function's parameter list: its grammar's field for one, or the first of its parameter lists that is not a Go receiver. */
+const paramsOf = (node, s) =>
+  (s.params === undefined ? null : fieldOf(node, s.params)) ??
+  node.children.find((child) => is(child, s.paramList) && (s.receiver === undefined || child.field !== s.receiver)) ??
+  null;
 
-/** A Python docstring's text: the first statement of the body, where it is a string. */
-function docstringOf(node) {
-  const first = fieldOf(node, "body")?.children[0];
-  const string = first?.type === "expression_statement" ? first.children[0] : null;
-  return string?.type === "string" ? leaves(string).join("") : null;
+/** A docstring's text: the first statement of the body, where it is a string. */
+function docstringOf(node, s) {
+  const first = fieldOf(node, s.docHolder)?.children[0];
+  const string = is(first, s.docFirst) ? first.children[0] : null;
+  return is(string, s.docText) ? leaves(string).join("") : null;
 }
 
-/** Each definition no function holds, as `symbols.mjs` spells one; `listed` is its `INDEXED_TOO` kind where it has one. */
+/** Each definition no function holds, as `symbols.mjs` spells one; `listed` is its indexed kind where it has one. */
 function symbolOf(node, ctx, lang, shapes, source, starts, listed = null) {
   if (ctx.fn !== null) return null;
-  const name = listed ? indexedName(node) : nameOf(node);
+  const name = listed ? indexedName(node, shapes) : nameOf(node);
   if (!name) return null;
   const fn = listed ? listed !== "type" : shapes.fn.includes(node.type);
   let kind = "type";
-  if (fn && listed !== "type") kind = ctx.cls !== null || fieldOf(node, "receiver") ? "method" : "fn";
+  if (fn && listed !== "type") kind = ctx.cls !== null || (shapes.receiver !== undefined && fieldOf(node, shapes.receiver)) ? "method" : "fn";
   else if (!listed && shapes.cls.includes(node.type)) kind = "class";
-  else if (!listed && CONSTANTS.has(node.type)) kind = "const";
-  const lambda = node.type === "assignment" ? fieldOf(fieldOf(node, "right"), "parameters") : null;
-  const params = fn || listed ? (lambda ?? paramsOf(node)) : null;
+  else if (!listed && is(node, shapes.indexedConst)) kind = "const";
+  const lambda = is(node, shapes.indexedFn) && shapes.lambda ? fieldOf(fieldOf(node, shapes.lambdaValue), shapes.lambdaParams) : null;
+  const params = fn || listed ? (lambda ?? paramsOf(node, shapes)) : null;
   const written = params && source.slice(params.start, params.end);
   // A Java or C# declaration starts at its first annotation: its doc sits above that, and a reader is sent to its name.
-  const line = fieldOf(node, "name")?.line ?? node.line;
-  const raw = (lang === "python" ? docstringOf(node) : null) ?? commentAbove(source, starts, node.line, HASH_COMMENTS.has(lang));
+  const line = fieldOf(node, shapes.name)?.line ?? node.line;
+  const raw = (shapes.docHolder === undefined ? null : docstringOf(node, shapes)) ?? commentAbove(source, starts, node.line, HASH_COMMENTS.has(lang));
   const container = kind === "method" || ctx.stack.length ? containerOf(node, ctx, shapes) : null;
   return symbol(name, kind, line, container, written && paramsText(lambda ? `(${written})` : written), docLine(raw));
 }
@@ -431,7 +409,7 @@ const sorted = (set) => [...set].sort();
 export function treeRefs(program, lang, rel, source = null) {
   const read = READERS[lang];
   const shapes = SHAPES[lang];
-  const declares = new Set([...shapes.fn, ...shapes.cls, ...DEFINES_TOO[lang]]);
+  const declares = new Set([...shapes.fn, ...shapes.cls, ...(shapes.definesToo ?? [])]);
   const refs = [];
   const defines = new Set();
   const symbols = [];
@@ -453,11 +431,11 @@ export function treeRefs(program, lang, rel, source = null) {
       if (name) defines.add(name);
       const defined = starts && symbolOf(node, ctx, lang, shapes, source, starts);
       if (defined) symbols.push(defined);
-    } else if (starts && INDEXED_TOO[lang][node.type]) {
-      const defined = symbolOf(node, ctx, lang, shapes, source, starts, INDEXED_TOO[lang][node.type]);
+    } else if (starts && indexedKind(node, shapes)) {
+      const defined = symbolOf(node, ctx, lang, shapes, source, starts, indexedKind(node, shapes));
       if (defined) symbols.push(defined);
     }
-    read(node, refs, file, rel);
+    read(node, refs, file, rel, shapes);
   });
   const seen = new Set();
   const unique = refs.filter((ref) => {

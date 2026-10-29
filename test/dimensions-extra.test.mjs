@@ -5,14 +5,13 @@ import { siteIdentity } from "../plugins/anatomiya/lib/introduced.mjs";
 import { EXTRA_DIMENSIONS } from "../plugins/anatomiya/lib/dimensions-extra.mjs";
 import { ALL_DIMENSIONS } from "../plugins/anatomiya/lib/dimensions.mjs";
 import { dimensionsFor } from "../plugins/anatomiya/lib/walk.mjs";
+import { hitsOf } from "./hits.mjs";
 
 const dim = (key) => EXTRA_DIMENSIONS.find((d) => d.key === key);
 
 function hits(key, src) {
   const { program } = parseSync("f.tsx", src, { sourceType: "module" });
-  const out = [];
-  dim(key).run(program, (h) => out.push(h));
-  return out;
+  return hitsOf(dim(key), program);
 }
 
 const counts = (key, src) => {
@@ -353,11 +352,9 @@ test("every hit carries a typed node with offsets into the parsed source", () =>
   `;
   const { program } = parseSync("f.tsx", src, { sourceType: "module" });
   for (const d of EXTRA_DIMENSIONS) {
-    const out = [];
-    d.run(program, (h) => out.push(h));
+    const out = hitsOf(d, program);
     assert.ok(out.length > 0, `${d.key} matched nothing, so it proves nothing here`);
     for (const h of out) {
-      assert.equal(typeof h.conforming, "boolean", d.key);
       assert.ok(h.node && typeof h.node.type === "string", `${d.key} hit carries no node`);
       assert.equal(typeof h.node.start, "number", `${d.key} node has no start offset`);
       assert.equal(typeof h.node.end, "number", `${d.key} node has no end offset`);
@@ -366,8 +363,7 @@ test("every hit carries a typed node with offsets into the parsed source", () =>
     // The identity is the slice, never the offset: the same file with one more
     // line ahead of it identifies every site the same way.
     const shifted = `\n${src}`;
-    const moved = [];
-    d.run(parseSync("f.tsx", shifted, { sourceType: "module" }).program, (h) => moved.push(h));
+    const moved = hitsOf(d, parseSync("f.tsx", shifted, { sourceType: "module" }).program);
     assert.equal(moved.length, out.length, d.key);
     for (const [i, h] of out.entries()) {
       assert.equal(siteIdentity("src/a.tsx", d.key, h.node, src), siteIdentity("src/a.tsx", d.key, moved[i].node, shifted), `${d.key} site ${i}`);
@@ -490,9 +486,7 @@ test("peeling a cast does not blind the dimension whose site is the cast", () =>
 
 const docHits = (src) => {
   const { program, comments } = parseSync("f.tsx", src, { sourceType: "module" });
-  const out = [];
-  dim("doc_comment_style").run(program, (h) => out.push(h), { comments, source: src });
-  return out;
+  return hitsOf(dim("doc_comment_style"), program, { comments, source: src });
 };
 
 test("an exported declaration with a comment directly above conforms", () => {
@@ -1038,9 +1032,7 @@ test("a return that voids a call is the guard clause it abbreviates", () => {
 
 const withExtras = (key, src) => {
   const { program, comments } = parseSync("f.tsx", src, { sourceType: "module" });
-  const out = [];
-  dim(key).run(program, (h) => out.push(h), { comments, source: src });
-  return out;
+  return hitsOf(dim(key), program, { comments, source: src });
 };
 
 test("a JSX file reads React as a value, so its import is not type-only", () => {

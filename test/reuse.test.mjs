@@ -3,14 +3,15 @@ import assert from "node:assert/strict";
 import fs, { chmodSync, existsSync, mkdirSync, mkdtempSync, readFileSync, realpathSync, rmSync, symlinkSync, utimesSync, writeFileSync } from "node:fs";
 import { syncBuiltinESMExports } from "node:module";
 import { tmpdir } from "node:os";
+import { gzipSync } from "node:zlib";
 import { basename, dirname, join } from "node:path";
 import { execFileSync, spawnSync } from "node:child_process";
 
 import { scriptGit } from "./git-script.mjs";
 import { needsPathControl, needsPosixPaths, needsPosixSpecialFiles, needsShebang, needsSymlinks, removeTree } from "./platform.mjs";
 import { snapshot, transcript } from "./transcript.mjs";
-import { indexHome } from "../plugins/anatomiya/lib/index-home.mjs";
-import { askedMarksIn, continuedByReuseIn, finderFor, pendingChange, quotable, resumedByReuseIn, REUSE_GIT_MS, REUSE_MARK, reuseReason, TRANSCRIPT_MOST } from "../plugins/anatomiya/lib/reuse.mjs";
+import { usableIndex } from "../plugins/anatomiya/lib/index-home.mjs";
+import { askedMarksIn, closestTo, continuedByReuseIn, declaredIn, finderFor, pendingChange, quotable, resumedByReuseIn, REUSE_GIT_MS, REUSE_MARK, reuseReason, TRANSCRIPT_MOST } from "../plugins/anatomiya/lib/reuse.mjs";
 import { runReuse } from "../plugins/anatomiya/lib/hook-verbs.mjs";
 import { PAYLOAD_WAIT_MS } from "../plugins/anatomiya/lib/hook.mjs";
 import { REUSE_PARSE_MS } from "../plugins/anatomiya/lib/inert.mjs";
@@ -114,6 +115,13 @@ test("with a code index the reason hands the subagent find in place of the grep,
   assert.equal(tail(found), tail(plain));
 });
 
+// What a scan writes, one function in one file.
+const INDEX = { schema: 1, count: 1, files: [["src/a.ts", 0, [["parseUrl", "fn", 1, null, "(text)", null, 0]]]] };
+const writeIndex = (root, body) => {
+  mkdirSync(join(root, ".claude", "anatomiya"), { recursive: true });
+  writeFileSync(join(root, ".claude", "anatomiya", "index.json.gz"), body);
+};
+
 test("the finder is the checkout's own index, or its main checkout's for a linked worktree, and none where neither has one", async (t) => {
   const { addWorktree, initWithCommit, scratch } = await import("./git-worktrees.mjs");
   const main = scratch(t);
@@ -121,15 +129,58 @@ test("the finder is the checkout's own index, or its main checkout's for a linke
   const tree = join(main, "..", `${basename(main)}-wt`);
   addWorktree(main, tree);
   t.after(() => rmSync(tree, { recursive: true, force: true }));
-  assert.equal(indexHome(main), null);
-  assert.equal(finderFor(main), null);
+  assert.equal(usableIndex(main), null);
+  assert.equal(finderFor(usableIndex(main)), null);
 
-  mkdirSync(join(main, ".claude", "anatomiya"), { recursive: true });
-  writeFileSync(join(main, ".claude", "anatomiya", "index.json.gz"), "");
-  assert.equal(indexHome(main), main);
-  assert.equal(indexHome(tree), main, "a linked worktree borrows its main checkout's");
+  writeIndex(main, gzipSync(JSON.stringify(INDEX)));
+  assert.equal(usableIndex(main).home, main);
+  assert.equal(usableIndex(tree).home, main, "a linked worktree borrows its main checkout's");
+  assert.equal(usableIndex(tree).index.count, 1);
   // The words go in one single-quoted argument, so a shell globs none of them: `local_url?` is a pattern to zsh.
-  assert.match(finderFor(tree), /^node ".+anatomiya\.mjs" find '<words>'$/);
+  assert.match(finderFor(usableIndex(tree)), /^node ".+anatomiya\.mjs" find '<words>'$/);
+
+  // A worktree whose own copy cannot be read borrows the main checkout's, as one with none does.
+  writeIndex(tree, "not gzip");
+  assert.equal(usableIndex(tree).home, main);
+});
+
+test("an index find cannot read never makes the reason name find, so the grep advice stays", async (t) => {
+  const refused = {
+    "an empty file": "",
+    "bytes that are not gzip": "garbage",
+    "an older schema": gzipSync(JSON.stringify({ ...INDEX, schema: 0 })),
+    "JSON with no rows": gzipSync(JSON.stringify({ schema: 1, count: 0 })),
+  };
+  for (const [what, body] of Object.entries(refused)) {
+    const root = mkdtempSync(join(tmpdir(), "anatomiya-index-"));
+    t.after(() => removeTree(root));
+    writeIndex(root, body);
+    assert.equal(usableIndex(root), null, what);
+    assert.equal(finderFor(usableIndex(root)), null, what);
+    assert.match(reuseReason([{ path: "src/a.ts", mark: "000000000000", hunks: [{ from: 1, to: 2, created: true }] }], { finder: finderFor(usableIndex(root)) }), /Have it grep shared and utility modules/, what);
+  }
+});
+
+test("a stop over an index find refuses asks with the grep, through the hook itself", async (t) => {
+  const { dir, write } = repo(t);
+  writeIndex(dir, gzipSync(JSON.stringify({ ...INDEX, schema: 0 })));
+  write("src/b.ts", "export function parseUrlStrict(text) {\n  return text;\n}\n");
+  const answer = await runReuse(dir, stop(dir, { transcript_path: begun(t) }));
+  assert.equal(answer.decision, "block");
+  assert.match(answer.reason, /Have it grep shared and utility modules/);
+  assert.doesNotMatch(answer.reason, /find '<words>'|already lists/);
+});
+
+test("an index reached through a link is not read, so it does not name find either", needsSymlinks, async (t) => {
+  const root = mkdtempSync(join(tmpdir(), "anatomiya-index-link-"));
+  const elsewhere = mkdtempSync(join(tmpdir(), "anatomiya-index-target-"));
+  t.after(() => removeTree(root));
+  t.after(() => removeTree(elsewhere));
+  writeFileSync(join(elsewhere, "index.json.gz"), gzipSync(JSON.stringify(INDEX)));
+  mkdirSync(join(root, ".claude", "anatomiya"), { recursive: true });
+  symlinkSync(join(elsewhere, "index.json.gz"), join(root, ".claude", "anatomiya", "index.json.gz"));
+  assert.equal(usableIndex(root), null);
+  assert.equal(finderFor(usableIndex(root)), null);
 });
 
 test("a long change names its first hunks, counts the rest, and marks every file", () => {
@@ -853,6 +904,108 @@ test("a turn that added source code in a scanned repository is asked to check it
 
   assert.equal(answer.decision, "block");
   assert.match(answer.reason, /src\/b\.ts:1-3 \(new file\)/);
+});
+
+test("with a usable index the reason names the existing functions closest to what the change added", async (t) => {
+  const { dir, write } = repo(t);
+  writeIndex(dir, gzipSync(JSON.stringify({
+    schema: 1,
+    count: 3,
+    files: [
+      ["src/util/url.ts", 0, [["parseUrl", "fn", 3, null, "(text)", "Parse a URL the way the router does.", 12], ["joinPath", "fn", 9, null, "(a, b)", null, 4]]],
+      ["src/b.ts", 0, [["parseUrlStrict", "fn", 1, null, "(old)", null, 0]]],
+    ],
+  })));
+  write("src/b.ts", "export function parseUrlStrict(text) {\n  return new URL(text);\n}\n");
+
+  const answer = await runReuse(dir, stop(dir, { transcript_path: begun(t) }));
+
+  assert.equal(answer.decision, "block");
+  assert.match(answer.reason, /The code index already lists these closest to the added parseUrlStrict: parseUrl\(text\)  src\/util\/url\.ts:3  fn, 12 files import it  - Parse a URL the way the router does\. /);
+  // The changed file's own row is the last scan's copy of what the turn rewrote, so it is no candidate.
+  assert.doesNotMatch(answer.reason, /src\/b\.ts:1  fn/);
+  assert.doesNotMatch(answer.reason, /joinPath/);
+});
+
+test("the names an added line declares are read per language, and a line that asks nothing names nothing", () => {
+  const cases = [
+    ["oxc", "export async function parseUrl(text) {", "parseUrl"],
+    ["oxc", "export const formatDate = (d: Date): string => {", "formatDate"],
+    ["oxc", "const toSlug = async function (s) {", "toSlug"],
+    ["oxc", "  static fromJson(raw) {", "fromJson"],
+    ["oxc", "export class PriceTag extends Base {", "PriceTag"],
+    ["oxc", "  if (ready) {", null],
+    ["prism", "  def self.local_url?(url)", "local_url?"],
+    ["prism", "class Admin::Report < ApplicationRecord", "Admin::Report"],
+    ["python", "async def fetch_rows(session):", "fetch_rows"],
+    ["php", "    public function totalFor(Request $request)", "totalFor"],
+    ["go", "func (s *Store) GetEngine(ctx context.Context) *Engine {", "GetEngine"],
+    ["java", "    public static List<String> splitWords(String text) {", "splitWords"],
+    ["csharp", "    public async Task<int> CountRows(string table)", "CountRows"],
+    ["rust", "pub(crate) fn uuid_v7() -> Uuid {", "uuid_v7"],
+    ["kotlin", "fun <T> List<T>.secondOrNull(): T? {", "secondOrNull"],
+    ["oxc", "  async *items() {", "items"],
+    ["java", "    @Override public String describeRow() {", "describeRow"],
+    ["java", "    List<String> splitWords(String text) {", "splitWords"],
+    ["csharp", "    [HttpGet] public IActionResult Report() {", "Report"],
+    // A call that opens a callback is no definition, and neither is a statement.
+    ["oxc", 'it("works", function () {', null],
+    ["oxc", 'describe("parse", () => {', null],
+    ["oxc", "setTimeout(function () {", null],
+    ["oxc", "with (scope) {", null],
+    ["java", "    public static <T extends Comparable<T>> List<T> sortAll(List<T> xs) {", "sortAll"],
+    ["java", "    Map<String, List<Integer>> group(List<Item> items) {", "group"],
+    ["csharp", "    public Dictionary<string, int> Build() {", "Build"],
+    ["csharp", "    public int Sum(int a, int b) => a + b;", "Sum"],
+    ["csharp", "    public override string ToString() {", null],
+    ["python", "    def __repr__(self):", null],
+    ["oxc", "  handleClick = () => {", "handleClick"],
+    ["oxc", "  onChange = (e: Event): void => {", "onChange"],
+    ["oxc", "  static create<T>(x: T): Foo<T> {", "create"],
+    ["kotlin", "    override suspend fun loadRows(id: Int): List<Row> {", "loadRows"],
+    ["kotlin", '    println("fun x(")', null],
+    ["java", "    return compute(rows);", null],
+    ["java", "    } else if (ready(x)) {", null],
+  ];
+  for (const [family, line, name] of cases) {
+    assert.deepEqual(declaredIn(family, line, [{ from: 1, to: 1 }], [false]), name === null ? [] : [name], `${family}: ${line}`);
+  }
+  assert.deepEqual(declaredIn("oxc", "export function a() {}", [{ from: 1, to: 1 }], [true]), [], "an inert line names nothing");
+  assert.deepEqual(declaredIn("cobol", "PROCEDURE DIVISION.", [{ from: 1, to: 1 }], [false]), []);
+});
+
+test("a name every class has asks nothing, and the reason names only the names that found something", () => {
+  const index = { schema: 1, count: 3, files: [["app/a.rb", 0, [["initialize", "method", 2, "A", "(x)", null, 0], ["format_report", "method", 5, "A", "()", null, 4]]], ["app/b.rb", 0, [["initialize", "method", 2, "B", "()", null, 0]]]] };
+  assert.deepEqual(declaredIn("prism", "  def initialize(rows)\n  def format_report_line\n", [{ from: 1, to: 2 }], [false, false]), ["format_report_line"]);
+  const closest = closestTo(index, [{ path: "app/new.rb", names: ["zzz_nothing", "format_report_line"] }]);
+  assert.deepEqual(closest.names, ["format_report_line"]);
+  assert.deepEqual(closest.hits.map((h) => h.name), ["format_report"]);
+});
+
+test("an index past the size a stop can search in time is not searched", () => {
+  const index = { schema: 1, count: 300_000, files: [["src/url.ts", 0, [["parseUrl", "fn", 1, null, "(t)", null, 3]]]] };
+  assert.equal(closestTo(index, [{ path: "src/new.ts", names: ["parseUrlStrict"] }]), null);
+});
+
+test("the index is searched until its deadline, and a change with no names asks it nothing", () => {
+  const index = { schema: 1, count: 1, files: [["src/url.ts", 0, [["parseUrl", "fn", 1, null, "(t)", null, 3]]]] };
+  const files = [{ path: "src/new.ts", names: ["parseUrlStrict"] }];
+  assert.equal(closestTo(index, files).hits[0].name, "parseUrl");
+  assert.equal(closestTo(index, files, { deadline: performance.now() - 1 }), null);
+  assert.equal(closestTo(index, [{ path: "src/new.ts" }]), null);
+});
+
+test("with no usable index, or none close, the reason is the one it was", async (t) => {
+  const { dir, write } = repo(t);
+  write("src/b.ts", NEW_B);
+  const plain = await runReuse(dir, stop(dir, { transcript_path: begun(t) }));
+  assert.doesNotMatch(plain.reason, /already lists/);
+  assert.match(plain.reason, /Have it grep shared and utility modules/);
+
+  writeIndex(dir, gzipSync(JSON.stringify({ schema: 1, count: 1, files: [["src/util/url.ts", 0, [["parseUrl", "fn", 3, null, "(text)", null, 2]]]] })));
+  const far = await runReuse(dir, stop(dir, { transcript_path: begun(t) }));
+  assert.doesNotMatch(far.reason, /already lists/);
+  assert.match(far.reason, /find '<words>'/);
 });
 
 test("a session started above its checkouts is asked about each one's change, named from where it stands", async (t) => {

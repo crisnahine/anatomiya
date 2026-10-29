@@ -59,6 +59,20 @@ test("a renamed import is found by what its grammar marks the new name with: a f
   }
 });
 
+test("the reader of imports, calls and definitions spells no node type or field name of any grammar", () => {
+  // It read about sixty of them as literals, which no test held to the grammars: a renamed node dropped
+  // a language's definitions or importer counts to zero with no error.
+  const src = readFileSync(join(ANATOMIYA, "lib", "tree-refs.mjs"), "utf8").replace(/^\s*(?:\/\/|\*|\/\*\*).*$/gm, "");
+  const spelled = [...src.matchAll(/"([^"\\]*)"|'([^'\\]*)'/g)].map((m) => m[1] ?? m[2]);
+  assert.ok(spelled.length > 5, "the scan reads the module's strings");
+  const grammar = spelled.filter((name) =>
+    name !== "" && [...LANGUAGES.values()].some((language) => language.idForNodeType(name, true) !== null || language.fieldIdForName(name) !== null),
+  );
+  // Words some grammar also uses as a name, spelled here as something else: a symbol's kind, the name a
+  // constructor is listed by, and source text a Rust path or a C# modifier is written with.
+  assert.deepEqual([...new Set(grammar)].sort(), ["constructor", "crate", "self", "super", "this", "type"]);
+});
+
 test("every language names what the walk and the copy read", () => {
   for (const id of IDS) {
     for (const key of ["fn", "cls", "comment", "import", "annotation", "tokensOf"]) {

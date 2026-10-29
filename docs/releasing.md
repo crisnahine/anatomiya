@@ -72,6 +72,8 @@ on a release that already existed. Push the tag and let the workflow make the re
 - [ ] For a change to the co-change walk or its gates, `node scripts/measure-cochange.mjs` over the
       44 repositories `docs/measurements/2026-10-11-cochange.md` names gives the numbers the documents
       cite, and they still match.
+- [ ] For a change to `find`'s ranking or to the index rows it reads, `node scripts/find-replay.mjs`
+      over indexes scanned at the commits H60 names gives a score no lower than H60 records.
 - [ ] A real session runs the plugin from the checkout: `claude -p "<a task that adds a file>"
       --plugin-dir plugins/anatomiya --setting-sources project,local` in a corpus copy, and its
       transcript under `~/.claude/projects/` holds the map's one delivery, the area file for a file it

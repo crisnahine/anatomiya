@@ -7,6 +7,23 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and
 
 ## [Unreleased]
 
+### Changed
+
+- The end-of-turn reuse check now names, in its reason, the definitions the code index already lists
+  nearest each function the turn added: an added `local_url_for?` on mastodon brings
+  `TagManager#local_url?` first. Not yet measured in sessions (A126).
+- The "most imported from here" line counts a class's importers the way the code index does, so a
+  class whose methods the rest of the repository calls is counted with those callers, and one helper
+  reads the same number in its area file and in `find`. 94 of 979 area lines changed over 12
+  repositories, none lost an importer (H61).
+- The reuse check names `find` only where `find` can read the index: a link, an older schema or bytes
+  that are not one keep the grep advice.
+
+### Added
+
+- `scripts/find-replay.mjs` scores `find`'s ranking against the 19 recorded queries: 0.882 on this
+  build, and none of 810 other weight sets scored higher (H60).
+
 ## [0.20.0] - 2026-10-29
 
 A scan now writes a code index of every definition it reads, in all nine languages, and the end-of-turn

@@ -2,9 +2,10 @@ import { test } from "node:test";
 import assert from "node:assert/strict";
 
 import { parseFile } from "../plugins/anatomiya/lib/parse-file.mjs";
-import { holdsTypeSyntax } from "../plugins/anatomiya/lib/langs.mjs";
+import { asks } from "../plugins/anatomiya/lib/walk.mjs";
 import { REGISTRY, rowByKey } from "../plugins/anatomiya/lib/registry.mjs";
 import { EXCLUDED, HOLDS, COMPONENT_FIXTURES } from "./component-fixtures.mjs";
+import { hitsOf } from "./hits.mjs";
 
 /**
  * What a person reading each component would answer for each JavaScript row,
@@ -109,9 +110,8 @@ async function answers(fixture) {
   const out = {};
   for (const key of treeKeys) {
     const row = rowByKey(key);
-    if (row.needsTypeSyntax && !holdsTypeSyntax(fixture.rel, record.facets)) continue;
-    const hits = [];
-    row.run(record.program, (hit) => hits.push(hit), { comments: record.comments, source: fixture.source, rel: fixture.rel });
+    if (!asks({ ...row, langs: [fixture.lang] }, { lang: fixture.lang, facets: record.facets, stripped: record.stripped, rel: fixture.rel })) continue;
+    const hits = hitsOf(row, record.program, { comments: record.comments, source: fixture.source, rel: fixture.rel });
     if (hits.length === 0) continue;
     out[key] = row.learnedClasses
       ? hits.map((h) => h.class).sort().join(" ")
@@ -190,13 +190,11 @@ test("a row gains the two ids after its own, so its walk stays the oxc walk", ()
   }
 });
 
-const hitsOf = async (key, rel, source) => {
+const componentHits = async (key, rel, source) => {
   const lang = rel.slice(rel.lastIndexOf(".") + 1);
   const record = await parseFile(source, rel, ["vue", "svelte"].includes(lang) ? lang : "js", { withProgram: true });
   assert.equal(record.ok, true, `${rel} parses`);
-  const hits = [];
-  rowByKey(key).run(record.program, (hit) => hits.push(hit), { comments: record.comments, source, rel });
-  return hits;
+  return hitsOf(rowByKey(key), record.program, { comments: record.comments, source, rel });
 };
 
 test("a function a Vue template renders as a component is not a function name", async () => {
@@ -220,7 +218,7 @@ const generateColumns = (length = 10) => Array.from({ length });
 `;
   const vue = `<template>\n  <el-table-v2 :columns="generateColumns()">\n    <template #row="props"><Row v-bind="props" /></template>\n  </el-table-v2>\n</template>\n\n<script lang="ts" setup>${body}</script>\n`;
 
-  const names = async (rel, source) => (await hitsOf("function_naming_case", rel, source)).map((h) => `${h.where} ${h.class}`);
+  const names = async (rel, source) => (await componentHits("function_naming_case", rel, source)).map((h) => `${h.where} ${h.class}`);
   assert.deepEqual(await names("docs/examples/table-v2/colspan.vue", vue), ["generateColumns camelCase"]);
   assert.deepEqual(
     await names("docs/examples/table-v2/colspan.ts", body),
@@ -237,7 +235,7 @@ test("a Svelte prop is a prop to every row that reads an export or a function", 
   export function resetLabel() {}
 `;
   const svelte = `<script lang="ts">${script}</script>\n\n<button on:click={onDelete}>{formatLabel("x")}</button>\n`;
-  const sites = async (key, rel, source) => (await hitsOf(key, rel, source)).map((h) => h.where);
+  const sites = async (key, rel, source) => (await componentHits(key, rel, source)).map((h) => h.where);
 
   for (const [key, inComponent, inModule] of [
     ["function_style", ["parseLabel", "resetLabel"], ["onDelete", "formatLabel", "parseLabel", "resetLabel"]],
@@ -258,7 +256,7 @@ test("a Svelte prop holding a class is a prop when classes are named", async () 
   export class PlainRenderer {}
 `;
   const svelte = `<script>${script}</script>\n\n<p>{new Renderer()}</p>\n`;
-  const sites = async (rel, source) => (await hitsOf("exported_class_case", rel, source)).map((h) => h.where);
+  const sites = async (rel, source) => (await componentHits("exported_class_case", rel, source)).map((h) => h.where);
 
   assert.deepEqual(await sites("src/lib/Canvas.svelte", svelte), ["DefaultRenderer", "PlainRenderer"]);
   assert.deepEqual(await sites("src/lib/canvas.ts", script), ["Renderer", "DefaultRenderer", "PlainRenderer"]);

@@ -95,6 +95,34 @@ const SCOPE_MOST = 16;
 // declared extension and file name is ASCII, so no scan writes another letter.
 const SCOPE_ENTRY = /^(?:(?:\.d)?\.)?[A-Za-z0-9_+-]{1,64}$/;
 
+/**
+ * The fields of a slot the record keeps, as `slotRecord` reads them: copied, rounded, or worked into
+ * the side it states. A field the fold hands a slot is one of these or one of `SCAN_ONLY`, and a
+ * test holds every scan's slots to the two, so a field the fold adds cannot be dropped on the way
+ * to the record unnoticed.
+ */
+export const SLOT_FIELDS = [
+  "key", "tier", "precision", "applicability", "langFileCount", "candidates", "conforming", "authors",
+  "authorsRequired", "ratio", "bound", "priorBound", "borrowed", "directive", "matchesDefault", "learned",
+  "learnedKind", "reaches", "narrowed", "gate", "exceptions", "moreExceptions", "companionsElsewhere",
+  "declined", "scope", "states", "counterClaim", "counterRatio", "counterBound", "counterPriorBound",
+  "counterBorrowed", "counterGate", "counterAuthors", "counterExceptions", "moreCounterExceptions", "baseline",
+];
+
+/** What the scan works a slot out from and the record leaves out, each with why: the record keeps the answer. */
+export const SCAN_ONLY = {
+  claim: "the sentence as this scan worded it; the check words a finding from the row, so the record keeps the class it learned",
+  files: "the files holding a site, which the gates and the author count read; the record keeps their answers",
+  askedExts: "the extensions the row was asked of, which the scope clause is built from; the record keeps `scope`",
+  claimFiles: "the files on the claim's side, which the author count reads; the record keeps `authors`",
+  counterFiles: "the files on the counter-claim's side, which the author count reads; the record keeps `counterAuthors`",
+  dirs: "the directories the sites sit in, which the spread gate reads; the record keeps `gate`",
+  effectiveFiles: "how many files the sites spread over, the concentration gate's input; the record keeps `gate`",
+  top: "the file holding the most sites, the concentration gate's input; the record keeps `gate`",
+  sections: "how many declarations a route table's sites sit in, standing in for its files at the gates; the record keeps `gate`",
+  sectionDirs: "the directories a route table's declarations stand for at the spread gate; the record keeps `gate`",
+};
+
 /** The slot as the record stores it, which is all the check and a carried area have of it. */
 export function slotRecord(d) {
   return {

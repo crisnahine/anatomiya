@@ -4,7 +4,7 @@ Everyone taking part here keeps to the [code of conduct](CODE_OF_CONDUCT.md). A 
 reported privately, the way [SECURITY.md](SECURITY.md#reporting-a-vulnerability) says, and never in
 a public issue.
 
-Read `DECISIONS.md` first. It is 367 numbered rows, each one a measurement or a review finding
+Read `DECISIONS.md` first. It is 369 numbered rows, each one a measurement or a review finding
 reduced to the decision it forces on the code. It is the build contract, and most questions you will
 have about why something is shaped the way it is are answered there. The file is the index: one short
 line per row, with the decision, a one-word status and a link. The measurement behind a row and what
@@ -265,7 +265,7 @@ Where the code goes:
 - `plugins/anatomiya/lib/dimensions-tree.mjs` the rows asked of Python, PHP, Go, Java, C#, Rust and Kotlin, in
   `TREE_DIMENSIONS`, walking a plain copy of a tree-sitter tree through `walkTree`
 - `plugins/anatomiya/lib/tree-shapes.mjs` what each grammar calls a function, a class, a comment, a handler and an
-  import. One of the two files that spell a grammar's node type or field name: the other is the
+  import, and the imports, calls and definitions the code index and the reuse line read. One of the two files that spell a grammar's node type or field name: the other is the
   oracle in `scripts/measure-inert.mjs`, which reads the grammars apart from the rule it measures
   (B75), and a test holds each of the two to the grammars the plugin ships
 - `plugins/anatomiya/lib/tree-facets.mjs` whether a file of those seven declares a test case, and for which runner
@@ -275,7 +275,7 @@ Where the code goes:
 - `plugins/anatomiya/lib/dimensions-naming.mjs` the learned rows, and `NAMING_CORPUS`, the filename row the reducer
   composes off the corpus rather than off a tree
 
-Eleven modules hold no row and sit under the scan, the hooks or both. A change to how a file is written, how a
+Twelve modules hold no row and sit under the scan, the hooks or both. A change to how a file is written, how a
 lock is taken, what a transcript record says, when the echo delivers, which added lines the reuse check asks
 about or how a history walk is fed goes in the one that owns it:
 
@@ -308,11 +308,13 @@ about or how a history walk is fed goes in the one that owns it:
   dimension, which is what lets the Stop hook parse (B73)
 - `plugins/anatomiya/lib/symbols.mjs` the one shape every engine's facets give a definition the code
   index reads, and the text helpers that read its doc comment and parameters off the source (H60)
-- `plugins/anatomiya/lib/code-index.mjs` the code index: who imports each definition, the file a scan
-  keeps, and how `find` ranks it. Nothing on a hook's path loads it (H60)
-- `plugins/anatomiya/lib/index-home.mjs` which checkout's index answers, a linked worktree's main
-  checkout's included, and whether its last scan could not write one: what the Stop hook asks of the
-  index, without loading it (H60, A124)
+- `plugins/anatomiya/lib/code-index.mjs` the code index: who imports each definition and the file a scan
+  keeps. Nothing on a hook's path loads it (H60)
+- `plugins/anatomiya/lib/find.mjs` how `find` splits, weighs and ranks a question over the index, and
+  the weights it ranks by (`RANKING`): the query side, which the Stop hook loads (H60, A126)
+- `plugins/anatomiya/lib/index-home.mjs` the index read back and checked, which checkout's answers, a
+  linked worktree's main checkout's included, and whether its last scan could not write one: what the
+  Stop hook, `find` and the doctor ask of the index, without the scan's imports (H60, A124)
 - `plugins/anatomiya/lib/history.mjs` the two history walks' feed: `historyFields`, which replays a
   history store's commits and asks git for the rest, the stamp a history store is used under, and
   `saveHistory`, which takes that stamp again before it writes (D15)

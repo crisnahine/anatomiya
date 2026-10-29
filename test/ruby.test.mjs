@@ -17,6 +17,7 @@ import { collectHits } from "../plugins/anatomiya/lib/walk.mjs";
 import { siteIdentity } from "../plugins/anatomiya/lib/introduced.mjs";
 import { readiness } from "../plugins/anatomiya/lib/readiness.mjs";
 import { isTestFile } from "../plugins/anatomiya/lib/layout.mjs";
+import { hitsOf } from "./hits.mjs";
 
 const dir = mkdtempSync(join(tmpdir(), "anatomiya-ruby-"));
 process.on("exit", () => rmSync(dir, { recursive: true, force: true }));
@@ -946,9 +947,7 @@ const dim = (key) => RUBY_DIMENSIONS.find((d) => d.key === key);
 function hits(key, name) {
   const file = programs.get(name);
   assert.ok(file && file.ok, `${name} did not parse: ${file && file.error}`);
-  const out = [];
-  dim(key).run(file.program, (h) => out.push(h));
-  return out;
+  return hitsOf(dim(key), file.program);
 }
 
 const counts = (key, name) => {
@@ -1455,10 +1454,9 @@ test("a dimension only ever calls add with what the reducer reads", needsRuby, (
     let fired = 0;
     for (const name of programs.keys()) {
       // The path the shared walk is handed too, since a row may read it.
-      d.run(programs.get(name).program, (h) => {
+      for (const h of hitsOf(d, programs.get(name).program, { rel: `${name}.rb` })) {
         fired++;
         const at = `${d.key} on ${name}`;
-        assert.equal(typeof h.conforming, "boolean", at);
         assert.ok(h.where === null || typeof h.where === "string", at);
         // introduced.mjs destructures hit.node on every hit and reads type, name
         // and line off it. A ruby hit without one throws there, not here.
@@ -1475,7 +1473,7 @@ test("a dimension only ever calls add with what the reducer reads", needsRuby, (
         if (typeof h.node.name === "string") {
           assert.notEqual(siteIdentity("app/w.rb", d.key, h.node, ""), siteIdentity("app/w.rb", d.key, { ...h.node, name: `${h.node.name}X` }, ""), at);
         }
-      }, { rel: `${name}.rb` });
+      }
     }
     assert.ok(fired > 0, `${d.key} never fired, so no fixture holds it to this shape`);
   }
@@ -1865,9 +1863,7 @@ test("the repository's own client is not an http_through_client site", needsRuby
   const file = programs.get("http_mixed");
   assert.ok(file && file.ok, "the fixture parsed");
   const at = (rel) => {
-    const out = [];
-    dim("http_through_client").run(file.program, (h) => out.push(h), { rel });
-    return out;
+    return hitsOf(dim("http_through_client"), file.program, { rel });
   };
 
   assert.deepEqual(at("app/clients/client.rb"), []);
@@ -1882,19 +1878,13 @@ test("a Sidekiq perform is not a service entry point, because returning is how a
   // one thing a worker must not do.
   const file = programs.get("sidekiq_worker");
   assert.ok(file && file.ok, "the fixture parsed");
-  const out = [];
-  dim("service_result_shape").run(file.program, (h) => out.push(h));
-
-  assert.deepEqual(out, []);
+  assert.deepEqual(hitsOf(dim("service_result_shape"), file.program), []);
 });
 
 test("an ordinary call entry point in the same shape is still a site", needsRuby, () => {
   const file = programs.get("service_raises");
   assert.ok(file && file.ok, "the fixture parsed");
-  const out = [];
-  dim("service_result_shape").run(file.program, (h) => out.push(h));
-
-  assert.equal(out.length, 1);
+  assert.equal(hitsOf(dim("service_result_shape"), file.program).length, 1);
 });
 
 test("isRubyError names the language's own exception classes and nothing else", needsRuby, async () => {

@@ -1,10 +1,10 @@
 import { ALL_DIMENSIONS } from "./dimensions.mjs";
-import { dimensionsFor } from "./walk.mjs";
+import { asks, dimensionsFor } from "./walk.mjs";
 import { pairingsFor } from "./pairing.mjs";
 import { claimFor } from "./dimensions-naming.mjs";
 import { REGISTRY, rowsOfKind } from "./registry.mjs";
 import { dirCount } from "./areas.mjs";
-import { holdsTypeSyntax, language, spokenIn } from "./langs.mjs";
+import { language, spokenIn } from "./langs.mjs";
 import { defaultSideFor, defaultClassFor } from "./model-defaults.mjs";
 import { GATES, wilsonLower, wilsonUpper } from "./gates.mjs";
 import { PRECEDENT_FLOOR } from "./principles.mjs";
@@ -145,23 +145,11 @@ export function reduceArea(area, parsed, { frameworks, tier = "syntactic", capab
     // enforces over, so the count of them is what lets an area say the printed
     // population is narrower than the files it sits in (A41).
     const declined = new Set();
-    // A mixed area holds files of both engines. A Ruby dimension counted
-    // against the area's JS files reads as a narrow predicate and is suppressed
-    // by the applicability gate, so the denominator is the files the dimension
-    // could speak about at all, not every file in the area.
-    //
-    // A file whose Flow annotations were blanked so it could be parsed at all
-    // holds no answer for a dimension whose question is the annotation. It is
-    // not a file that declined the convention, and counting it as one renders
-    // "10 of 10 sites across 10 of 20 files" over a directory where the other
-    // ten were never asked. A plain JavaScript file cannot carry a type
-    // annotation at all, which is the same argument one step further back.
-    // A `.js` file is one a JSX row could speak about exactly where its tree
-    // holds JSX, and a `.js` helper beside it stays out as a `.ts` one does.
-    const eligible = (e) =>
-      spokenIn(e.lang, e.facets).some((l) => dim.langs.includes(l)) &&
-      !(e.stripped && dim.blindWhenStripped) &&
-      !(dim.needsTypeSyntax && !holdsTypeSyntax(e.rel, e.facets));
+    // The denominator is the files the dimension could speak about at all, not
+    // every file in the area: a Ruby row counted against an area's JS files read
+    // as a narrow predicate, and a blanked Flow file read as one that declined,
+    // "10 of 10 sites across 10 of 20 files" where the other ten were never asked.
+    const eligible = (e) => asks(dim, e);
     let langFileCount = examined.filter(eligible).length;
 
     for (const file of parsed) {

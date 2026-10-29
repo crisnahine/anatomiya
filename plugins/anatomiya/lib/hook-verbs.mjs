@@ -104,7 +104,7 @@ export async function runReuse(cwd, payload) {
   if (checkouts.length === 0) return {};
   // Loaded here: the change it reads comes from the check, which the echo and
   // the notice must not pay for on every tool call.
-  const { askedMarksIn, continuedByReuseIn, finderFor, pendingChange, resumedByReuseIn, reuseReason, reuseRecord, sessionStart, REUSE_GIT_MS, TRANSCRIPT_MOST } = await import("./reuse.mjs");
+  const { askedMarksIn, closestTo, continuedByReuseIn, finderFor, pendingChange, resumedByReuseIn, reuseReason, reuseRecord, sessionStart, REUSE_GIT_MS, TRANSCRIPT_MOST } = await import("./reuse.mjs");
   // Both halves of "once per change, and only this session's work" are read off
   // the transcript: when the session began and which tool calls it made, and
   // what it already asked. One that cannot be read says neither, so nothing is
@@ -135,6 +135,10 @@ export async function runReuse(cwd, payload) {
   }
   if (resumedByReuseIn(after)) return { systemMessage: reuseRecord(fresh) };
   // Only for the one checkout the session sits in, where `find` run from its directory reads that checkout's index.
-  const finder = found !== null ? finderFor(found.root) : null;
-  return { decision: "block", reason: reuseReason(fresh, { finder }) };
+  const { usableIndex } = await import("./index-home.mjs");
+  const usable = found !== null ? usableIndex(found.root) : null;
+  const finder = finderFor(usable);
+  // Where the reason cannot name `find`, it is A123's word for word (A124), so it names no candidate either.
+  const closest = finder === null ? null : closestTo(usable.index, fresh);
+  return { decision: "block", reason: reuseReason(fresh, { finder, closest }) };
 }
