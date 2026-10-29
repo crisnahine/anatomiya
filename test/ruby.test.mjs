@@ -2240,6 +2240,20 @@ function exists(pid) {
   }
 }
 
+/**
+ * A process's state as ps prints it, a zombie's starting with Z, or null once it is reaped.
+ * For a process another parent reaps, so a zombie counts as gone; `exists` is for our own children.
+ */
+function stateOf(pid) {
+  try {
+    return execFileSync("ps", ["-o", "stat=", "-p", String(pid)], { encoding: "utf8", stdio: ["ignore", "pipe", "pipe"] }).trim() || null;
+  } catch (err) {
+    // A pid ps cannot find exits 1 and says nothing. A ps error exits 1 too, with a reason.
+    if (err.status === 1 && !err.stderr.trim()) return null;
+    throw err;
+  }
+}
+
 test("the smallest hold is at least twice what a shard thread uses before it reads a file", async () => {
   // A thread that has only loaded its modules already owns part of its hold,
   // and that part grows with the code. Both numbers are V8's own, read on a
@@ -2432,12 +2446,17 @@ process.stdout.write(JSON.stringify(out.results.map((r) => [r.rel, Boolean(r.cra
   try {
     const stdout = execFileSync(process.execPath, ["--input-type=module", "-e", script], { encoding: "utf8", timeout: 20_000 });
     assert.equal(stdout, '[["a.rb",true],["b.rb",true]]');
-    // The writer dies on its next write and init reaps it after that, so it can
-    // outlive the parent by a moment.
+    // The writer dies on its next write and whatever adopted it reaps it in its
+    // own time, so a zombie counts as dead.
     const pid = Number(readFileSync(writer, "utf8"));
+    let state;
+    const running = () => {
+      state = stateOf(pid);
+      return state !== null && !state.startsWith("Z");
+    };
     const deadline = Date.now() + 5_000;
-    while (exists(pid) && Date.now() < deadline) Atomics.wait(new Int32Array(new SharedArrayBuffer(4)), 0, 0, 20);
-    assert.equal(exists(pid), false, "the writer died on the closed pipe");
+    while (running() && Date.now() < deadline) Atomics.wait(new Int32Array(new SharedArrayBuffer(4)), 0, 0, 20);
+    assert.equal(running(), false, `the writer died on the closed pipe (ps says ${state})`);
   } finally {
     killPidIn(writer);
   }
