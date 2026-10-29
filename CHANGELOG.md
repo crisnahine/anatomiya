@@ -21,6 +21,8 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and
 
 ### Added
 
+- A test holds the rows that ask one question of different engines to one row per language, and
+  every difference in their wording to a recorded reason (C72).
 - `scripts/find-replay.mjs` scores `find`'s ranking against the 19 recorded queries: 0.882 on this
   build, and none of 810 other weight sets scored higher (H60).
 

@@ -4,7 +4,7 @@ Everyone taking part here keeps to the [code of conduct](CODE_OF_CONDUCT.md). A 
 reported privately, the way [SECURITY.md](SECURITY.md#reporting-a-vulnerability) says, and never in
 a public issue.
 
-Read `DECISIONS.md` first. It is 369 numbered rows, each one a measurement or a review finding
+Read `DECISIONS.md` first. It is 370 numbered rows, each one a measurement or a review finding
 reduced to the decision it forces on the code. It is the build contract, and most questions you will
 have about why something is shaped the way it is are answered there. The file is the index: one short
 line per row, with the decision, a one-word status and a link. The measurement behind a row and what
@@ -652,6 +652,11 @@ checker that wrote them would be deciding for you. The witness pair is held else
 `test/applicability.test.mjs`, which fails on a shipped row that has none. The last two are held by
 nothing at all: the test beside the row's own file, and the changelog line. Those are on you and on
 whoever reviews it.
+
+A row that asks another engine a question a shipped row already asks goes under its own key, and
+into `SIBLINGS` in `test/registry.test.mjs` beside the rows that ask it: the test holds each
+language to one row per question, the set to learned rows or fixed ones alike, and each sibling's
+claim and counter-claim to the sentence written there with the reason it differs (C72).
 
 Dropping a row runs the same list backwards, and one site fails harder than the rest. Delete the
 `plugins/anatomiya/lib/model-defaults.json` entry in the same change: the table is validated at load against the
