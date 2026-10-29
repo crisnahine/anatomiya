@@ -205,9 +205,23 @@ function isException(dim, side, file) {
 export const FINDING_FIELDS = ["severity", "reason", "path", "oldPath", "line", "area", "dimension", "claim", "precision", "where", "companion", "snippet"];
 
 /** One finding, every field present and the optional ones null. */
-export function findingOf({ severity, reason, path, oldPath = null, line, area = null, dimension, claim, precision, where = null, companion = null, snippet = null, ...rest }) {
-  for (const key of Object.keys(rest)) {
-    if (key !== "toldInClaim" && key !== "turnsOn") throw new TypeError(`a finding carries no ${key}`);
-  }
-  return { severity, reason, path, oldPath, line, area, dimension, claim, precision, where, companion, snippet, ...rest };
+export function findingOf({ severity, reason, path, oldPath = null, line, area = null, dimension, claim, toldInClaim, precision, where = null, companion = null, snippet = null, turnsOn, ...rest }) {
+  for (const key of Object.keys(rest)) throw new TypeError(`a finding carries no ${key}`);
+  // `toldInClaim` rides beside the claim it speaks for and `turnsOn` last, the places the producers wrote them, so the JSON writer prints a finding as it did.
+  return {
+    severity,
+    reason,
+    path,
+    oldPath,
+    line,
+    area,
+    dimension,
+    claim,
+    ...(toldInClaim === undefined ? {} : { toldInClaim }),
+    precision,
+    where,
+    companion,
+    snippet,
+    ...(turnsOn === undefined ? {} : { turnsOn }),
+  };
 }
