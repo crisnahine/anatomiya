@@ -1221,7 +1221,7 @@ test("under a refused config the facts do not move with what the type-checked hi
 });
 
 /** The real checker, with what the scan answered when asked whether to stop it, and what the checker then answered. */
-function watchedChecker({ ask = true } = {}) {
+function watchedChecker({ ask = true, workerPath } = {}) {
   const seen = { stop: [], hits: null };
   const runChecker = async (root, files, options) => {
     const stopWhen = async (sited) => {
@@ -1229,11 +1229,32 @@ function watchedChecker({ ask = true } = {}) {
       seen.stop.push(answer);
       return answer;
     };
-    const whole = await runSemantic(root, files, ask ? { ...options, stopWhen } : { ...options, stopWhen: null });
+    const whole = await runSemantic(root, files, { ...options, stopWhen: ask ? stopWhen : null, workerPath });
     seen.hits = [...whole.records.values()].flatMap((r) => r.hits.law_of_demeter ?? []);
     return whole;
   };
   return { seen, runChecker };
+}
+
+/**
+ * The shipped checker worker with its `done` dropped, so the walk's rows reach the parent but
+ * cannot end the run before it decides. A parent that never stops it times out.
+ */
+function heldWorker(t) {
+  const home = mkdtempSync(join(tmpdir(), "anatomiya-held-"));
+  t.after(() => removeTree(home));
+  const worker = join(home, "held.mjs");
+  writeFileSync(
+    worker,
+    [
+      "const send = process.send.bind(process);",
+      "process.send = (msg) => {",
+      "  if (!msg.done) send(msg);",
+      "};",
+      `await import(${JSON.stringify(new URL("../plugins/anatomiya/lib/semantic-worker.mjs", import.meta.url).href)});`,
+    ].join("\n")
+  );
+  return worker;
 }
 
 /** Eight files whose chains run through a package that is not installed, and one chain through two types of their own. */
@@ -1257,7 +1278,8 @@ function untypedRepo(t, { pinned = false } = {}) {
 test("a degraded rate stops the dimension walk, and the facts are the ones a whole walk writes", async (t) => {
   if (!(await loadTypeScript())) return t.skip("typescript is not installed");
   const dir = untypedRepo(t);
-  const stopping = watchedChecker();
+  // The walk cannot finish before the verdict lands: over eight small files a loaded runner finished it before the scan had decided.
+  const stopping = watchedChecker({ workerPath: heldWorker(t) });
   const walking = watchedChecker({ ask: false });
 
   // Only the checker counts in the area, so its files are in the rate on the strength of the stubs alone.

@@ -496,6 +496,19 @@ test("a degraded rate stops the dimension walk", { timeout: 60_000 }, async (t) 
   assert.equal(alive(child), false, "the checker was left walking rows nobody will read");
 });
 
+test("a stop decided after walked rows arrived answers the stubs, not the rows", { timeout: 60_000 }, async (t) => {
+  // Rows arrive every 50 ms and the reader answers at 500, so the stubs it answers with must not have taken them in.
+  const { worker } = sitedWorker(t, "late", WALKS_ON);
+
+  const r = await runSemantic(tmpdir(), aFile, {
+    workerPath: worker,
+    stopWhen: () => new Promise((resolve) => setTimeout(() => resolve(true), 500)),
+  });
+
+  assert.equal(r.stopped, true);
+  assert.deepEqual([...r.records], STUBBED);
+});
+
 test("an ok rate waits for the real hits", { timeout: 60_000 }, async (t) => {
   const { worker } = sitedWorker(t, "waits", WALKS_AND_ENDS);
 
