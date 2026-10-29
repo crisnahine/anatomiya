@@ -27,6 +27,7 @@ import { render } from "./ab/render.mjs";
 import { repoLabel } from "./ab/label.mjs";
 import { BINARY } from "./plugins.mjs";
 import { die, invokedAs } from "./entry.mjs";
+import { FROZEN_HOME, frozenBuild } from "./frozen-build.mjs";
 import { isCorpusPath } from "../plugins/anatomiya/lib/corpus.mjs";
 import { FACTS_PATH, factsAt } from "../plugins/anatomiya/lib/facts.mjs";
 
@@ -39,8 +40,14 @@ async function main(argv) {
   // No settings gate: a trial loads only the project and local sources, which
   // `buildArms` has cleared, so the operator's own settings never reach one.
 
+  // 0. The build under measurement: the working tree's, or one commit's, which a rerun can name.
+  const build = args.frozen ? frozenBuild(args.frozen, FROZEN_HOME) : null;
+  if (build?.error) die(build.error);
+  const binary = build?.binary ?? BINARY;
+  const perArm = build ? { a: { pluginDir: build.pluginDir }, b: { pluginDir: build.pluginDir } } : {};
+
   // 1. A map measured against an accepted baseline, which is what arm A is for.
-  mapAndPin(args.repo);
+  mapAndPin(args.repo, binary);
 
   // 2. Where the arms could differ at all.
   const { facts, problem } = factsAt(join(args.repo, FACTS_PATH));
@@ -75,10 +82,10 @@ async function main(argv) {
     const arms = await buildArms(args.repo, sha);
     try {
       // 4. An unverified arm is not an arm.
-      const said = await verifyInjection(arms, probeFileIn(args.repo, target.path), target.path, args.engine);
+      const said = await verifyInjection(arms, probeFileIn(args.repo, target.path), target.path, args.engine, console.log, perArm);
 
       // 5. The trials.
-      const trials = await runTrials(arms, prompt, args.engine, args.trials);
+      const trials = await runTrials(arms, prompt, args.engine, args.trials, console.log, perArm);
 
       // 6. The result file quotes the engine the trials reported, not the flags they
       // were given. A run whose arms answered from two engines measured nothing.
@@ -100,9 +107,9 @@ async function main(argv) {
   console.log(`wrote ${out}`);
 }
 
-/** Scan, pin, then scan again, so the map arm A copies is measured against an accepted baseline. */
-export function mapAndPin(repo) {
-  for (const verb of ["scan", "pin", "scan"]) execFileSync(process.execPath, [BINARY, verb, repo], { stdio: "inherit" });
+/** Scan, pin, then scan again, so the map arm A copies is measured against an accepted baseline; with `binary`, that build's. */
+export function mapAndPin(repo, binary = BINARY) {
+  for (const verb of ["scan", "pin", "scan"]) execFileSync(process.execPath, [binary, verb, repo], { stdio: "inherit" });
 }
 
 /**

@@ -68,9 +68,13 @@ on a release that already existed. Push the tag and let the workflow make the re
       lives beside the corpus and never in this repository: the script refuses one inside it (G16). It
       reads the working tree and refuses a shallow clone, so run it in a full clone whose working tree
       holds what will be committed.
-- [ ] The corpus run reports no findings, for a change that touches counting. Leave the checkout
-      alone while it runs: it shells out to the binary in the working tree per repository, so a file
-      edited mid-run puts two builds in one report and the failures it invents cannot be reproduced.
+- [ ] The corpus run reports no findings, for a change that touches counting. Give it
+      `--frozen <sha>` and it runs the binary built at that commit (`scripts/frozen-build.mjs`), so the
+      checkout may change while it runs and a rerun names the build by its commit. Without the flag it
+      shells out to the binary in the working tree per repository, so a file edited mid-run puts two
+      builds in one report and the failures it invents cannot be reproduced: leave the checkout alone.
+      `scripts/ab.mjs` and `scripts/ab-scenario.mjs` take the same flag, and the scenario result records
+      the frozen version in place of the working tree's.
 - [ ] For a change to the co-change walk or its gates, `node scripts/measure-cochange.mjs` over the
       44 repositories `docs/measurements/2026-10-11-cochange.md` names gives the numbers the documents
       cite, and they still match.

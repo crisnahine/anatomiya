@@ -23,6 +23,7 @@ import { engineRan } from "./ab/engine.mjs";
 import { renderScenario } from "./ab/render.mjs";
 import { mapAndPin, probeFileIn, runTrials, verifyInjection } from "./ab.mjs";
 import { die, invokedAs } from "./entry.mjs";
+import { FROZEN_HOME, frozenBuild } from "./frozen-build.mjs";
 import { FACTS_PATH, factsAt } from "../plugins/anatomiya/lib/facts.mjs";
 import { ANATOMIYA } from "./plugins.mjs";
 
@@ -80,9 +81,13 @@ async function runFresh(args, scenario) {
   const sha = execFileSync("git", ["rev-parse", "HEAD"], { cwd: args.repo, encoding: "utf8" }).trim();
   if (sha !== scenario.commit) die(`${args.repo} is at ${sha}, and the scenario was written against ${scenario.commit}`);
 
-  // Before any trial: read after them, a build that changed mid-run is the one recorded.
-  const versions = versionsAt(root);
-  mapAndPin(args.repo);
+  // Before any trial: read after them, a build that changed mid-run is the one recorded. A frozen
+  // build is one commit's, so its version is true by construction and nothing is uncommitted in it.
+  const build = args.frozen ? frozenBuild(args.frozen, FROZEN_HOME) : null;
+  if (build?.error) die(build.error);
+  const versions = { ...versionsAt(root), ...(build ? build.versions : {}) };
+  const perArm = { a: build ? { pluginDir: build.pluginDir } : {}, ...PLUGIN_OFF };
+  mapAndPin(args.repo, build?.binary);
   const { facts, problem } = factsAt(join(args.repo, FACTS_PATH));
   if (problem) die(`${FACTS_PATH} in ${args.repo} was not read: ${problem.why}`);
   if (!(facts.areas ?? []).some((a) => a.path === scenario.area)) die(`the map holds no area ${scenario.area}`);
@@ -93,8 +98,8 @@ async function runFresh(args, scenario) {
   let failed;
   try {
     const probeFile = scenario.probe ?? probeFileIn(args.repo, scenario.area);
-    const said = await verifyInjection(arms, probeFile, scenario.area, args.engine, console.log, PLUGIN_OFF);
-    const trials = await runTrials(arms, scenario.prompt, options, args.trials, console.log, PLUGIN_OFF);
+    const said = await verifyInjection(arms, probeFile, scenario.area, args.engine, console.log, perArm);
+    const trials = await runTrials(arms, scenario.prompt, options, args.trials, console.log, perArm);
     const ran = engineRan(args.engine, [...trials.a, ...trials.b]);
     if (ran.error) throw new Error(ran.error);
     if (ran.note) console.log(ran.note);

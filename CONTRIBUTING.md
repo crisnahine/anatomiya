@@ -4,7 +4,7 @@ Everyone taking part here keeps to the [code of conduct](CODE_OF_CONDUCT.md). A 
 reported privately, the way [SECURITY.md](SECURITY.md#reporting-a-vulnerability) says, and never in
 a public issue.
 
-Read `DECISIONS.md` first. It is 376 numbered rows, each one a measurement or a review finding
+Read `DECISIONS.md` first. It is 377 numbered rows, each one a measurement or a review finding
 reduced to the decision it forces on the code. It is the build contract, and most questions you will
 have about why something is shaped the way it is are answered there. The file is the index: one short
 line per row, with the decision, a one-word status and a link. The measurement behind a row and what

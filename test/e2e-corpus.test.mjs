@@ -357,7 +357,8 @@ test("the table prints one row per repository, in the order they ran", () => {
 });
 
 test("the arguments name a corpus and a scratch directory, and refuse anything else", () => {
-  assert.deepEqual(parseArgs(["/corpus", "/scratch"]), { corpus: "/corpus", scratch: "/scratch", only: null, targets: null });
+  assert.deepEqual(parseArgs(["/corpus", "/scratch"]), { corpus: "/corpus", scratch: "/scratch", only: null, targets: null, frozen: null });
+  assert.equal(parseArgs(["/corpus", "/scratch", "--frozen", "abc123"]).frozen, "abc123");
   assert.deepEqual(parseArgs(["/corpus", "/scratch", "--only", "a,b"]).only, "a,b");
   assert.match(parseArgs(["/corpus"]).error, /scratch directory/);
   assert.match(parseArgs([]).error, /corpus directory/);

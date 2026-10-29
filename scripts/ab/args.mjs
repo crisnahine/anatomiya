@@ -21,10 +21,11 @@ export const USAGE = `usage: node scripts/ab.mjs --repo <path> --task <file> [op
   --min-headroom <r> refuse below this (default 0.05)
   --key <dimension>  measure this claim rather than the top-ranked one
   --area <path>      measure in this area rather than the top-ranked one
+  --frozen <sha>     scan, pin and load the plugin built at this commit, not the working tree's
 `;
 
 const OPTIONS = Object.fromEntries(
-  ["repo", "task", "trials", "model", "effort", "out", "min-headroom", "key", "area"].map((k) => [k, { type: "string" }])
+  ["repo", "task", "trials", "model", "effort", "out", "min-headroom", "key", "area", "frozen"].map((k) => [k, { type: "string" }])
 );
 
 /** The scenario run's help, printed under any refusal of its arguments. */
@@ -40,10 +41,11 @@ export const SCENARIO_USAGE = `usage: node scripts/ab-scenario.mjs --repo <path>
   --raw <path>       every trial's written files too, to score again without a rerun
   --from-raw <path>  score kept raw records instead of running trials; give it once per
                      run to join several runs of one scenario (no --repo then)
+  --frozen <sha>     scan, pin and load the plugin built at this commit, not the working tree's
 `;
 
 const SCENARIO_OPTIONS = {
-  ...Object.fromEntries(["repo", "scenario", "trials", "model", "effort", "out", "data", "raw"].map((k) => [k, { type: "string" }])),
+  ...Object.fromEntries(["repo", "scenario", "trials", "model", "effort", "out", "data", "raw", "frozen"].map((k) => [k, { type: "string" }])),
   "from-raw": { type: "string", multiple: true },
 };
 

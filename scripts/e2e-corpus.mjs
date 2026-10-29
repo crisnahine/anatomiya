@@ -17,12 +17,13 @@
  * Read-only over the corpus. A repository is cloned with `--local`, which
  * hardlinks the object store, and nothing is ever written back into it.
  *
- * The tree this runs from has to hold still. Each repository shells out to
- * `bin/anatomiya.mjs` in the working tree, so a file edited while the run is in
- * flight puts two builds in one report: measured here, editing during a 35
- * repository run produced two stability failures on one repository that no
- * isolated run of it could reproduce, on this tree or on the commit before it,
- * and a frozen re-run passed all 36. Start it and leave the checkout alone.
+ * The tree this runs from has to hold still, or the run has to run a build of
+ * one commit. Each repository shells out to `bin/anatomiya.mjs`, in the working
+ * tree unless `--frozen <sha>` names the commit to build (`frozen-build.mjs`),
+ * so a file edited while a run was in flight put two builds in one report:
+ * measured here, editing during a 35 repository run produced two stability
+ * failures on one repository that no isolated run of it could reproduce, on
+ * this tree or on the commit before it, and a frozen re-run passed all 36.
  */
 import { spawnSync } from "node:child_process";
 import { cp } from "node:fs/promises";
@@ -31,6 +32,7 @@ import { dirname, join, resolve, sep } from "node:path";
 import { fileURLToPath } from "node:url";
 
 import { corpusRepos, invokedAs, readArgv, selectRepos } from "./entry.mjs";
+import { FROZEN_HOME, frozenBuild } from "./frozen-build.mjs";
 import { BINARY, REL } from "./plugins.mjs";
 import { isSource } from "../plugins/anatomiya/lib/corpus.mjs";
 import { hasInstall } from "../plugins/anatomiya/lib/semantic.mjs";
@@ -468,10 +470,12 @@ const USAGE = `usage: node scripts/e2e-corpus.mjs <corpusDir> <scratchDir> [opti
   <scratchDir>       where each clone goes; every clone is removed again
   --only <a,b>       run these repositories rather than every child
   --targets <list>   hand this to each repository's first scan, as cursor,copilot
+  --frozen <sha>     run the binary built at this commit rather than the working tree's, so
+                     the checkout may change while the run is in flight
 `;
 
 export function parseArgs(argv) {
-  const read = readArgv(argv, { only: { type: "string" }, targets: { type: "string" } }, { positionals: true });
+  const read = readArgv(argv, { only: { type: "string" }, targets: { type: "string" }, frozen: { type: "string" } }, { positionals: true });
   if (read.error) return read;
   const [corpus, scratch, ...rest] = read.positionals;
   if (corpus === undefined) return { error: "the corpus directory is required" };
@@ -483,7 +487,7 @@ export function parseArgs(argv) {
   } catch (err) {
     return { error: err.message };
   }
-  return { corpus, scratch, only: read.values.only ?? null, targets };
+  return { corpus, scratch, only: read.values.only ?? null, targets, frozen: read.values.frozen ?? null };
 }
 
 
@@ -532,14 +536,15 @@ export function checkDirs(corpus, scratch, entries) {
 
 const HERE = dirname(fileURLToPath(import.meta.url));
 // The plugin the marketplace lists, spelled where `scripts/plugins.mjs` says.
-const BIN = BINARY;
+// The working tree's binary, or the frozen build's once `main` has made one.
+let binary = BINARY;
 const MAX_BUFFER = 256 * 1024 * 1024;
 
 const git = (args, cwd) => run("git", args, cwd);
 // Run from the scratch directory, not from this tool's own tree: a command
 // that reads the working directory would otherwise be answered by the
 // repository under test's own source.
-const anatomiya = (args, cwd) => run(process.execPath, [BIN, ...args], cwd);
+const anatomiya = (args, cwd) => run(process.execPath, [binary, ...args], cwd);
 
 function run(cmd, args, cwd) {
   const r = spawnSync(cmd, args, { cwd, encoding: "utf8", maxBuffer: MAX_BUFFER });
@@ -861,6 +866,16 @@ async function main() {
   if (selected.error) {
     console.error(`${selected.error}\n\n${USAGE}`);
     process.exit(2);
+  }
+  // Before the scratch directory, so a commit that cannot be built leaves none behind either.
+  const build = opts.frozen === null ? null : frozenBuild(opts.frozen, FROZEN_HOME);
+  if (build?.error) {
+    console.error(`${build.error}\n\n${USAGE}`);
+    process.exit(2);
+  }
+  if (build) {
+    binary = build.binary;
+    console.log(`build: anatomiya ${build.versions.anatomiya}, under ${build.root}`);
   }
   // Last, so a run refused for any of the reasons above leaves no directory
   // behind it.

@@ -416,7 +416,7 @@ baseline into each one:
 - [docs/usage.md](docs/usage.md): the full guide.
 - [docs/why.md](docs/why.md): why it is built this way, and the designs the measurements replaced.
 - [docs/how-it-works.md](docs/how-it-works.md): the mechanics, close enough to predict a scan's output.
-- [DECISIONS.md](DECISIONS.md): 376 numbered decisions, each with the measurement or review finding
+- [DECISIONS.md](DECISIONS.md): 377 numbered decisions, each with the measurement or review finding
   that forced it.
 - [docs/measurements/corpus.md](docs/measurements/corpus.md): every repository a measurement ran on,
   with its commit.

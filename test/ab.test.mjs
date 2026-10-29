@@ -1274,6 +1274,7 @@ test("the argument gate answers in process, with the engine folded in", async ()
   assert.equal(parseArgs(["--repo", "r", "--task", "t", "--bogus", "1"]).code, "ERR_PARSE_ARGS_UNKNOWN_OPTION");
   assert.equal(parseArgs(["--repo", "r", "--task", "t", "stray"]).code, "ERR_PARSE_ARGS_UNEXPECTED_POSITIONAL");
   assert.equal(parseArgs(["--repo=r", "--task=t"]).repo, "r");
+  assert.equal(parseArgs(["--repo", "r", "--task", "t", "--frozen", "abc123"]).frozen, "abc123");
   assert.deepEqual(parseArgs(["--repo", "r", "--task", "t", "--trials", "0"]), { error: "--trials takes a positive integer" });
   assert.match(parseArgs(["--repo", "r", "--task", "t", "--effort", "med"]).error, /--effort takes one of low, medium, high, xhigh, max, not "med"/);
   // NaN compares false against every headroom, which switches the floor off
