@@ -1258,8 +1258,9 @@ export function blobReader(
   const start = async () => {
     const call = await prepared(root, BATCH, env, { lazyFetch: false, timeout });
     // Closed while the repository's config was being read, or it could not be read. A scripted git
-    // answers one call, never a batch, so a stand-in that arrived since the reader was made falls here too.
-    if (fallen || call.unread || scriptedFor(call.args, root) !== null) return fall();
+    // answers one call, never a batch, so a stand-in that arrived since the reader was made falls here
+    // too, by the count alone: asking the script would record a call it never answers.
+    if (fallen || call.unread || standIns.length > 0) return fall();
     const mine = spawnGit(root, call, ["pipe", "pipe", "ignore"]);
     child = mine;
     const live = (then) => (...args) => (child === mine ? then(...args) : undefined);

@@ -18,7 +18,7 @@
  * script here may spawn on Windows, so there it is refused with the reason.
  */
 import { execFileSync, spawnSync } from "node:child_process";
-import { constants, cpSync, existsSync, mkdirSync, mkdtempSync, readFileSync, renameSync, rmSync, writeFileSync } from "node:fs";
+import { constants, cpSync, existsSync, mkdirSync, mkdtempSync, readFileSync, readdirSync, renameSync, rmSync, statSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 
@@ -29,6 +29,16 @@ const FROZEN_HOME = join(tmpdir(), "anatomiya-frozen");
 
 /** The file a frozen build carries so a directory is known to be one, and which commit it is. */
 export const FROZEN_FROM = "FROZEN_FROM";
+
+/**
+ * The checkout a frozen run was started from, handed to the harness at the
+ * commit so its result files land there and not in the build. A harness at a
+ * commit older than this variable writes beside itself.
+ */
+export const RESULTS_ROOT = "ANATOMIYA_RESULTS_ROOT";
+
+// A build left half made by a run that was killed is swept once it is this old.
+const BUILDING_STALE_MS = 24 * 60 * 60 * 1000;
 
 /**
  * The build of `source` at `sha` under `scratch`, or `{ error }`.
@@ -51,6 +61,7 @@ export function frozenBuild(sha, scratch, { source = ROOT } = {}) {
   // freezing one commit at once never read half a build: the one that moves
   // second finds the first's and uses it.
   mkdirSync(scratch, { recursive: true });
+  sweepStale(scratch);
   const building = mkdtempSync(join(scratch, `.building-${full.slice(0, 12)}-`));
   try {
     try {
@@ -62,11 +73,8 @@ export function frozenBuild(sha, scratch, { source = ROOT } = {}) {
     const installed = installInto(building, source);
     if (installed.error) return installed;
     writeFileSync(join(building, FROZEN_FROM), `${full}\n`);
-    try {
-      renameSync(building, root);
-    } catch (err) {
-      if (!existsSync(join(root, FROZEN_FROM))) return { error: `could not put the build of ${full.slice(0, 12)} at ${root}: ${err.code ?? err.message}` };
-    }
+    const published = publish(building, root);
+    if (published.error) return published;
   } finally {
     rmSync(building, { recursive: true, force: true });
   }
@@ -74,9 +82,42 @@ export function frozenBuild(sha, scratch, { source = ROOT } = {}) {
 }
 
 /**
+ * Moves a finished build into place whole. A build already there is the one
+ * answered, whichever freeze finished first; a directory there that is no build,
+ * left by a run that died before this protocol, is removed and the move tried
+ * once more.
+ */
+function publish(building, root) {
+  for (let attempt = 0; ; attempt++) {
+    try {
+      renameSync(building, root);
+      return {};
+    } catch (err) {
+      if (existsSync(join(root, FROZEN_FROM))) return {};
+      if (attempt > 0 || !existsSync(root)) return { error: `could not put the build at ${root}: ${err.code ?? err.message}` };
+      rmSync(root, { recursive: true, force: true });
+    }
+  }
+}
+
+/** Removes the `.building-*` directories a killed freeze left under `scratch`, once they are a day old. */
+function sweepStale(scratch) {
+  for (const name of readdirSync(scratch)) {
+    if (!name.startsWith(".building-")) continue;
+    try {
+      if (Date.now() - statSync(join(scratch, name)).mtimeMs > BUILDING_STALE_MS) rmSync(join(scratch, name), { recursive: true, force: true });
+    } catch {
+      // Gone since, or not ours to remove.
+    }
+  }
+}
+
+/**
  * The harness at `scriptRel` run out of the build of `sha`, with `argv` less
- * the `--frozen` that asked for this, and this process's stdio: `{ status }`,
- * or `{ error }` where there is no build or no such script at that commit.
+ * the `--frozen` that asked for this, this process's stdio, and `RESULTS_ROOT`
+ * naming `source` so its result files land there: `{ status }`, or `{ error }`
+ * where there is no build, no such script at that commit, or the harness could
+ * not be started. A harness a signal ended is said so, at status 1.
  */
 export function runFrozen(sha, scriptRel, argv, { scratch = FROZEN_HOME, source = ROOT } = {}) {
   const build = frozenBuild(sha, scratch, { source });
@@ -84,7 +125,9 @@ export function runFrozen(sha, scriptRel, argv, { scratch = FROZEN_HOME, source 
   const script = join(build.root, scriptRel);
   if (!existsSync(script)) return { error: `${scriptRel} is not at ${build.sha.slice(0, 12)}, so there is no harness there to run` };
   console.log(`build: anatomiya ${build.versions.anatomiya}, under ${build.root}`);
-  const ran = spawnSync(process.execPath, [script, ...withoutFrozen(argv)], { stdio: "inherit" });
+  const ran = spawnSync(process.execPath, [script, ...withoutFrozen(argv)], { stdio: "inherit", env: { ...process.env, [RESULTS_ROOT]: source } });
+  if (ran.error) return { error: `could not run ${scriptRel} at ${build.sha.slice(0, 12)}: ${ran.error.message}` };
+  if (ran.signal) console.error(`${scriptRel} at ${build.sha.slice(0, 12)} was ended by ${ran.signal}`);
   return { status: ran.status ?? 1 };
 }
 
@@ -116,6 +159,8 @@ function commitOf(source, sha) {
  * build was committed with is the working tree's; its own install otherwise.
  */
 function installInto(root, source) {
+  // A commit with no lockfile has nothing to install, which is what lets a small repository stand in for this one in a test.
+  if (!existsSync(join(root, "package-lock.json"))) return {};
   const same = ["package-lock.json", `${REL.anatomiya}/package-lock.json`].every((rel) => sameFile(join(root, rel), join(source, rel)));
   if (same) {
     const from = join(source, "node_modules");
@@ -136,8 +181,9 @@ function installInto(root, source) {
 
 const sameFile = (a, b) => existsSync(a) && existsSync(b) && readFileSync(a).equals(readFileSync(b));
 
-/** The plugin's version at the commit, said the way a result document records it. */
+/** The plugin's version at the commit, said the way a result document records it; the commit alone where that commit ships no manifest. */
 function versionsOf(pluginDir, sha) {
-  const { version } = JSON.parse(readFileSync(join(pluginDir, ".claude-plugin", "plugin.json"), "utf8"));
-  return { anatomiya: `${version} at ${sha.slice(0, 12)}` };
+  const manifest = join(pluginDir, ".claude-plugin", "plugin.json");
+  const version = existsSync(manifest) ? JSON.parse(readFileSync(manifest, "utf8")).version : null;
+  return { anatomiya: version === null ? `at ${sha.slice(0, 12)}` : `${version} at ${sha.slice(0, 12)}` };
 }

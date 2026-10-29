@@ -842,7 +842,7 @@ async function main() {
     console.error(`${opts.error}\n\n${USAGE}`);
     process.exit(2);
   }
-  // Before anything is made: the run is the harness at that commit, this one only starts it.
+  // Handed over before the directories are checked: the run is the harness at that commit, and it checks them.
   if (opts.frozen !== null) {
     const ran = runFrozen(opts.frozen, "scripts/e2e-corpus.mjs", process.argv.slice(2));
     if (ran.error) {

@@ -27,11 +27,13 @@ import { render } from "./ab/render.mjs";
 import { repoLabel } from "./ab/label.mjs";
 import { BINARY } from "./plugins.mjs";
 import { die, invokedAs } from "./entry.mjs";
-import { runFrozen } from "./frozen-build.mjs";
+import { RESULTS_ROOT, runFrozen } from "./frozen-build.mjs";
 import { isCorpusPath } from "../plugins/anatomiya/lib/corpus.mjs";
 import { FACTS_PATH, factsAt } from "../plugins/anatomiya/lib/facts.mjs";
 
 const root = join(dirname(fileURLToPath(import.meta.url)), "..");
+// Where a result file goes: the checkout a frozen run was started from, else this one.
+const results = process.env[RESULTS_ROOT] ?? root;
 
 async function main(argv) {
   const args = parseArgs(argv);
@@ -101,7 +103,7 @@ async function main(argv) {
   }
 
   // 7. The file a reader quotes.
-  const out = args.out ?? join(root, "docs/measurements", `${label.split("/").at(-1)}.md`);
+  const out = args.out ?? join(results, "docs/measurements", `${label.split("/").at(-1)}.md`);
   mkdirSync(dirname(out), { recursive: true });
   writeFileSync(out, render(result, args));
   console.log(`wrote ${out}`);

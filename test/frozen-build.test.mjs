@@ -1,13 +1,14 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import { execFileSync } from "node:child_process";
-import { existsSync, mkdtempSync, readFileSync, writeFileSync } from "node:fs";
+import { existsSync, mkdirSync, mkdtempSync, readFileSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 
-import { FROZEN_FROM, frozenBuild, runFrozen, withoutFrozen } from "../scripts/frozen-build.mjs";
+import { FROZEN_FROM, RESULTS_ROOT, frozenBuild, runFrozen, withoutFrozen } from "../scripts/frozen-build.mjs";
 import { REL, ROOT } from "../scripts/plugins.mjs";
 import { removeTree } from "./platform.mjs";
+import { repository } from "./repository.mjs";
 
 function scratch(t) {
   const dir = mkdtempSync(join(tmpdir(), "anatomiya-frozen-test-"));
@@ -53,11 +54,27 @@ test("a build is the commit checked out with the install beside it, its binary a
   assert.ok(existsSync(join(build.root, "kept.txt")), "a build already there is answered as it stands, not rebuilt");
 });
 
-test("a frozen run is the harness at the commit, out of the build, with the freeze flag taken off its arguments", needsInstall, (t) => {
+test("a frozen run is the harness at the commit, out of the build, with the freeze flag taken off its arguments and the results root named", needsCheckout, (t) => {
   assert.deepEqual(withoutFrozen(["a", "--frozen", "abc", "b", "--frozen=def", "c"]), ["a", "b", "c"]);
+  // A repository of one script that writes where it ran from and what it was given, so the run from
+  // the copy is told apart from one in the working tree.
+  const made = repository(t, { prefix: "anatomiya-frozen-source-" });
+  made.write("scripts/say.mjs", 'import { writeFileSync } from "node:fs";\nwriteFileSync(process.argv[2], JSON.stringify({ url: import.meta.url, argv: process.argv.slice(3), results: process.env.ANATOMIYA_RESULTS_ROOT ?? null }));\n');
+  const sha = made.commit("say");
   const dir = scratch(t);
-  // The manifest gate at this commit, run from the copy: it resolves its own root, so a build that could not run it says so.
-  const ran = runFrozen(head(), "scripts/validate.mjs", ["--frozen", head()], { scratch: dir });
+  const said = join(dir, "said.json");
+  const ran = runFrozen(sha, "scripts/say.mjs", [said, "--frozen", sha, "x", `--frozen=${sha}`, "y"], { scratch: dir, source: made.dir });
   assert.deepEqual(ran, { status: 0 });
-  assert.match(runFrozen(head(), "scripts/no-such-harness.mjs", [], { scratch: dir }).error, /is not at/);
+  const record = JSON.parse(readFileSync(said, "utf8"));
+  assert.ok(record.url.includes(`anatomiya-${sha.slice(0, 12)}`), `ran from the build: ${record.url}`);
+  assert.deepEqual(record.argv, ["x", "y"]);
+  assert.equal(record.results, made.dir, `the results root is the checkout the run started from (${RESULTS_ROOT})`);
+  assert.match(runFrozen(sha, "scripts/no-such-harness.mjs", [], { scratch: dir, source: made.dir }).error, /is not at/);
+  // A directory at the build's name that is no build is cleared, not a dead end.
+  const half = join(dir, `anatomiya-${sha.slice(0, 12)}`);
+  removeTree(half);
+  mkdirSync(half, { recursive: true });
+  writeFileSync(join(half, "left-by-a-killed-run"), "");
+  assert.equal(frozenBuild(sha, dir, { source: made.dir }).error, undefined);
+  assert.ok(existsSync(join(half, FROZEN_FROM)) && !existsSync(join(half, "left-by-a-killed-run")));
 });

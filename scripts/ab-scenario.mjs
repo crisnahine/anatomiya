@@ -23,11 +23,13 @@ import { engineRan } from "./ab/engine.mjs";
 import { renderScenario } from "./ab/render.mjs";
 import { mapAndPin, probeFileIn, runTrials, verifyInjection } from "./ab.mjs";
 import { die, invokedAs } from "./entry.mjs";
-import { runFrozen } from "./frozen-build.mjs";
+import { RESULTS_ROOT, runFrozen } from "./frozen-build.mjs";
 import { FACTS_PATH, factsAt } from "../plugins/anatomiya/lib/facts.mjs";
 import { ANATOMIYA } from "./plugins.mjs";
 
 const root = join(dirname(fileURLToPath(import.meta.url)), "..");
+// Where a result file goes and what a path in it is shown relative to: the checkout a frozen run was started from, else this one.
+const results = process.env[RESULTS_ROOT] ?? root;
 
 /** What a coding session holds, the subagent tool included, since the reuse check asks for one. */
 const SCENARIO_TOOLS = ["Read", "Write", "Edit", "Glob", "Grep", "Bash", "Agent"];
@@ -66,9 +68,9 @@ async function main(argv) {
     b: await scoreScenario(run.trials.b, scenario, run.frameworks),
   };
 
-  const out = args.out ?? join(root, "docs/measurements", `${scenario.name}.md`);
-  const data = args.data ?? join(root, "docs/measurements/data", `${scenario.name}.json`);
-  const shown = (p) => relative(root, p).split("\\").join("/");
+  const out = args.out ?? join(results, "docs/measurements", `${scenario.name}.md`);
+  const data = args.data ?? join(results, "docs/measurements/data", `${scenario.name}.json`);
+  const shown = (p) => relative(results, p).split("\\").join("/");
   const record = { scenario: shown(args.scenario), scenarioSha256, label, sha: run.sha, engine: result.engine, versions: run.versions, said: result.said };
   const writeJson = (path, value) => {
     mkdirSync(dirname(path), { recursive: true });
