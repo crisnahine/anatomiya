@@ -817,6 +817,75 @@ export function blockOf(dim, { baselineDim = null, measured = null, truncated = 
 }
 
 /**
+ * What a repository-wide pool counts under.
+ *
+ * The sentence and the population it was measured over, not the row. A learned
+ * row's `conforming` means a different thing per class, so "interfaces are
+ * named with an I prefix" and "interfaces carry no prefix" are two populations
+ * under one key and pooling them would lend each the other's confidence. The
+ * kind is part of it for the same reason: a directory of helpers that happens
+ * to learn the same class as the components would otherwise borrow a prior
+ * built almost entirely from component directories.
+ */
+const poolKey = (d) => `${d.key}\u0000${d.learned ?? ""}\u0000${d.learnedKind ?? ""}`;
+
+/**
+ * Every described area's verdicts, read against the pooled prior built here
+ * over all of them (D8): one module owns the pool and the leave-one-out that
+ * `applyGates` subtracts an area's own counts from, so the pool adds the same
+ * object the gates read and the subtraction is exact rather than nearly right.
+ *
+ * Only slots nothing else has closed lend to the pool: a greenfield area's
+ * population is the agent's own output (E4), and a corpus read in part
+ * answered for an arbitrary subset (F7); `blockOf` decides both, ahead of the
+ * gates, in the order `verdictFor` writes once.
+ *
+ * `described` is each area as the scan folded it, `{ area, dims, measuredArea }`,
+ * `measuredArea` the record `baseline.measure` returns for it; `shapeOf` is this
+ * pass's shape of one area and `authorsOf` who wrote each side's files (D4), the
+ * two facts the scan alone holds. Answers a function from one described area to
+ * its slots' verdicts, in the order of its dims.
+ */
+export function gateAreas(described, { truncated = false, semantic = null, shapeOf, authorsOf, repoAuthors, historyRead = true, shallow = null }) {
+  const baselineOf = (entry, d) => entry.measuredArea.dims.find((b) => b.key === d.key) || null;
+  const pool = new Map();
+  for (const entry of described) {
+    for (const d of entry.dims) {
+      const baselineDim = baselineOf(entry, d);
+      if (blockOf(d, { baselineDim, measured: entry.measuredArea, truncated, semantic })) continue;
+      const source = baselineDim || d;
+      const held = pool.get(poolKey(d));
+      if (held) {
+        held.candidates += source.candidates ?? 0;
+        held.conforming += source.conforming ?? 0;
+      } else {
+        pool.set(poolKey(d), { candidates: source.candidates ?? 0, conforming: source.conforming ?? 0 });
+      }
+    }
+  }
+  return (entry) => {
+    const current = shapeOf(entry);
+    return entry.dims.map((d) => {
+      const baselineDim = baselineOf(entry, d);
+      const { authors, counterAuthors } = authorsOf(baselineDim || d, entry, baselineDim);
+      return verdictFor(d, {
+        baselineDim,
+        current,
+        authors,
+        counterAuthors,
+        repoAuthors,
+        historyRead,
+        shallow,
+        measured: entry.measuredArea,
+        truncated,
+        semantic,
+        pooled: pool.get(poolKey(d)) ?? null,
+      });
+    });
+  };
+}
+
+/**
  * One slot's whole verdict: which population the gates read, what they said,
  * and whether a condition outside the gates stops it speaking at all.
  *
