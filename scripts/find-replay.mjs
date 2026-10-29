@@ -82,6 +82,10 @@ if (invokedAs(import.meta.url)) {
     console.error("usage: node scripts/find-replay.mjs [--queries <file>] [--ranking '<json>' | --sweep] <name>=<checkout> [<name>=<checkout> ...]");
     process.exit(2);
   }
+  if (values.sweep && values.ranking) {
+    console.error("--sweep scores the grid H60 records, so it takes no --ranking");
+    process.exit(2);
+  }
   const indexes = new Map();
   for (const [name, checkout] of pairs) {
     const index = readIndex(resolve(checkout));

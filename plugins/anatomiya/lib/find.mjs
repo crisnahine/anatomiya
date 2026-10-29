@@ -48,8 +48,8 @@ function weightsOf(index, asked, deadline) {
   const seen = new Map([...asked].map((w) => [w, 0]));
   let total = 0;
   for (const [, , symbols] of index.files) {
-    if (performance.now() > deadline) return null;
     for (const [name, , , container, , doc] of symbols) {
+      if (performance.now() > deadline) return null;
       total++;
       if (!mayHold(`${name} ${container ?? ""} ${doc ?? ""}`, asked)) continue;
       for (const w of new Set([...nameWords(name), ...wordsOf(container), ...wordsOf(doc)])) if (seen.has(w)) seen.set(w, seen.get(w) + 1);
@@ -86,10 +86,10 @@ export function findSymbols(index, words, ranking = RANKING, { deadline = Infini
   if (weight === null) return [];
   const hits = [];
   for (const [rel, test, symbols] of index.files) {
-    // A ranking cut short would put whatever the cut reached first; past `deadline` there is none.
-    if (performance.now() > deadline) return [];
     let inPath = null;
     for (const [name, kind, line, container, params, doc, importers] of symbols) {
+      // A ranking cut short would put whatever the cut reached first; past `deadline` there is none.
+      if (performance.now() > deadline) return [];
       if (!mayHold(`${name} ${container ?? ""} ${doc ?? ""}`, asked)) continue;
       const places = [[new Set(nameWords(name)), ranking.name], [new Set(wordsOf(container)), ranking.container], [new Set(wordsOf(doc)), ranking.doc]];
       let score = 0;

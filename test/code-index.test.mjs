@@ -8,7 +8,7 @@ import { join } from "node:path";
 import { buildIndex, saveIndex } from "../plugins/anatomiya/lib/code-index.mjs";
 import { findSymbols, formatHit, queryWords, RANKING } from "../plugins/anatomiya/lib/find.mjs";
 import { creditOf } from "../plugins/anatomiya/lib/siblings.mjs";
-import { readIndex } from "../plugins/anatomiya/lib/index-home.mjs";
+import { readIndex, usableIndex } from "../plugins/anatomiya/lib/index-home.mjs";
 import { INDEX_FILE, STORE_DIR } from "../plugins/anatomiya/lib/rules.mjs";
 
 const importersOf = (symbols, byName, rel) => creditOf(symbols, byName, rel).files.map((files) => files.size);
@@ -266,4 +266,14 @@ test("the index is written into the store and read back; a missing, foreign or c
   assert.deepEqual(readIndex(root), index);
   writeFileSync(join(root, STORE_DIR, INDEX_FILE), "not gzip");
   assert.equal(readIndex(root), null);
+});
+
+test("what a scan writes first is the head a stop reads off an index too large to read whole", (t) => {
+  // The writer's key order is the head's whole format: written another way, a large index would read as none.
+  const root = mkdtempSync(join(tmpdir(), "anatomiya-index-head-"));
+  t.after(() => rmSync(root, { recursive: true, force: true }));
+  mkdirSync(join(root, STORE_DIR), { recursive: true });
+  const { files, records, corpusRels } = repository();
+  assert.equal(saveIndex(root, buildIndex(files, records, corpusRels)), true);
+  assert.deepEqual(usableIndex(root, { readMost: 0 }), { home: root, index: null, count: readIndex(root).count });
 });
