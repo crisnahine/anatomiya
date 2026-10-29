@@ -83,11 +83,16 @@ jobs:
     needs: test
     runs-on: ubuntu-latest
     timeout-minutes: 10
-    # Write is needed for one thing: creating the release. A step can change the
-    # PATH and environment of every later step in its job, so the job holding
-    # the token installs nothing and runs no test.
+    # Write is needed for one thing: creating the release and its assets. A
+    # step can change the PATH and environment of every later step in its job,
+    # so the job holding the token installs nothing and runs no test: it packs
+    # the plugin with scripts off, which copies the shipped set into a tarball
+    # and runs no code of this repository's. id-token and attestations are for
+    # the provenance step, which signs that tarball with this run's identity.
     permissions:
       contents: write
+      id-token: write
+      attestations: write
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
@@ -111,10 +116,62 @@ jobs:
           echo "release notes:"
           cat "$RUNNER_TEMP/notes.md"
 
+      # The asset a release carries is the plugin as `npm pack` reads it off
+      # `files`, the same reading `scripts/shipped.mjs` holds against what the
+      # hooks and command files reach. Scripts off, as every install here runs;
+      # this package declares none. The plugin's directory is named after it,
+      # which the marketplace's one entry holds, and the check below says so
+      # where a second plugin ever breaks that.
+      - name: Pack the plugin
+        shell: bash
+        env:
+          PLUGIN: ${{ steps.release.outputs.plugin }}
+          VERSION: ${{ steps.release.outputs.version }}
+        run: |
+          mkdir -p "$RUNNER_TEMP/dist"
+          (cd "plugins/$PLUGIN" && npm pack --ignore-scripts --pack-destination "$RUNNER_TEMP/dist")
+          test -f "$RUNNER_TEMP/dist/$PLUGIN-$VERSION.tgz" || {
+            echo "::error::npm pack did not write $PLUGIN-$VERSION.tgz"
+            ls "$RUNNER_TEMP/dist"
+            exit 1
+          }
+          (cd "$RUNNER_TEMP/dist" && sha256sum "$PLUGIN-$VERSION.tgz" > SHA256SUMS && cat SHA256SUMS)
+
+      # SLSA provenance for the tarball, signed through Sigstore with this run's
+      # OIDC identity and recorded against the repository, so
+      # `gh attestation verify <tarball> --repo crisnahine/anatomiya` answers
+      # which workflow at which commit built it.
+      - name: Attest the tarball
+        id: attest
+        uses: actions/attest-build-provenance@4d101475d8b20a2381f78447822ac1eab6504dd8 # v4.2.2
+        with:
+          subject-path: ${{ runner.temp }}/dist/*.tgz
+
+      # The same statement beside the tarball, in the two shapes a reader looks
+      # for: the Sigstore bundle as the step wrote it, and its DSSE envelope
+      # alone as an in-toto provenance file. Refused rather than written where
+      # the bundle holds no in-toto statement.
+      - name: Write the provenance beside the tarball
+        shell: bash
+        env:
+          BUNDLE: ${{ steps.attest.outputs.bundle-path }}
+          PLUGIN: ${{ steps.release.outputs.plugin }}
+          VERSION: ${{ steps.release.outputs.version }}
+        run: |
+          jq -e '.dsseEnvelope.payloadType == "application/vnd.in-toto+json"' "$BUNDLE" > /dev/null || {
+            echo "::error::the attestation bundle at $BUNDLE holds no in-toto statement"
+            exit 1
+          }
+          cp "$BUNDLE" "$RUNNER_TEMP/dist/$PLUGIN-$VERSION.tgz.sigstore.json"
+          jq -c '.dsseEnvelope' "$BUNDLE" > "$RUNNER_TEMP/dist/$PLUGIN-$VERSION.tgz.intoto.jsonl"
+          ls -l "$RUNNER_TEMP/dist"
+
       # The release body is the changelog section the resolve step already read
       # and wrote, unedited. A tag with no section of its own never reached this
       # far: the resolve step refuses it rather than releasing another plugin's
-      # notes under this plugin's name.
+      # notes under this plugin's name. The assets are everything the two steps
+      # above left in dist: the tarball, its checksum, the bundle and the
+      # provenance file.
       - name: Create the release
         shell: bash
         env:
@@ -136,4 +193,5 @@ jobs:
             --title "$PLUGIN $VERSION" \
             --notes-file "$RUNNER_TEMP/notes.md" \
             --latest="$latest" $prerelease \
-            --verify-tag
+            --verify-tag \
+            "$RUNNER_TEMP"/dist/*

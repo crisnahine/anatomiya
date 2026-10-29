@@ -7,6 +7,12 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and
 
 ## [Unreleased]
 
+### Added
+
+- Each release carries the plugin as `npm pack` reads it, `anatomiya-<version>.tgz`, with its
+  SHA-256, the Sigstore bundle and an in-toto provenance file the release workflow signs with its
+  own identity; `gh attestation verify <tarball> --repo crisnahine/anatomiya` checks one (G23).
+
 ## [0.22.0] - 2026-10-29
 
 Every module the review named as doing two jobs does one: the check decides a finding's slot,

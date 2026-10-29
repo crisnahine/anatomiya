@@ -574,7 +574,7 @@ that fixes land on `main` only: anatomiya is pre-1.0, with no backports.
 - [docs/usage.md](docs/usage.md): the full guide.
 - [docs/why.md](docs/why.md): why it is built this way, and the designs the measurements replaced.
 - [docs/how-it-works.md](docs/how-it-works.md): the mechanics, close enough to predict a scan's output.
-- [DECISIONS.md](DECISIONS.md): 379 numbered decisions, each with the measurement or review finding
+- [DECISIONS.md](DECISIONS.md): 380 numbered decisions, each with the measurement or review finding
   that forced it.
 - [CONTEXT.md](CONTEXT.md): the glossary, so a word in a map or a document means one thing.
 - [docs/measurements/corpus.md](docs/measurements/corpus.md): every repository a measurement ran on,
