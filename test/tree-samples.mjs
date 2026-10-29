@@ -383,7 +383,7 @@ namespace Billing.Reports;
 
 public enum Kind { Sale, Refund }
 
-public delegate int Pricer(decimal price);
+public delegate int Rounder(decimal value);
 
 public class Ledger
 {

@@ -514,10 +514,14 @@ first 100 of each kind.
 A scan keeps `.claude/anatomiya/index.json.gz` (H60): for every function, method, class and type it
 indexed, the name, the line, the class it sits in, the parameter list as written, the first sentence of
 its doc comment and how many other files import it. No body, no string and no other comment is kept.
-It is read only by `find`, which prints each piece through the same filter as a quoted path, so a
-control character written in a comment or in a committed copy of the file never reaches a terminal or
-a transcript. A copy committed to a repository is replaced by the next scan, and one this cannot read
-answers as no index.
+It is read by `find` and by the end-of-turn reuse check, and both pass each piece through the same
+filter as a quoted path, so a control character written in a comment or in a committed copy of the
+file never reaches a terminal or a transcript. The reuse check puts up to five rows into the reason
+the session reads, each in backticks with every backtick of its own removed and its path encoded
+where a shell would not read it plainly, so a doc sentence reads as quoted repository text rather
+than as part of the instruction (A126). It reads a file past 2 MiB only for the schema and the
+count at its head, through the one handle that sizes it, and never follows a link. A copy committed
+to a repository is replaced by the next scan, and one this cannot read answers as no index.
 
 ### The history stores hold what git printed
 
