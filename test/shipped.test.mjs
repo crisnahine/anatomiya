@@ -370,7 +370,10 @@ test("the walk follows require and import alike, and stops at what it does not o
           `const table = createRequire(import.meta.url)("./table.json");`,
           `const late = () => import("./late.mjs");`,
           `import "npm-package";`,
-          `export const work = () => [near, table, late];`,
+          `export * from "node:fs";`,
+          `const later = () => import("late-package");`,
+          `const words = "imports" + 'from' + "files import";`,
+          `export const work = () => [near, table, late, later, words];`,
         ].join("\n"),
       );
       writeFileSync(join(at, "lib", "near.mjs"), "export const near = 1;\n");
@@ -379,13 +382,17 @@ test("the walk follows require and import alike, and stops at what it does not o
     },
   });
 
-  assert.deepEqual(reachableFrom(dir, ["bin/run.mjs"]).files.sort(), [
+  const walked = reachableFrom(dir, ["bin/run.mjs"]);
+
+  assert.deepEqual(walked.files.sort(), [
     "bin/run.mjs",
     "lib/late.mjs",
     "lib/near.mjs",
     "lib/table.json",
     "lib/work.mjs",
   ]);
+  // What it does not own it names, so a reader loading these files somewhere else knows what to supply.
+  assert.deepEqual(walked.outside, ["late-package", "node:fs", "node:module", "npm-package"]);
 });
 
 // --- what a manifest can say, and what a walk may reach ------------------------

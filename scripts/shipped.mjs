@@ -116,6 +116,14 @@ const RESOLVED = /new\s+URL\s*\(\s*(["'])(\.[^"']*)\1/g;
 
 const SPECIFIERS = [/(?:from|import)\s*(["'])(\.[^"']*)\1/g, /\(\s*(["'])(\.[^"']*)\1\s*\)/g, RESOLVED];
 
+// A builtin or a package, which no file under the root answers. Read off a statement rather than any `from` or
+// `import`, since the walk over-matches on purpose and a word like "imports" in a string is no specifier.
+const OUTSIDE = [
+  /^\s*(?:import|export)\s+[^;]*?\bfrom\s*(["'])([^"'./][^"']*)\1/gm,
+  /^\s*import\s*(["'])([^"'./][^"']*)\1/gm,
+  /\bimport\s*\(\s*(["'])([^"'./][^"']*)\1\s*\)/g,
+];
+
 /**
  * What ends a sentence rather than a filename.
  *
@@ -145,7 +153,8 @@ const asPosix = (path) => path.split(sep).join("/");
 
 /**
  * Every file under `root` that the given entry points can reach, themselves
- * included, as repository-relative paths.
+ * included, as repository-relative paths, and the specifiers they name that no
+ * file under it answers, which a reader loading them anywhere else has to supply.
  *
  * Walked rather than listed, because the list is what goes wrong: `bin/` and
  * `lib/` are two entries in `files` today and one import away from being three.
@@ -156,6 +165,7 @@ const asPosix = (path) => path.split(sep).join("/");
 export function reachableFrom(root, entries) {
   const files = new Set();
   const missing = new Map();
+  const outside = new Set();
   const queue = entries.map((rel) => ({ rel, from: null }));
 
   while (queue.length > 0) {
@@ -177,6 +187,9 @@ export function reachableFrom(root, entries) {
     if (held) continue;
 
     const body = readFileSync(path, "utf8");
+    for (const pattern of OUTSIDE) {
+      for (const [, , specifier] of body.matchAll(pattern)) outside.add(specifier);
+    }
     for (const pattern of SPECIFIERS) {
       for (const [, , specifier] of body.matchAll(pattern)) {
         const reached = inside(root, resolve(dirname(path), specifier));
@@ -198,7 +211,7 @@ export function reachableFrom(root, entries) {
     }
   }
 
-  return { files: [...files], missing };
+  return { files: [...files], missing, outside: [...outside].sort() };
 }
 
 /**

@@ -23,7 +23,7 @@ const INDEX_HEAD = "| # | Decision | Status | File |";
 const TABLE_HEAD = "| # | Decision | Why | Status |";
 
 /** A line's cells as written. A `|` inside a cell is written `\|`, so a bare one is always a cell's edge. */
-const cellsOf = (line) => line.split(/(?<!\\)\|/).slice(1, -1);
+export const cellsOf = (line) => line.split(/(?<!\\)\|/).slice(1, -1);
 
 /**
  * Every row the index holds, in order: its id, the section heading above

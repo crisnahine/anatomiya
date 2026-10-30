@@ -11,6 +11,9 @@ The table lives in `scripts/release.mjs` and a test holds this copy of it to tha
 fires on the tag shape and refuses a tag whose manifests disagree with it or whose changelog has no
 section of its own, naming which. Its test job runs `check:docs` and `npm run validate` before the
 suite, so a tag on a commit whose documents or manifests fail is refused before anything is released.
+Its release job then archives the plugin's directory out of git, lockfile included, and attaches the
+archive, its SHA-256, the Sigstore bundle and an in-toto provenance file to the release it creates,
+so a release carries what the tagged commit shipped and which run built it (G23).
 What it cannot tell you is what to do about it, which is what the rest of this page is for.
 
 `v0.1.9` was released by hand four seconds before its own workflow run started, so the run went red
@@ -125,6 +128,10 @@ upstreams and are not meant to move together.
 - [ ] The release workflow went green.
 - [ ] `gh release view <tag>` shows a published, non-draft release with the changelog section as its
       body and the plugin name in its title.
+- [ ] The release carries `<plugin>-<version>.tgz`, `SHA256SUMS`, `<plugin>-<version>.tgz.sigstore.json`
+      and `<plugin>-<version>.tgz.intoto.jsonl`, and after
+      `gh release download <tag> --repo crisnahine/anatomiya --pattern '*.tgz'`,
+      `gh attestation verify <the tarball> --repo crisnahine/anatomiya` passes.
 - [ ] Close the issues the release closed. A comma list of `Closes #1, #2` only closes the first;
       GitHub needs the keyword per issue.
 
@@ -140,3 +147,7 @@ request adds. `audit the installed tree` stays advisory: it audits the whole tre
 advisory against a dependency already here would fail every pull request after it, including ones
 that touch no dependency. It still runs on every push to `main` and weekly, which is where a red
 audit gets seen. `openssf scorecard` never runs on a pull request, so it has no context to require.
+
+`.github/workflows/pages.yml` is not required either. On a pull request its `build the site` job runs
+only where the pull request touches the site, so requiring it would leave every other pull request
+waiting on a check that never starts, and `deploy` runs from `main` alone.

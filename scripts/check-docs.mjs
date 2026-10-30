@@ -677,17 +677,27 @@ const CHANGELOG = /(^|\/)CHANGELOG\.md$/;
 /** The heading a changelog keeps for the next change, spelled once. */
 const UNRELEASED = "## [Unreleased]";
 
+/**
+ * The fence a Markdown line leaves open, given `fence`, the run that opened the
+ * block the line is in, or null outside one: three or more backticks or tildes
+ * after at most three spaces open a block, unless a backtick run's info string
+ * holds a backtick.
+ */
+export function fenceAfter(line, fence) {
+  const [, run, rest] = line.match(/^ {0,3}(`{3,}|~{3,})(.*)$/) ?? [];
+  // Only a run of the opener's character, at least as long, then spaces or tabs, closes it.
+  if (fence !== null) return run && run[0] === fence[0] && run.length >= fence.length && !/[^ \t]/.test(rest) ? null : fence;
+  return run && !(run[0] === "`" && rest.includes("`")) ? run : null;
+}
+
 /** Whether a changelog defines the link its `## [label]` heading points at, read as Markdown reads it: outside a fence, any case. */
 const linkDefined = (text, label) => {
   const want = `[${label}]: `.toLowerCase();
   let fence = null;
   for (const line of text.split(/\r?\n/)) {
-    const [, run, rest] = line.match(/^ {0,3}(`{3,}|~{3,})(.*)$/) ?? [];
-    if (fence) {
-      // Only a run of the opener's character, at least as long, then spaces or tabs, closes it.
-      if (run && run[0] === fence[0] && run.length >= fence.length && !/[^ \t]/.test(rest)) fence = null;
-    } else if (run && !(run[0] === "`" && rest.includes("`"))) fence = run;
-    else if (line.toLowerCase().startsWith(want)) return true;
+    const after = fenceAfter(line, fence);
+    if (fence === null && after === null && line.toLowerCase().startsWith(want)) return true;
+    fence = after;
   }
   return false;
 };
