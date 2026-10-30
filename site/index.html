@@ -26,8 +26,8 @@
     if (theme === "light" || theme === "dark") document.documentElement.dataset.theme = theme;
   } catch {}
 </script>
-<script type="importmap">{ "imports": { "node:path": "./node-path.js" } }</script>
-<script type="module" src="main.js"></script>
+<script type="importmap">{ "imports": { "node:path": "./node-path.mjs" } }</script>
+<script type="module" src="main.mjs"></script>
 </head>
 <body>
 <a class="skip" href="#main">Skip to the content</a>
@@ -265,7 +265,7 @@
     <header class="section-head reveal">
       <p class="eyebrow">Measured, ties included</p>
       <h2 id="results-h">The helper your repository already has</h2>
-      <p class="lede">{{reuseTasks}} small tasks in {{reuseRepositories}} open-source repositories, each asking for code the repository already had a function for. 20 sessions with anatomiya and 20 without, per task, on two models. No prompt named the function, and every check was fixed in a scenario file before the first session ran.</p>
+      <p class="lede">{{reuseTasks}} small tasks in {{reuseRepositories}} open-source repositories, each asking for code the repository already had a function for. {{sessionsPerArm}} sessions with anatomiya and {{sessionsPerArm}} without, per task, on two models. No prompt named the function, and every check was fixed in a scenario file before the first session ran.</p>
     </header>
 
     <div class="stats reveal">
@@ -277,7 +277,7 @@
       <figcaption class="legend">
         <span><i class="sw with"></i>with anatomiya</span>
         <span><i class="sw without"></i>without</span>
-        <span>sessions of 20 that called the helper</span>
+        <span>sessions of {{sessionsPerArm}} that called the helper</span>
         <span class="note"><b>Bold</b> marks a difference with p below 0.05, by Fisher's exact test</span>
       </figcaption>
       {{results}}
@@ -285,7 +285,7 @@
 
     <div class="honest reveal">
       <h3>It did not win everywhere</h3>
-      <p>Of the {{reusePairs}} task and model pairs, anatomiya changed the result in {{reuseSignificant}}, and the arm without it never did better by a margin a test can tell from chance. Most of the rest are ties at or near 20, where the helper is the repository's idiom and a session finds it without a map: gitea calls <code>db.GetEngine</code> from 246 files. On gitea with Claude Haiku 5.5 the arm without anatomiya did better, 20 against 18, and both misses called the repository's own <code>db.Count</code>, which calls <code>GetEngine</code> itself.</p>
+      <p>Of the {{reusePairs}} task and model pairs, anatomiya changed the result in {{reuseSignificant}}, and the arm without it never did better by a margin a test can tell from chance. Most of the rest are ties at or near {{sessionsPerArm}}, where the helper is the repository's idiom and a session finds it without a map: gitea calls <code>db.GetEngine</code> from 246 files. On gitea with Claude Haiku 5.5 the arm without anatomiya did better, 20 against 18, and both misses called the repository's own <code>db.Count</code>, which calls <code>GetEngine</code> itself.</p>
       <p>It costs tokens. Across these tasks the median session with anatomiya cost 2.0 to 5.5 times as much as one without.</p>
       <p class="links">
         <a href="https://github.com/crisnahine/anatomiya/blob/main/docs/measurements/2026-10-26-every-language.md">The 0.19.0 write-up</a>

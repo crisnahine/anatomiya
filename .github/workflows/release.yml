@@ -85,10 +85,10 @@ jobs:
     timeout-minutes: 10
     # Write is needed for one thing: creating the release and its assets. A
     # step can change the PATH and environment of every later step in its job,
-    # so the job holding the token installs nothing and runs no test: it packs
-    # the plugin with scripts off, which copies the shipped set into a tarball
-    # and runs no code of this repository's. id-token and attestations are for
-    # the provenance step, which signs that tarball with this run's identity.
+    # so the job holding the token installs nothing and runs no test: it
+    # archives the plugin's directory out of git and runs no code of this
+    # repository's. id-token and attestations are for the provenance step,
+    # which signs that archive with this run's identity.
     permissions:
       contents: write
       id-token: write
@@ -116,23 +116,22 @@ jobs:
           echo "release notes:"
           cat "$RUNNER_TEMP/notes.md"
 
-      # The asset a release carries is the plugin as `npm pack` reads it off
-      # `files`, the same reading `scripts/shipped.mjs` holds against what the
-      # hooks and command files reach. Scripts off, as every install here runs;
-      # this package declares none. The plugin's directory is named after it,
-      # which the marketplace's one entry holds, and the check below says so
-      # where a second plugin ever breaks that.
-      - name: Pack the plugin
+      # The asset a release carries is the plugin's directory as the tagged
+      # commit holds it, which is what `/plugin install` copies. Out of git
+      # rather than npm pack: npm never packs a package-lock.json, and the
+      # lockfile beside the manifest is what Claude Code installs the plugin's
+      # dependencies from. The directory is named after the plugin, which the
+      # marketplace's one entry holds, and git refuses a name with no directory.
+      - name: Archive the plugin
         shell: bash
         env:
           PLUGIN: ${{ steps.release.outputs.plugin }}
           VERSION: ${{ steps.release.outputs.version }}
         run: |
           mkdir -p "$RUNNER_TEMP/dist"
-          (cd "plugins/$PLUGIN" && npm pack --ignore-scripts --pack-destination "$RUNNER_TEMP/dist")
-          test -f "$RUNNER_TEMP/dist/$PLUGIN-$VERSION.tgz" || {
-            echo "::error::npm pack did not write $PLUGIN-$VERSION.tgz"
-            ls "$RUNNER_TEMP/dist"
+          git archive --format=tar.gz --prefix="$PLUGIN/" -o "$RUNNER_TEMP/dist/$PLUGIN-$VERSION.tgz" "HEAD:plugins/$PLUGIN"
+          tar -tzf "$RUNNER_TEMP/dist/$PLUGIN-$VERSION.tgz" | grep -qx "$PLUGIN/package-lock.json" || {
+            echo "::error::the archive of plugins/$PLUGIN holds no package-lock.json"
             exit 1
           }
           (cd "$RUNNER_TEMP/dist" && sha256sum "$PLUGIN-$VERSION.tgz" > SHA256SUMS && cat SHA256SUMS)

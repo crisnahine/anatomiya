@@ -787,8 +787,8 @@ These are real and they are tracked in `DECISIONS.md` and the row files it links
 
 ## Verifying a release
 
-The release workflow attaches to each release it creates the plugin as `npm pack` reads it,
-`anatomiya-<version>.tgz`, with `SHA256SUMS`, the Sigstore bundle
+The release workflow attaches to each release it creates the plugin's directory as the tagged commit
+holds it, lockfile included, as `anatomiya-<version>.tgz`, with `SHA256SUMS`, the Sigstore bundle
 `anatomiya-<version>.tgz.sigstore.json` and the in-toto provenance file
 `anatomiya-<version>.tgz.intoto.jsonl`. The workflow signs the statement with its own OIDC identity
 through GitHub's attestation action and records it against this repository. To check a tarball:
@@ -799,7 +799,7 @@ gh attestation verify anatomiya-<version>.tgz --repo crisnahine/anatomiya
 ```
 
 A pass says the release workflow in this repository built that exact tarball from the tagged
-commit. It says nothing about the code in it. `/plugin install` copies the plugin directory from
+commit, and it holds every file `/plugin install` copies. It says nothing about the code in it. `/plugin install` copies the plugin directory from
 the repository rather than downloading the tarball, so the attestation is what lets a copy taken by
 hand be held to the tag.
 

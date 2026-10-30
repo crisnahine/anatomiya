@@ -11,9 +11,9 @@ The table lives in `scripts/release.mjs` and a test holds this copy of it to tha
 fires on the tag shape and refuses a tag whose manifests disagree with it or whose changelog has no
 section of its own, naming which. Its test job runs `check:docs` and `npm run validate` before the
 suite, so a tag on a commit whose documents or manifests fail is refused before anything is released.
-Its release job then packs the plugin with scripts off and attaches the tarball, its SHA-256, the
-Sigstore bundle and an in-toto provenance file to the release it creates, so a release carries what
-the tagged commit shipped and which run built it (G23).
+Its release job then archives the plugin's directory out of git, lockfile included, and attaches the
+archive, its SHA-256, the Sigstore bundle and an in-toto provenance file to the release it creates,
+so a release carries what the tagged commit shipped and which run built it (G23).
 What it cannot tell you is what to do about it, which is what the rest of this page is for.
 
 `v0.1.9` was released by hand four seconds before its own workflow run started, so the run went red

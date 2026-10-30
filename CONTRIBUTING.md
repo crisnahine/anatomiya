@@ -764,8 +764,9 @@ python3 -m http.server 8000 -d _site
 ```
 
 Any static file server will do, and a server it has to be: a browser loads no module script from a
-`file://` page. The script scans the checkout first, and it writes only into a new directory or one it
-wrote before. A heading the page quotes a block from, the README's reuse tables, or an import
+`file://` page. The script scans the checkout first, so it rewrites this checkout's map and code index
+under `.claude/` as a scan would, and it writes the site only into a new directory or one it wrote
+before. A heading the page quotes a block from, the README's reuse tables, or an import
 `find.mjs` gains from outside its own directory stops the build, and `test/site.test.mjs` names which.
 `.github/workflows/pages.yml` builds the site on a pull request that touches it and deploys it from
 `main`, where the repository's Pages source has to be GitHub Actions.

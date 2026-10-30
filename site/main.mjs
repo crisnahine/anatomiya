@@ -1,5 +1,4 @@
-// What the page does once script runs: the theme, the menu, copy buttons, the session steps,
-// the reveal on scroll, and the live find demo. Every part of the page reads without it.
+// Every part of the page reads without this script, so each piece here only adds to markup that already works.
 
 const doc = document.documentElement;
 doc.classList.add("js");
@@ -12,7 +11,6 @@ const announce = (text) => {
   });
 };
 
-// The theme: the system's until the reader picks one, which is kept where the browser allows it.
 const THEME_KEY = "anatomiya-theme";
 const darkQuery = matchMedia("(prefers-color-scheme: dark)");
 const themeButton = document.querySelector(".theme");
@@ -33,7 +31,6 @@ themeButton.addEventListener("click", () => {
 darkQuery.addEventListener("change", labelTheme);
 labelTheme();
 
-// The menu on narrow screens.
 const menu = document.querySelector(".menu");
 const navList = document.getElementById("nav-list");
 const setMenu = (open) => {
@@ -51,12 +48,12 @@ document.addEventListener("keydown", (event) => {
   }
 });
 
-// Copy buttons: a button's own text where it carries one, otherwise the block beside it.
 async function copyText(text) {
   try {
     await navigator.clipboard.writeText(text);
     return true;
   } catch {
+    // The clipboard API can be refused, on plain http or inside a frame, so the old way is the fallback.
     const area = document.createElement("textarea");
     area.value = text;
     area.setAttribute("readonly", "");
@@ -75,6 +72,7 @@ async function copyText(text) {
 }
 for (const button of document.querySelectorAll(".copy")) {
   button.addEventListener("click", async () => {
+    // The hero's block shows prompts, so its button carries the text to copy.
     const text = button.dataset.copy ?? button.parentElement.querySelector("pre").textContent;
     const copied = await copyText(text.trim());
     button.textContent = copied ? "Copied" : "Copy failed";
@@ -87,7 +85,7 @@ for (const button of document.querySelectorAll(".copy")) {
   });
 }
 
-// The session steps: links to each panel without script, a tab list with it.
+// Without script these are links to panels that all show; the roles are added here, where the tabs work.
 const steps = document.querySelector("[data-tabs]");
 if (steps !== null) {
   const list = steps.querySelector(".step-list");
@@ -129,7 +127,6 @@ if (steps !== null) {
   select(Math.max(0, tabs.findIndex((tab) => tab.hash === location.hash)));
 }
 
-// Sections fade in as they arrive, and the chart's bars grow, where motion is welcome.
 const arriving = document.querySelectorAll(".reveal");
 if (motion && "IntersectionObserver" in window) {
   const seen = new IntersectionObserver(
@@ -147,9 +144,9 @@ if (motion && "IntersectionObserver" in window) {
   for (const element of arriving) element.classList.add("in");
 }
 
-// The nav marks the section in view, and none above the first.
 const sectionLinks = [...navList.querySelectorAll('a[href^="#"]')];
 if ("IntersectionObserver" in window) {
+  // Kept as a set so the mark clears when no section is in the band, as on the hero.
   const inView = new Set();
   const current = new IntersectionObserver(
     (entries) => {
@@ -168,7 +165,7 @@ if ("IntersectionObserver" in window) {
   }
 }
 
-// The live find demo: the plugin's own find.mjs over the index the build scanned, loaded on approach.
+// The modules and the index load when the section comes near, not with the page: the index is a quarter of a megabyte.
 const find = document.getElementById("find");
 const form = find.querySelector(".find-form");
 const input = find.querySelector("#find-q");
@@ -179,11 +176,18 @@ let loading = null;
 
 function load() {
   loading ??= Promise.all([
-    import("./lib/find.mjs"),
-    fetch("data/index.json").then((response) => {
-      if (!response.ok) throw new Error(`the index answered ${response.status}`);
-      return response.json();
+    // A browser that cannot parse the modules gains nothing from a reload, so the two failures read apart.
+    import("./lib/find.mjs").catch((err) => {
+      throw new Error(`this browser could not run the plugin's code (${err.message}); a current Chrome, Edge, Firefox or Safari can`);
     }),
+    fetch("data/index.json")
+      .catch((err) => {
+        throw new Error(`the index did not arrive (${err.message}); reload the page to try again`);
+      })
+      .then((response) => {
+        if (!response.ok) throw new Error(`the index answered ${response.status}; reload the page to try again`);
+        return response.json();
+      }),
   ]).catch((err) => {
     loading = null;
     throw err;
@@ -202,7 +206,7 @@ async function run(words) {
   try {
     [finder, index] = await load();
   } catch (err) {
-    statusLine.textContent = `The index did not load (${err.message}). Reload the page to try again.`;
+    statusLine.textContent = `The demo did not start: ${err.message}.`;
     return;
   }
   hitList.replaceChildren();

@@ -3,13 +3,13 @@
  * The website: the files under `site/`, filled in from this repository and
  * written to the one directory GitHub Pages serves (G24).
  *
- * Nothing the page says that the repository already holds is typed twice. Its
- * examples are fenced blocks of the README and the usage guide, its results
- * chart is the README's own tables, its counts are read off the registry, the
- * build contract and the code index, and its find demo runs the plugin's own
- * `find.mjs`, copied byte for byte, over the index a scan of this checkout wrote.
+ * The examples, the results chart and the counts are read from the repository
+ * at build time rather than typed into the page: fenced blocks of the README and
+ * the usage guide, the README's own tables, the registry, the build contract and
+ * the code index. The find demo runs the plugin's own `find.mjs`, copied byte
+ * for byte, over the index a scan of this checkout wrote.
  */
-import { copyFileSync, existsSync, mkdirSync, readFileSync, readdirSync, rmSync, writeFileSync } from "node:fs";
+import { copyFileSync, cpSync, existsSync, mkdirSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { basename, dirname, join, resolve } from "node:path";
 import { execFileSync, spawnSync } from "node:child_process";
 
@@ -73,11 +73,15 @@ export function resultRows(readme) {
   for (const line of readme.slice(start, end).split(/\r?\n/)) {
     const cells = cellsOf(line).map((cell) => cell.trim());
     if (cells.length < 4) continue;
-    const counts = cells.slice(-2).map((cell) => cell.match(/^(\*\*)?(\d+) \/ (\d+)\1$/));
-    if (counts.some((m) => m === null)) {
-      models ??= cells.slice(-2).map((cell) => cell.replace(/ with \/ without$/, ""));
+    const named = cells.slice(-2).map((cell) => cell.match(/^(.+) with \/ without$/)?.[1] ?? null);
+    if (named.every((name) => name !== null)) {
+      // Every table's bars go under the first table's model columns, so a second order would put them under the wrong model.
+      if (models !== null && named.join() !== models.join()) throw new Error(`README.md's reuse tables name their models in two orders: ${models.join(", ")} and ${named.join(", ")}`);
+      models = named;
       continue;
     }
+    const counts = cells.slice(-2).map((cell) => cell.match(/^(\*\*)?(\d+) \/ (\d+)\1$/));
+    if (counts.some((m) => m === null)) continue;
     const [task, checked] = cells.slice(-4, -2);
     rows.push({
       language: cells.length === 5 ? cells[0] : null,
@@ -92,17 +96,12 @@ export function resultRows(readme) {
 
 /**
  * The modules a browser loads to run `entry`, a path under the plugin's root,
- * walked the way the shipped-set check walks the plugin, and the specifiers
- * among their static imports that no file of the plugin answers, which the
- * page's import map has to.
+ * walked as the shipped-set check walks the plugin, and the specifiers they name
+ * that no file of the plugin answers, which the page's import map has to.
  */
 export function moduleClosure(entry) {
-  const files = reachableFrom(ANATOMIYA, [entry]).files.map((rel) => join(ANATOMIYA, rel));
-  const outside = new Set();
-  for (const file of files) {
-    for (const [, spec] of readFileSync(file, "utf8").matchAll(/^import\s[^;]*?from\s*["']([^"'.][^"']*)["']/gm)) outside.add(spec);
-  }
-  return { files, outside: [...outside].sort() };
+  const { files, outside } = reachableFrom(ANATOMIYA, [entry]);
+  return { files: files.map((rel) => join(ANATOMIYA, rel)), outside };
 }
 
 /** One fenced block as markup for the inside of a `<code>`: escaped, and a diff's lines marked added or removed. */
@@ -172,6 +171,7 @@ export function buildSite({ out, index, commit }) {
     definitions: index.count.toLocaleString("en-US"),
     dimensions: String(REGISTRY.length),
     decisions: String(indexRows(read("DECISIONS.md")).length),
+    sessionsPerArm: String(SESSIONS_PER_ARM),
     reuseTasks: String(results.rows.length),
     reuseRepositories: String(new Set(results.rows.map((row) => row.task.split(":")[0])).size),
     reuseSessions: String(cells.length * SESSIONS_PER_ARM),
@@ -187,12 +187,10 @@ export function buildSite({ out, index, commit }) {
   const strayed = closure.files.filter((file) => dirname(file) !== LIB);
   if (strayed.length > 0) throw new Error(`the find demo reaches modules outside the plugin's lib, which the page cannot load: ${strayed.join(", ")}`);
 
+  cpSync(SITE, out, { recursive: true, filter: (from) => from !== join(SITE, "index.html") });
   mkdirSync(join(out, "lib"), { recursive: true });
-  mkdirSync(join(out, "data"));
+  mkdirSync(join(out, "data"), { recursive: true });
   writeFileSync(join(out, MARK), "");
-  for (const name of readdirSync(SITE)) {
-    if (name !== "index.html") copyFileSync(join(SITE, name), join(out, name));
-  }
   writeFileSync(join(out, "index.html"), page);
   copyFileSync(join(ROOT, "docs", "assets", "icon.svg"), join(out, "icon.svg"));
   copyFileSync(join(ROOT, "docs", "assets", "social-preview.png"), join(out, "social-preview.png"));
